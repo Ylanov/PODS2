@@ -1,0 +1,124 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: staff_db
+    restart: always
+
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: localpassword
+      POSTGRES_DB: staff_db
+
+    # Тюнинг под ~2к пользователей.
+    #   max_connections=200 — чтобы 4 воркера × 25 соединений + запас на
+    #     psql/migrations/backups укладывались без "too many clients".
+    #   shared_buffers=256MB — кеш страниц Postgres (≈25% памяти контейнера).
+    #   effective_cache_size=1GB — подсказка планировщику.
+    #   work_mem=8MB — сортировки/хеш-джойны в памяти без temp-файлов.
+    # Значения рассчитаны на 2-4 GB RAM контейнера. Поднимите пропорционально.
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c work_mem=8MB
+      -c maintenance_work_mem=64MB
+      -c random_page_cost=1.1
+      -c log_min_duration_statement=1000
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d staff_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - backend
+
+  web:
+    build: .
+    container_name: staff_web
+    restart: always
+
+    env_file:
+      - .env
+
+    environment:
+      POSTGRES_SERVER: db
+      POSTGRES_PORT: 5432
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # Количество воркеров: ~(2 × CPU + 1), но ограничено пулом БД.
+    # При 4 воркерах и pool_size=10+max_overflow=15 пик = 100 соединений
+    # (= стоковый postgres max_connections). Для бОльшего scale добавьте
+    # pgbouncer и увеличьте GUNICORN_WORKERS в .env.
+    # --timeout 60 — убиваем воркер только после минуты (защита от зависших),
+    # --graceful-timeout 30 — даём 30с на завершение текущих запросов,
+    # --access-logfile - — access log в stdout для docker logs.
+    # --forwarded-allow-ips: критично за обратным прокси (Nginx / NPM /
+    # Cloudflare Tunnel). Без него FastAPI не доверяет X-Forwarded-For/Proto
+    # и:
+    #   • rate-limiter считает всех клиентов одним IP контейнера прокси;
+    #   • request.url отдаёт http:// → ссылки в QR/PDF получаются http;
+    #   • request.client.host = IP прокси, а не реального клиента.
+    # '*' = доверяем всем источникам — сервер всё равно слушает только
+    # на внутренней Docker-сети, снаружи доступа нет.
+    command: >
+      gunicorn app.main:app
+      -k uvicorn.workers.UvicornWorker
+      -w ${GUNICORN_WORKERS:-4}
+      -b 0.0.0.0:8000
+      --forwarded-allow-ips '*'
+      --timeout 60
+      --graceful-timeout 30
+      --access-logfile -
+      --error-logfile -
+
+    volumes:
+      - .:/code   # ← оставь для dev, убери для production
+
+    expose:
+      - "8000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - backend
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: staff_nginx
+    restart: always
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    depends_on:
+      web:
+        condition: service_healthy
+
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./static:/code/static:ro
+
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  pgdata:

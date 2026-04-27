@@ -1,0 +1,202 @@
+/* ============================================================
+   persons.css — Вкладка «База людей» + подсказки поиска ФИО
+   ============================================================ */
+
+/* ─── Вкладка «База людей» ────────────────────────────────── */
+
+/* Добавить в style.css в секцию про persons */
+.persons-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+#persons-add-form {
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    padding: 14px 20px;
+    background: var(--md-surface-variant, #f5f5f0);
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+#persons-add-form.hidden {
+    display: none !important;
+}
+
+
+.persons-panel__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-variant);
+    flex-wrap: wrap;
+}
+
+.persons-search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+    max-width: 380px;
+    display: flex;
+    align-items: center;
+}
+
+.persons-search-wrap svg {
+    position: absolute;
+    left: 10px;
+    color: var(--md-on-surface-hint);
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+.persons-search-wrap input {
+    padding-left: 32px;
+    height: 34px;
+    font-size: 0.835rem;
+}
+
+/* Форма добавления */
+.persons-add-form {
+    padding: 12px 18px;
+    background: var(--md-primary-light);
+    border-bottom: 1px solid #c5ddd8;
+    animation: fade-in-up var(--md-duration-medium) var(--md-motion-emphasized) both;
+}
+
+.persons-add-form__row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+/* Inline-редактирование */
+.person-inline-input {
+    width: 100%;
+    height: 28px !important;
+    padding: 0 8px !important;
+    font-size: 0.8rem !important;
+    border: 1px solid var(--md-primary) !important;
+    border-radius: var(--md-radius-sm) !important;
+    background: #fff !important;
+    box-shadow: 0 0 0 2px rgba(74,124,111,0.12) !important;
+}
+
+/* Подсветка при автозаполнении */
+.ac-filled {
+    background: rgba(74, 124, 111, 0.08) !important;
+    border-color: var(--md-primary) !important;
+    transition: background 0.3s, border-color 0.3s;
+}
+
+/* Пустое состояние */
+.persons-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 52px 24px;
+    text-align: center;
+    color: var(--md-on-surface-hint);
+}
+
+.persons-empty svg {
+    width: 40px;
+    height: 40px;
+    opacity: 0.3;
+    margin-bottom: 4px;
+}
+
+.persons-empty p {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--md-on-surface-variant);
+}
+
+.persons-empty span {
+    font-size: 0.78rem;
+    max-width: 360px;
+}
+
+
+/* ─── Подсказки поиска ФИО из общей базы (persons/suggest) ──────────────── */
+
+.fio-suggest-box {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: var(--md-surface, #fff);
+    border: 1px solid var(--md-outline-variant, #ddd);
+    border-radius: var(--md-radius-md, 8px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    max-height: 280px;
+    overflow-y: auto;
+    margin-top: 2px;
+}
+
+.fio-suggest-box.hidden { display: none; }
+
+.fio-suggest-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--md-outline-variant, #eee);
+    transition: background 0.12s;
+}
+
+.fio-suggest-item:last-child { border-bottom: none; }
+
+.fio-suggest-item:hover,
+.fio-suggest-item--active {
+    background: var(--md-surface-variant, #f5f5f5);
+}
+
+.fio-suggest-item--active {
+    outline: 2px solid var(--md-primary, #1976d2);
+    outline-offset: -2px;
+}
+
+.fio-suggest-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.fio-name {
+    font-weight: 500;
+    color: var(--md-on-surface, #222);
+}
+
+.fio-badge {
+    font-size: 0.72em;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.fio-badge-exact {
+    background: #4caf50;
+    color: #fff;
+}
+
+.fio-badge-score {
+    background: var(--md-primary-container, #e3f2fd);
+    color: var(--md-on-primary-container, #0d47a1);
+}
+
+.fio-dept {
+    font-size: 0.8em;
+    color: var(--md-on-surface-variant, #666);
+    font-style: italic;
+}
+
+.fio-suggest-extra {
+    font-size: 0.8em;
+    color: var(--md-on-surface-variant, #666);
+    margin-top: 2px;
+}

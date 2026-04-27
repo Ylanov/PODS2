@@ -1,0 +1,42 @@
+<!-- views/admin-users.html -->
+<div id="tab-users" class="hidden">
+    <div class="users-panel">
+        <div class="users-panel__create">
+            <p class="users-panel__create-title">Добавить пользователя</p>
+            <div class="create-user-row">
+                <div class="field">
+                    <label class="field-label" for="new-username">Логин</label>
+                    <input type="text" id="new-username" placeholder="upr_1" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="new-password">Пароль</label>
+                    <input type="text" id="new-password" placeholder="Минимум 6 символов" autocomplete="new-password">
+                </div>
+                <div class="field field--role">
+                    <label class="field-label" for="new-role">Роль</label>
+                    <select id="new-role">
+                        <option value="department">Управление</option>
+                        <option value="admin">Администратор</option>
+                    </select>
+                </div>
+                <button id="create-user-btn" class="btn btn-success btn-sm" style="margin-top:18px; flex-shrink:0;">
+                    Добавить
+                </button>
+            </div>
+        </div>
+
+        <div class="data-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:56px;">ID</th>
+                        <th>Пользователь</th>
+                        <th style="width:130px;">Роль</th>
+                        <th style="width:100px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="users-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>

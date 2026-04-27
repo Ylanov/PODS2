@@ -1,0 +1,38 @@
+<!-- views/department.html -->
+<div id="department-view" class="hidden">
+    <div class="page">
+        <div class="page-header">
+            <h2 class="page-title">Мои задачи</h2>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="card-body" style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+                <div class="select-field" style="flex:1; min-width:200px; max-width:400px;">
+                    <label class="field-label" for="dept-event-id">Список</label>
+                    <select id="dept-event-id"></select>
+                </div>
+                <button id="load-slots-btn" class="btn btn-filled" style="flex-shrink:0;">
+                    Загрузить задачи
+                </button>
+            </div>
+        </div>
+
+        <div id="groups-container" class="groups-container"></div>
+
+        <div class="data-table-wrap hidden" id="slots-table-wrap">
+            <table id="slots-table">
+                <thead>
+                    <tr>
+                        <th>Должность</th>
+                        <th>Звание</th>
+                        <th>ФИО</th>
+                        <th>№ Документа</th>
+                        <th>Позывной</th>
+                        <th style="width:90px;">Действие</th>
+                    </tr>
+                </thead>
+                <tbody id="slots-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>

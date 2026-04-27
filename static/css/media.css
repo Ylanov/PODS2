@@ -1,0 +1,673 @@
+/* ============================================================
+   media.css — оверлей «Учёт МНИ» (флешки, SSD, HDD, SD-карты).
+   Дашборд агрегатов + таблица носителей + форма CRUD/выдачи.
+   ============================================================ */
+
+/* ─── Overlay ──────────────────────────────────────────────── */
+.md-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.48);
+    z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: md-fade 0.12s ease-out;
+}
+@keyframes md-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.md-dialog {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    width: min(1500px, 100%);
+    height: 94vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.26);
+}
+
+/* ─── Header ───────────────────────────────────────────────── */
+.md-header {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; padding: 14px 22px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+}
+.md-header__title {
+    font-family: var(--md-font-display);
+    font-size: 1.1rem; font-weight: 600;
+    color: var(--md-on-surface);
+}
+.md-header__subtitle {
+    font-size: 0.78rem; color: var(--md-on-surface-hint);
+    margin-top: 2px;
+}
+.md-header__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ─── Body ─────────────────────────────────────────────────── */
+.md-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px 22px 22px;
+    background: var(--md-background);
+    display: flex; flex-direction: column; gap: 18px;
+}
+.md-loading, .md-empty-block {
+    text-align: center; padding: 32px;
+    color: var(--md-on-surface-hint); font-size: 0.92rem;
+    background: var(--md-surface);
+    border: 1px dashed var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+}
+
+/* ─── Дашборд ──────────────────────────────────────────────── */
+.md-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+}
+.md-stat {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-left: 3px solid var(--md-outline);
+    border-radius: var(--md-radius-md);
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 4px;
+    transition: border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short);
+}
+.md-stat:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
+.md-stat__label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--md-on-surface-hint);
+    font-weight: 500;
+}
+.md-stat__value {
+    font-family: var(--md-font-mono);
+    font-size: 1.3rem; font-weight: 700;
+    color: var(--md-on-surface);
+}
+.md-stat--total       { border-left-color: var(--md-primary); }
+.md-stat--issued      { border-left-color: #0ea5e9; }
+.md-stat--available   { border-left-color: var(--md-success); }
+.md-stat--broken      { border-left-color: var(--md-warning); }
+.md-stat--written_off { border-left-color: #94a3b8; }
+.md-stat--alert {
+    border-left-color: var(--md-error);
+    background: var(--md-error-light);
+}
+.md-stat--alert .md-stat__value { color: var(--md-error); }
+
+/* Разбивка по типам / подразделениям */
+.md-breakdown {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+.md-breakdown__col {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    padding: 12px 14px;
+}
+.md-breakdown__title {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--md-on-surface-hint);
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.md-breakdown__list {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 4px;
+}
+.md-breakdown__list li {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 8px;
+    background: var(--md-surface-variant);
+    border-radius: var(--md-radius-sm);
+    font-size: 0.84rem;
+}
+.md-breakdown__list li b {
+    font-family: var(--md-font-mono);
+    font-weight: 700;
+    color: var(--md-primary-dark);
+}
+.md-empty {
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+    background: transparent !important;
+}
+
+/* ─── Тулбар с фильтрами ──────────────────────────────────── */
+.md-toolbar {
+    display: flex; gap: 10px; flex-wrap: wrap;
+}
+.md-search-input {
+    flex: 1; min-width: 240px;
+    padding: 8px 12px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface);
+    font-size: 0.86rem;
+    outline: none;
+    transition: border-color var(--md-duration-short);
+}
+.md-search-input:focus { border-color: var(--md-primary); }
+.md-toolbar select {
+    padding: 8px 12px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface);
+    font-size: 0.86rem;
+    outline: none;
+    cursor: pointer;
+}
+
+/* ─── Таблица ──────────────────────────────────────────────── */
+/* max-height + overflow-y делают список прокручиваемым отдельно
+   от шапки/дашборда — оператор видит итоги, не теряя контекст. */
+.md-list {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    overflow-y: auto;
+    overflow-x: auto;
+    max-height: 60vh;
+}
+.md-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+}
+.md-table thead th {
+    /* Sticky-шапка — при прокрутке таблицы заголовки остаются на месте. */
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--md-surface-variant);
+    padding: 10px 8px;
+    text-align: left;
+    font-size: 0.72rem; font-weight: 700;
+    color: var(--md-on-surface-variant);
+    text-transform: uppercase; letter-spacing: 0.03em;
+    border-bottom: 2px solid var(--md-outline-variant);
+    white-space: nowrap;
+}
+.md-table tbody td {
+    padding: 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    vertical-align: middle;
+}
+.md-table tbody tr:hover td { background: var(--md-surface-variant); }
+.md-row--overdue td { background: var(--md-error-light) !important; }
+.md-row--decommissioned td {
+    color: var(--md-on-surface-hint);
+    text-decoration: line-through;
+    background: var(--md-surface-variant);
+}
+.md-row--decommissioned .md-cell-actions { text-decoration: none; }
+
+.md-cell-inv  { font-family: var(--md-font-mono); font-weight: 700; white-space: nowrap; }
+.md-cell-type { white-space: nowrap; }
+.md-cell-cap  { font-family: var(--md-font-mono); white-space: nowrap; }
+.md-cell-class { font-size: 0.78rem; color: var(--md-on-surface-variant); }
+.md-cell-holder { color: var(--md-on-surface); min-width: 200px; }
+.md-cell-sub { font-size: 0.74rem; color: var(--md-on-surface-hint); margin-top: 2px; }
+.md-cell-actions {
+    display: flex; gap: 4px; align-items: center; justify-content: flex-end;
+    white-space: nowrap;
+}
+
+/* Статус-бейдж */
+.md-status {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: var(--md-radius-full);
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+}
+.md-status--available   { background: var(--md-success-light); color: var(--md-success); }
+.md-status--issued      { background: #dbeafe; color: #1e40af; }
+.md-status--broken      { background: var(--md-warning-light); color: var(--md-warning); }
+.md-status--written_off { background: #f1f5f9; color: #475569; }
+.md-status--lost        { background: var(--md-error-light); color: var(--md-error); }
+
+/* ─── Форма (вторичная модалка) ───────────────────────────── */
+.md-form-modal {
+    position: absolute; inset: 0;
+    background: rgba(0, 0, 0, 0.32);
+    display: flex; align-items: center; justify-content: center;
+    padding: 18px;
+    z-index: 1;
+}
+.md-form {
+    background: var(--md-surface);
+    border-radius: var(--md-radius-lg);
+    width: min(900px, 100%);
+    max-height: 90%;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+}
+.md-form__head {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    display: flex; justify-content: space-between; align-items: center;
+}
+.md-form__title {
+    font-family: var(--md-font-display);
+    font-size: 1rem; font-weight: 600;
+    color: var(--md-on-surface);
+}
+.md-form__body {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto;
+    padding: 18px 20px;
+}
+.md-form__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+.md-form__col-2    { grid-column: span 2; }
+.md-form__col-full { grid-column: 1 / -1; }
+.md-form__grid .field {
+    display: flex; flex-direction: column; gap: 4px;
+}
+.md-form__grid input,
+.md-form__grid select,
+.md-form__grid textarea {
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 7px 10px;
+    border-radius: var(--md-radius-sm);
+    font-size: 0.86rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short);
+}
+.md-form__grid input:focus,
+.md-form__grid select:focus,
+.md-form__grid textarea:focus {
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 2px rgba(74, 124, 111, 0.14);
+}
+.md-form__grid textarea { resize: vertical; min-height: 60px; }
+.md-form__foot {
+    padding: 14px 20px;
+    border-top: 1px solid var(--md-outline-variant);
+    display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* ─── Отчёт импорта ───────────────────────────────────────── */
+.md-import-summary {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 16px;
+}
+.md-import-stat {
+    padding: 6px 12px;
+    border-radius: var(--md-radius-full);
+    font-size: 0.82rem;
+    font-weight: 500;
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+}
+.md-import-stat b {
+    font-family: var(--md-font-mono);
+    margin-left: 4px;
+}
+.md-import-stat--ok   { background: var(--md-success-light); color: var(--md-success); }
+.md-import-stat--upd  { background: #dbeafe; color: #1e40af; }
+.md-import-stat--skip { background: #f1f5f9; color: #475569; }
+.md-import-stat--err  { background: var(--md-error-light); color: var(--md-error); }
+
+.md-import-errors {
+    background: var(--md-error-light);
+    border: 1px solid rgba(184, 84, 80, 0.24);
+    border-radius: var(--md-radius-md);
+    padding: 12px 14px;
+}
+.md-import-err-list {
+    list-style: none;
+    padding: 0; margin: 0;
+    max-height: 280px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 4px;
+}
+.md-import-err-list li {
+    font-size: 0.82rem;
+    color: var(--md-on-surface);
+    line-height: 1.4;
+}
+.md-import-err-list li b {
+    font-family: var(--md-font-mono);
+    color: var(--md-error);
+}
+
+/* ─── Группы по держателю (основная таблица) ──────────────── */
+.md-group-row {
+    background: var(--md-surface-container);
+    cursor: pointer;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.md-group-row:hover { background: var(--md-primary-light); }
+.md-group-row td {
+    padding: 8px 12px !important;
+    border-bottom: 0 !important;
+    background: transparent !important;
+}
+.md-group-row--standalone { cursor: default; background: var(--md-surface-variant); }
+.md-group-row--standalone:hover { background: var(--md-surface-variant); }
+
+.md-group-head {
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+}
+.md-group-chevron {
+    width: 14px; height: 14px;
+    color: var(--md-on-surface-hint);
+    transition: transform var(--md-duration-short);
+    flex-shrink: 0;
+}
+.md-group-row--open .md-group-chevron { transform: rotate(90deg); }
+.md-group-name {
+    font-family: var(--md-font-display);
+    font-weight: 600; font-size: 0.92rem;
+    color: var(--md-on-surface);
+}
+.md-group-name--muted { font-style: italic; color: var(--md-on-surface-hint); }
+.md-group-dept {
+    font-size: 0.74rem;
+    color: var(--md-on-surface-hint);
+    background: var(--md-surface);
+    padding: 1px 8px;
+    border-radius: var(--md-radius-full);
+    border: 1px solid var(--md-outline-variant);
+}
+.md-group-count {
+    margin-left: auto;
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+}
+.md-group-count b {
+    font-family: var(--md-font-mono);
+    color: var(--md-primary-dark);
+    font-size: 0.94rem;
+}
+.md-row--indented .md-cell-inv { padding-left: 28px !important; }
+
+
+/* ─── Чипы инв.№ под свёрнутой группой держателя ──────────── */
+/* Превью: оператор видит «у Иванова: 1-ДСП, 5-ДСП, 12-ДСП» сразу,
+   без раскрытия группы. Клик по чипу открывает конкретную флешку. */
+.md-group-chips {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin-top: 6px; padding-left: 26px;
+}
+.md-chip {
+    display: inline-flex; align-items: center;
+    font-family: var(--md-font-mono);
+    font-size: 0.74rem; font-weight: 500;
+    background: var(--md-surface);
+    color: var(--md-on-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-full);
+    padding: 2px 9px;
+    cursor: pointer;
+    transition: all var(--md-duration-short);
+    white-space: nowrap;
+}
+.md-chip:hover {
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+    border-color: var(--md-primary);
+}
+.md-chip--overdue {
+    background: var(--md-error-light);
+    color: var(--md-error);
+    border-color: rgba(184, 84, 80, 0.3);
+}
+
+
+/* ─── Кликабельная строка флешки + раскрывающаяся панель ──── */
+.md-item-row {
+    cursor: pointer;
+    transition: background var(--md-duration-short);
+}
+.md-item-row:hover td { background: var(--md-primary-light) !important; }
+.md-item-row--open td  {
+    background: var(--md-primary-light) !important;
+    border-bottom: 0 !important;
+}
+.md-row-chev {
+    width: 14px; height: 14px;
+    color: var(--md-on-surface-hint);
+    transition: transform var(--md-duration-short);
+}
+.md-cell-chev {
+    text-align: center;
+    width: 36px;
+}
+.md-item-row--open .md-row-chev {
+    transform: rotate(90deg);
+    color: var(--md-primary);
+}
+.md-cell-serial {
+    font-family: var(--md-font-mono);
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+    white-space: nowrap;
+}
+.md-cell-meta {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-hint);
+    white-space: nowrap;
+}
+
+.md-actions-row td {
+    padding: 0 !important;
+    background: var(--md-surface-container) !important;
+    border-bottom: 1px solid var(--md-outline-variant) !important;
+}
+.md-actions-panel {
+    padding: 12px 22px 14px 50px;
+    display: flex; flex-direction: column; gap: 10px;
+    border-left: 3px solid var(--md-primary);
+    background: linear-gradient(
+        to right,
+        var(--md-primary-light) 0%,
+        var(--md-surface-container) 80px
+    );
+    animation: md-slide-down 0.16s ease-out;
+}
+@keyframes md-slide-down {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.md-actions-meta {
+    font-size: 0.82rem;
+    color: var(--md-on-surface-variant);
+}
+.md-actions-meta b {
+    font-family: var(--md-font-mono);
+    color: var(--md-on-surface);
+}
+.md-actions-notes {
+    font-size: 0.82rem;
+    color: var(--md-on-surface-variant);
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    padding: 6px 10px;
+    line-height: 1.4;
+}
+.md-actions-buttons {
+    display: flex; flex-wrap: wrap; gap: 6px;
+}
+.md-act-btn {
+    font-size: 0.82rem !important;
+    padding: 5px 12px !important;
+}
+.md-act-btn--danger {
+    color: var(--md-error) !important;
+    margin-left: auto;
+}
+.md-act-btn--danger:hover {
+    background: var(--md-error-light) !important;
+}
+
+
+/* ─── Визард разрешения неоднозначных строк ───────────────── */
+.md-rs-hint {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    background: var(--md-warning-light);
+    border-left: 3px solid var(--md-warning);
+    border-radius: var(--md-radius-sm);
+    color: var(--md-on-surface-variant);
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+.md-rs-list {
+    display: flex; flex-direction: column; gap: 14px;
+}
+.md-rs-row {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    padding: 12px 14px;
+}
+.md-rs-row__head {
+    display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.md-rs-row__inv {
+    font-family: var(--md-font-mono); font-weight: 700;
+    color: var(--md-primary-dark);
+    background: var(--md-primary-light);
+    padding: 2px 8px;
+    border-radius: var(--md-radius-sm);
+}
+.md-rs-row__short {
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+.md-rs-row__hint {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-hint);
+    margin-left: auto;
+}
+.md-rs-row__count {
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+    padding: 2px 10px;
+    border-radius: var(--md-radius-full);
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+.md-rs-invs {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin-bottom: 10px;
+}
+.md-rs-inv {
+    font-family: var(--md-font-mono);
+    font-size: 0.74rem;
+    background: var(--md-surface-variant);
+    padding: 2px 8px;
+    border-radius: var(--md-radius-sm);
+    color: var(--md-on-surface-variant);
+}
+.md-rs-search {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px; padding: 8px 12px;
+    background: var(--md-surface-variant);
+    border-radius: var(--md-radius-sm);
+    position: relative;     /* нужен для fio-suggest-box (absolute) */
+}
+.md-rs-search__label {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+    flex-shrink: 0;
+}
+.md-rs-search__input {
+    flex: 1; min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    border-radius: var(--md-radius-sm);
+    font-size: 0.84rem;
+    outline: none;
+}
+.md-rs-search__input:focus { border-color: var(--md-primary); }
+.md-rs-manual-tag {
+    background: var(--md-warning-light);
+    color: var(--md-warning);
+    padding: 1px 6px;
+    border-radius: var(--md-radius-full);
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.md-rs-errors {
+    margin: 8px 0 14px;
+    padding: 8px 12px;
+    background: var(--md-error-light);
+    border-radius: var(--md-radius-sm);
+    font-size: 0.82rem;
+}
+.md-rs-errors summary { cursor: pointer; font-weight: 600; color: var(--md-error); }
+.md-rs-options, .md-rs-extra {
+    display: flex; flex-direction: column; gap: 4px;
+}
+.md-rs-extra { margin-top: 8px; }
+
+.md-rs-option {
+    display: flex; gap: 10px; align-items: center;
+    padding: 8px 12px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    cursor: pointer;
+    transition: background var(--md-duration-short),
+                border-color var(--md-duration-short);
+}
+.md-rs-option:hover { background: var(--md-surface-variant); }
+.md-rs-option--selected {
+    border-color: var(--md-primary);
+    background: var(--md-primary-light);
+}
+.md-rs-option--danger.md-rs-option--selected {
+    border-color: var(--md-error);
+    background: var(--md-error-light);
+}
+.md-rs-option input[type="radio"] {
+    width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--md-primary);
+}
+.md-rs-option__main { flex: 1; min-width: 0; }
+.md-rs-option__name {
+    font-size: 0.9rem; font-weight: 500;
+    color: var(--md-on-surface);
+}
+.md-rs-option__meta {
+    font-size: 0.74rem;
+    color: var(--md-on-surface-hint);
+    margin-top: 1px;
+}
+
+/* ─── Mobile ──────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .md-form__grid { grid-template-columns: 1fr; }
+    .md-form__col-2 { grid-column: 1; }
+    .md-table thead { display: none; }
+    .md-cell-actions { justify-content: flex-start; }
+}

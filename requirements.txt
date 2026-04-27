@@ -1,0 +1,49 @@
+# ─── Web framework ───────────────────────────────────────────────────────────
+fastapi>=0.115.0,<1.0.0
+
+# uvicorn[standard] уже включает websockets и httptools — отдельно не нужны
+uvicorn[standard]>=0.30.0,<1.0.0
+
+# ─── Database ─────────────────────────────────────────────────────────────────
+sqlalchemy>=2.0.0,<3.0.0
+psycopg2-binary>=2.9.0
+
+# ─── Validation ───────────────────────────────────────────────────────────────
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0,<3.0.0
+
+# ─── Auth / Security ──────────────────────────────────────────────────────────
+python-jose[cryptography]>=3.3.0
+
+# БАГ-ФИКС: bcrypt 4.x ломает passlib — оставляем проверенную комбинацию.
+# https://github.com/pypa/passlib/issues/689
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+
+# Нужен для OAuth2 form data (application/x-www-form-urlencoded)
+python-multipart>=0.0.9
+
+# ─── Document generation ──────────────────────────────────────────────────────
+python-docx>=1.1.0
+
+# ─── Migrations ───────────────────────────────────────────────────────────────
+alembic>=1.13.0
+
+# ─── Production server ────────────────────────────────────────────────────────
+gunicorn>=22.0.0
+
+# ─── Data parsing ─────────────────────────────────────────────────────────────
+openpyxl>=3.1.0
+
+# ─── Rate limiting (защита от brute-force на /login и DoS) ────────────────────
+slowapi>=0.1.9
+
+# ─── In-process TTL-кеш (справочники: positions, schedules, ...) ──────────────
+# Вместо Redis — держим кеш в памяти воркера, TTL 5 минут. При нескольких
+# воркерах gunicorn каждый держит свою копию (это ОК: справочники редкие).
+cachetools>=5.3.0
+
+# ─── QR-коды (модуль проф. подготовки) ────────────────────────────────────────
+# segno — pure-Python без зависимостей (≈100 KB), умеет SVG/PNG/Eps.
+# Альтернатива qrcode[pil] требует Pillow, что лишний bloat.
+segno>=1.5.0

@@ -1,0 +1,356 @@
+/* ============================================================
+   procurement.css — оверлей «Гос. закупки» отдела.
+   Дашборд (8 stat-карточек) + таблица контрактов + форма
+   создания/редактирования (вторичная модалка поверх оверлея).
+   ============================================================ */
+
+/* ─── Overlay ──────────────────────────────────────────────── */
+.pr-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.48);
+    z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: pr-fade 0.12s ease-out;
+}
+@keyframes pr-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.pr-dialog {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    width: min(1500px, 100%);
+    height: 94vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.26);
+}
+
+/* ─── Header ───────────────────────────────────────────────── */
+.pr-header {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; padding: 14px 22px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+}
+.pr-header__titles { flex: 1; min-width: 0; }
+.pr-header__title {
+    font-family: var(--md-font-display);
+    font-size: 1.1rem; font-weight: 600;
+    color: var(--md-on-surface);
+}
+.pr-header__subtitle {
+    font-size: 0.78rem; color: var(--md-on-surface-hint);
+    margin-top: 2px;
+}
+.pr-header__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ─── Body ─────────────────────────────────────────────────── */
+.pr-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px 22px 22px;
+    background: var(--md-background);
+    display: flex; flex-direction: column; gap: 18px;
+}
+.pr-loading, .pr-empty {
+    text-align: center; padding: 32px;
+    color: var(--md-on-surface-hint); font-size: 0.92rem;
+    background: var(--md-surface);
+    border: 1px dashed var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+}
+
+/* ─── Дашборд (карточки статистики) ────────────────────────── */
+.pr-dashboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+}
+.pr-stat {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-left: 3px solid var(--md-outline);
+    border-radius: var(--md-radius-md);
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 4px;
+    transition: border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short);
+}
+.pr-stat:hover {
+    border-color: var(--md-outline);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+.pr-stat__label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--md-on-surface-hint);
+    font-weight: 500;
+}
+.pr-stat__value {
+    font-family: var(--md-font-mono);
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--md-on-surface);
+}
+/* Цвета акцентов для разных статов */
+.pr-stat--lbo        { border-left-color: var(--md-primary); }
+.pr-stat--plan       { border-left-color: #94a3b8; }
+.pr-stat--tender     { border-left-color: #f59e0b; }
+.pr-stat--awarded    { border-left-color: #0ea5e9; }
+.pr-stat--contracted { border-left-color: var(--md-primary-dark); }
+.pr-stat--executed   { border-left-color: var(--md-success); }
+.pr-stat--ok         { border-left-color: var(--md-success); }
+.pr-stat--alert      {
+    border-left-color: var(--md-error);
+    background: var(--md-error-light);
+}
+.pr-stat--alert .pr-stat__value { color: var(--md-error); }
+.pr-stat--savings    { border-left-color: #16a34a; }
+.pr-stat--savings .pr-stat__value { color: #16a34a; }
+
+/* ─── Таблица контрактов ──────────────────────────────────── */
+.pr-list {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    overflow: hidden;
+}
+.pr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+}
+.pr-table thead th {
+    background: var(--md-surface-variant);
+    padding: 10px 8px;
+    text-align: left;
+    font-size: 0.72rem; font-weight: 700;
+    color: var(--md-on-surface-variant);
+    text-transform: uppercase; letter-spacing: 0.03em;
+    border-bottom: 2px solid var(--md-outline-variant);
+    white-space: nowrap;
+}
+.pr-table tbody td {
+    padding: 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    vertical-align: middle;
+}
+.pr-table tbody tr:hover td { background: var(--md-surface-variant); }
+.pr-cell-num     { font-family: var(--md-font-mono); font-weight: 600; }
+.pr-cell-date    { font-family: var(--md-font-mono); white-space: nowrap; color: var(--md-on-surface-variant); }
+.pr-cell-supplier { color: var(--md-on-surface); }
+.pr-cell-sub     { font-size: 0.74rem; color: var(--md-on-surface-hint); margin-top: 1px; }
+.pr-cell-subject { color: var(--md-on-surface); }
+.pr-cell-amount  {
+    font-family: var(--md-font-mono); font-weight: 600;
+    text-align: right; white-space: nowrap;
+    color: var(--md-on-surface);
+}
+.pr-cell-method  { font-size: 0.78rem; color: var(--md-on-surface-variant); }
+.pr-cell-actions {
+    display: flex; gap: 4px; justify-content: flex-end;
+    white-space: nowrap;
+}
+
+/* Статус-бейдж */
+.pr-status {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: var(--md-radius-full);
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+}
+.pr-status--plan       { background: #f1f5f9; color: #475569; }
+.pr-status--tender     { background: #fef3c7; color: #92400e; }
+.pr-status--awarded    { background: #dbeafe; color: #1e40af; }
+.pr-status--signed     { background: var(--md-primary-light); color: var(--md-primary-dark); }
+.pr-status--executing  { background: #ecfccb; color: #3f6212; }
+.pr-status--completed  { background: var(--md-success-light); color: var(--md-success); }
+.pr-status--terminated { background: var(--md-error-light); color: var(--md-error); }
+
+/* ─── Форма (вторичная модалка) ───────────────────────────── */
+.pr-form-modal {
+    position: absolute; inset: 0;
+    background: rgba(0, 0, 0, 0.32);
+    display: flex; align-items: center; justify-content: center;
+    padding: 18px;
+    z-index: 1;
+}
+.pr-form {
+    background: var(--md-surface);
+    border-radius: var(--md-radius-lg);
+    width: min(900px, 100%);
+    max-height: 90%;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+}
+.pr-form__head {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    display: flex; justify-content: space-between; align-items: center;
+}
+.pr-form__title {
+    font-family: var(--md-font-display);
+    font-size: 1rem; font-weight: 600;
+    color: var(--md-on-surface);
+}
+.pr-form__body {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto;
+    padding: 18px 20px;
+}
+.pr-form__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+.pr-form__col-2    { grid-column: span 2; }
+.pr-form__col-full { grid-column: 1 / -1; }
+.pr-form__grid .field {
+    display: flex; flex-direction: column; gap: 4px;
+}
+.pr-form__grid input,
+.pr-form__grid select,
+.pr-form__grid textarea {
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 7px 10px;
+    border-radius: var(--md-radius-sm);
+    font-size: 0.86rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short);
+}
+.pr-form__grid input:focus,
+.pr-form__grid select:focus,
+.pr-form__grid textarea:focus {
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 2px rgba(74, 124, 111, 0.14);
+}
+.pr-form__grid textarea { resize: vertical; min-height: 60px; }
+.pr-form__foot {
+    padding: 14px 20px;
+    border-top: 1px solid var(--md-outline-variant);
+    display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* ─── Вложения ────────────────────────────────────────────── */
+.pr-attach { display: flex; flex-direction: column; gap: 8px; }
+.pr-attach__head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 8px; flex-wrap: wrap;
+}
+.pr-attach__hint {
+    font-size: 0.72rem;
+    color: var(--md-on-surface-hint);
+}
+.pr-attach__list {
+    list-style: none;
+    padding: 0; margin: 0;
+    display: flex; flex-direction: column; gap: 4px;
+}
+.pr-attach__item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    transition: border-color var(--md-duration-short),
+                background var(--md-duration-short);
+}
+.pr-attach__item:hover { border-color: var(--md-outline); }
+.pr-attach__item--uploading { opacity: 0.7; }
+.pr-attach__empty {
+    padding: 8px 12px;
+    color: var(--md-on-surface-hint);
+    font-size: 0.82rem;
+    font-style: italic;
+}
+.pr-attach__icon { flex-shrink: 0; font-size: 1.1rem; line-height: 1; }
+.pr-attach__name {
+    flex: 1; min-width: 0;
+    background: none; border: none;
+    padding: 0; margin: 0;
+    color: var(--md-primary);
+    font-family: inherit; font-size: 0.86rem;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    transition: text-decoration-color var(--md-duration-short);
+}
+.pr-attach__name:hover { text-decoration-color: var(--md-primary); }
+.pr-attach__size {
+    flex-shrink: 0;
+    font-family: var(--md-font-mono);
+    font-size: 0.74rem;
+    color: var(--md-on-surface-hint);
+    white-space: nowrap;
+}
+.pr-attach__del {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    color: var(--md-on-surface-hint);
+    cursor: pointer;
+    font-size: 0.78rem;
+    transition: background var(--md-duration-short),
+                color var(--md-duration-short),
+                border-color var(--md-duration-short);
+}
+.pr-attach__del:hover {
+    background: var(--md-error-light);
+    color: var(--md-error);
+    border-color: var(--md-error);
+}
+
+.pr-attach__drop {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    padding: 18px;
+    border: 2px dashed var(--md-outline);
+    border-radius: var(--md-radius-md);
+    color: var(--md-on-surface-variant);
+    font-size: 0.84rem;
+    cursor: pointer;
+    background: var(--md-surface);
+    transition: border-color var(--md-duration-short),
+                background var(--md-duration-short),
+                color var(--md-duration-short);
+}
+.pr-attach__drop:hover,
+.pr-attach__drop--active {
+    border-color: var(--md-primary);
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+}
+
+.pr-attach-hint {
+    padding: 12px;
+    background: var(--md-surface-variant);
+    border-left: 3px solid var(--md-warning);
+    border-radius: var(--md-radius-sm);
+    color: var(--md-on-surface-variant);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+/* ─── Mobile ──────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .pr-form__grid { grid-template-columns: 1fr; }
+    .pr-form__col-2 { grid-column: 1; }
+    .pr-table thead { display: none; }
+    .pr-cell-actions { justify-content: flex-start; }
+}

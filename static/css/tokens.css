@@ -1,0 +1,107 @@
+/* ============================================================
+   tokens.css — Design Tokens, Reset, Base, Globals
+   (Scrollbar, Focus-visible, Animations, .hidden)
+   ============================================================ */
+
+/* ─── Design Tokens ───────────────────────────────────────── */
+:root {
+    /* Primary — Refined Slate-Green (вместо синего) */
+    --md-primary:            #4a7c6f;
+    --md-primary-dark:       #3a6358;
+    --md-primary-light:      #eef4f2;
+    --md-on-primary:         #ffffff;
+
+    /* Surface */
+    --md-surface:            #fafaf9;
+    --md-surface-variant:    #f5f4f2;
+    --md-surface-container:  #eeece9;
+    --md-background:         #f0ede8;
+
+    /* Text */
+    --md-on-surface:         #1c1a18;
+    --md-on-surface-variant: #4d4a46;
+    --md-on-surface-hint:    #9e9a94;
+
+    /* Semantic */
+    --md-success:            #4a7c6f;
+    --md-success-light:      #eef4f2;
+    --md-error:              #b85450;
+    --md-error-light:        #fdf0f0;
+    --md-warning:            #b07d3a;
+    --md-warning-light:      #fdf6ea;
+
+    /* Outline */
+    --md-outline:            #d5d2cc;
+    --md-outline-variant:    #e8e5e0;
+
+    /* Shape */
+    --md-radius-xs:  4px;
+    --md-radius-sm:  6px;
+    --md-radius-md:  8px;
+    --md-radius-lg:  10px;
+    --md-radius-xl:  16px;
+    --md-radius-full: 9999px;
+
+    /* Motion */
+    --md-motion-standard:    cubic-bezier(0.4, 0, 0.2, 1);
+    --md-motion-emphasized:  cubic-bezier(0.4, 0, 0.2, 1);
+    --md-duration-short:     140ms;
+    --md-duration-medium:    220ms;
+    --md-duration-long:      360ms;
+
+    /* Typography scale */
+    --md-font-display: 'IBM Plex Sans', 'Roboto', sans-serif;
+    --md-font-body:    'IBM Plex Sans', 'Roboto', sans-serif;
+    --md-font-mono:    'IBM Plex Mono', monospace;
+}
+
+/* ─── Reset & Base ────────────────────────────────────────── */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    font-family: var(--md-font-body);
+    background-color: var(--md-background);
+    color: var(--md-on-surface);
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+/* ─── Animations ──────────────────────────────────────────── */
+@keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.page > * {
+    animation: fade-in-up var(--md-duration-long) var(--md-motion-emphasized) both;
+}
+
+.page > *:nth-child(1) { animation-delay: 0ms; }
+.page > *:nth-child(2) { animation-delay: 40ms; }
+.page > *:nth-child(3) { animation-delay: 80ms; }
+
+/* ─── Scrollbar global ────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--md-outline); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #bab6b0; }
+
+
+/* ─── Focus visible (a11y) ────────────────────────────────── */
+:focus-visible {
+    outline: 2px solid var(--md-primary);
+    outline-offset: 2px;
+}
+

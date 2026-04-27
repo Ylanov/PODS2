@@ -1,0 +1,1059 @@
+/* ============================================================
+   editor.css — Редактор шаблонов: layout, sidebar, tools bars,
+   редактор столбцов, полировка и связанные элементы
+   ============================================================ */
+
+/* ─── Positions List ──────────────────────────────────────── */
+.positions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 170px;
+    overflow-y: auto;
+    margin: 6px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--md-outline) transparent;
+}
+
+.positions-list::-webkit-scrollbar { width: 3px; }
+.positions-list::-webkit-scrollbar-thumb {
+    background: var(--md-outline);
+    border-radius: 2px;
+}
+
+.position-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+    padding: 6px 9px;
+    background: var(--md-surface-variant);
+    border-radius: var(--md-radius-sm);
+    border: 1px solid var(--md-outline-variant);
+    font-size: 0.78rem;
+    color: var(--md-on-surface);
+    transition: background var(--md-duration-short);
+}
+
+.position-item:hover { background: var(--md-surface-container); }
+
+.position-item span {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+
+/* ─── Editor Panel ────────────────────────────────────────── */
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.editor-toolbar__left { display: flex; flex-direction: column; gap: 2px; }
+
+.editor-toolbar__right {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-shrink: 0;
+}
+
+.editor-body { padding: 18px; overflow-x: auto; }
+
+.editor-title {
+    font-family: var(--md-font-display);
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--md-on-surface);
+    padding: 12px 0 10px;
+    letter-spacing: -0.01em;
+}
+
+
+/* ─── Template toggle (editor) ───────────────────────────── */
+#editor-template-toggle-wrap label {
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-radius-full);
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: background var(--md-duration-short);
+}
+
+#editor-template-toggle-wrap label:hover {
+    background: var(--md-surface-container);
+}
+
+#editor-template-toggle-wrap span {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--md-primary-dark);
+}
+
+
+/* ─── Tools Bar (горизонтальная панель инструментов) ──────── */
+
+.tools-bar {
+    margin-bottom: 16px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    overflow: visible;
+    position: relative;
+    z-index: 10;
+}
+
+.tools-bar__buttons {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 10px;
+    flex-wrap: wrap;
+}
+
+.tools-bar__sep {
+    width: 1px;
+    height: 22px;
+    background: var(--md-outline-variant);
+    margin: 0 6px;
+    flex-shrink: 0;
+}
+
+/* Кнопка-триггер */
+.tool-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    height: 32px;
+    border: 1px solid transparent;
+    border-radius: var(--md-radius-sm);
+    background: transparent;
+    color: var(--md-on-surface-variant);
+    font-family: var(--md-font-body);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--md-duration-short);
+    white-space: nowrap;
+}
+
+.tool-trigger:hover {
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface);
+}
+
+.tool-trigger.active {
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+    border-color: #c5ddd8;
+}
+
+.tool-trigger.active .tool-trigger__chevron {
+    transform: rotate(180deg);
+}
+
+.tool-trigger__chevron {
+    opacity: 0.5;
+    transition: transform var(--md-duration-short);
+    flex-shrink: 0;
+}
+
+.tool-trigger--export {
+    margin-left: auto;
+}
+
+/* Раскрывающаяся панель */
+.tools-panel {
+    display: none;
+    border-top: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-variant);
+    border-radius: 0 0 var(--md-radius-lg) var(--md-radius-lg);
+    overflow: hidden;
+    animation: panel-open var(--md-duration-medium) var(--md-motion-emphasized) both;
+}
+
+.tools-panel.open {
+    display: block;
+}
+
+/* ─── Редактор шаблонов: layout sidebar + right panel ─────────────────── */
+/* Двухколоночный grid: sidebar слева (фиксированная ширина), редактор
+   справа занимает всё оставшееся место. Grid надёжнее flex для sticky-
+   сайдбара — не схлопывается и не переносит редактор на новую строку. */
+.editor-layout {
+    display: grid !important;
+    grid-template-columns: 240px minmax(0, 1fr) !important;
+    gap: 12px;
+    align-items: start;
+    width: 100%;
+}
+.editor-layout > .editor-sidebar {
+    grid-column: 1;
+    width: 100%;
+    align-self: start;
+    position: sticky;
+    top: 16px;
+    padding: 10px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    box-shadow: none;
+    margin-bottom: 0;
+}
+.editor-layout > .editor-main {
+    grid-column: 2;
+    min-width: 0;
+    width: 100%;
+}
+
+/* На узких экранах (планшеты/телефоны) — одна колонка, сайдбар сверху */
+@media (max-width: 900px) {
+    .editor-layout {
+        grid-template-columns: 1fr !important;
+    }
+    .editor-layout > .editor-sidebar,
+    .editor-layout > .editor-main {
+        grid-column: 1;
+    }
+    .editor-layout > .editor-sidebar {
+        position: static;
+    }
+}
+
+/* ─── Вертикальный tools-bar (редактор шаблонов, sidebar) ───────────────── */
+/* Кнопки выстраиваются в колонку, панели всплывают справа от sidebar
+   как поповер — так sidebar остаётся узким, а у развёрнутой панели
+   достаточно места для форм. */
+.tools-bar--vertical {
+    position: relative;
+    margin-bottom: 0;
+}
+.tools-bar--vertical .tools-bar__buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 0;
+    flex-wrap: nowrap;
+}
+.tools-bar--vertical .tools-bar__sep {
+    width: 100%;
+    height: 1px;
+    margin: 4px 0;
+}
+.tools-bar--vertical .tool-trigger {
+    height: 36px;
+    width: 100%;
+    justify-content: space-between;
+    padding: 0 10px;
+}
+.tools-bar--vertical .tool-trigger.active .tool-trigger__chevron {
+    transform: rotate(-90deg);  /* Указывает вправо — туда где открылся поповер */
+}
+
+.tools-bar--vertical .tools-panel {
+    /* Поповер справа от sidebar: top совпадает с верхом sidebar,
+       слева от self = правый край sidebar + отступ. */
+    position: absolute;
+    top: 0;
+    left: calc(100% + 10px);
+    min-width: 360px;
+    max-width: min(520px, calc(100vw - 280px));
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
+    z-index: 50;
+}
+.tools-bar--vertical .tools-panel.open {
+    display: block;
+}
+
+/* Панели с широким содержимым (7-дневная сетка расписания) — шире базового 520px.
+   Попап растягивается до правого края редактора, а на узких экранах ужимается,
+   не вываливаясь за вьюпорт. На < 900px грид всё равно схлопывается в 4 колонки
+   (см. schedule.css), так что 760px включается только на нормальной ширине. */
+.tools-bar--vertical #panel-schedule {
+    min-width: min(760px, calc(100vw - 280px));
+    max-width: calc(100vw - 280px);
+    width: max-content;
+}
+
+@keyframes panel-open {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.tools-panel__inner {
+    padding: 14px 18px;
+}
+
+.tools-panel__row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.tools-panel__row--positions {
+    align-items: flex-start;
+}
+
+/* Чекбокс-лейбл внутри панели */
+.tools-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding-bottom: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--md-on-surface-variant);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.tools-checkbox-label input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+}
+
+/* Инлайн список должностей (горизонтальный, теги) */
+.positions-list-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    flex: 1;
+    min-width: 200px;
+    padding-bottom: 4px;
+}
+
+.positions-list-inline .position-item {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+}
+
+.positions-list-inline .hint {
+    font-size: 0.75rem;
+    padding: 5px 8px;
+    border-radius: var(--md-radius-sm);
+}
+
+
+/* ─── Group header в редакторе ───────────────────────────────── */
+.group-header__name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--md-primary-dark);
+    letter-spacing: 0.01em;
+}
+
+
+/* ─── Блок дежурного в панели выгрузки ───────────────────── */
+
+.duty-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.duty-block__label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--md-on-surface-hint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.duty-block__fields {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ─── Редактор столбцов ───────────────────────────────────── */
+
+.col-editor-panel {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-radius-md);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+
+.col-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.col-editor-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--md-on-surface);
+}
+
+.col-editor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+}
+
+.col-editor-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    transition: background .15s;
+}
+
+.col-editor-row:hover { background: var(--md-primary-light, #e8f0fe); }
+
+.col-visible-wrap {
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.col-visible-wrap input[type="checkbox"] { display: none; }
+
+.col-visible-eye {
+    font-size: 1rem;
+    line-height: 1;
+    user-select: none;
+    opacity: 0.7;
+    transition: opacity .15s;
+}
+
+.col-visible-wrap:hover .col-visible-eye { opacity: 1; }
+
+.col-label-input {
+    flex: 1;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    padding: 3px 7px;
+    font-size: 0.82rem;
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    min-width: 0;
+}
+
+.col-label--hidden {
+    opacity: 0.45;
+    text-decoration: line-through;
+}
+
+.col-move-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex-shrink: 0;
+}
+
+.btn-tiny {
+    padding: 1px 5px;
+    font-size: 0.7rem;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 3px;
+    background: var(--md-surface);
+    cursor: pointer;
+    line-height: 1.4;
+    color: var(--md-on-surface);
+}
+
+.btn-tiny:hover:not(:disabled) { background: var(--md-primary-light, #e8f0fe); }
+.btn-tiny:disabled { opacity: 0.3; cursor: default; }
+
+.col-std-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    color: var(--md-on-surface-hint);
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.col-editor-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--md-outline-variant);
+}
+
+
+/* ============================================================
+   Editor polish — тонкая шлифовка (бывший editor-polish.css)
+   Внимание: мёртвый .admin-mode-banner удалён (класс не
+   использовался ни в HTML, ни в JS).
+   ============================================================ */
+
+/* static/editor-polish.css
+   Полировка вкладки «Редактор шаблонов»:
+   - двухколоночный layout: сайдбар слева, редактор справа
+   - сайдбар — аккуратный список шаблонов с поиском и inline-созданием
+   - баннер режима заполнения (перенесён из editor-overview.css) */
+
+/* Скрываем старый dropdown «Шаблон» в editor-toolbar — сайдбар его заменяет.
+   Кнопка «↻» (load-editor-btn) тоже лишняя: клик по карточке сразу загружает. */
+#tab-editor .editor-toolbar__right { display: none; }
+
+/* ── Блок «Шаблоны» внутри левого сайдбара ────────────────────────────────── */
+/* #editor-sidebar теперь вложен в <aside class="editor-sidebar tools-bar--vertical">
+   (см. static/index.html) — он сам не sticky, sticky уже у родителя.
+   Высоту ограничиваем через max-height, чтобы список шаблонов скроллился
+   независимо, а кнопки инструментов оставались видны внизу сайдбара. */
+#editor-sidebar {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md, 12px);
+    display: flex;
+    flex-direction: column;
+    max-height: 60vh;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+@media (max-width: 900px) {
+    #editor-sidebar {
+        max-height: 300px;
+    }
+}
+
+.es-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.es-head__title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--md-on-surface);
+}
+.es-head__count {
+    font-size: 0.72rem;
+    color: var(--md-on-surface-variant);
+    background: var(--md-surface-variant);
+    padding: 1px 7px;
+    border-radius: 10px;
+    min-width: 22px;
+    text-align: center;
+}
+
+.es-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    color: var(--md-on-surface-hint);
+}
+.es-search__input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    color: var(--md-on-surface);
+    font-size: 0.82rem;
+    padding: 2px 0;
+}
+.es-search__input::placeholder { color: var(--md-on-surface-hint); }
+
+.es-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.es-card {
+    display: block;
+    text-align: left;
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.82rem;
+    color: var(--md-on-surface);
+    line-height: 1.3;
+    transition: background 0.1s, border-color 0.1s;
+}
+.es-card:hover {
+    background: var(--md-surface-variant);
+    border-color: var(--md-outline-variant);
+}
+.es-card--active {
+    background: rgba(74, 124, 111, 0.12);
+    border-color: var(--md-primary);
+    color: var(--md-primary-dark, #2f5a4f);
+    font-weight: 500;
+}
+.es-card__title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.es-empty {
+    font-size: 0.76rem;
+    color: var(--md-on-surface-hint);
+    text-align: center;
+    padding: 20px 10px;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.es-create {
+    border-top: 1px solid var(--md-outline-variant);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--md-surface-variant);
+}
+.es-create__input {
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    outline: none;
+    width: 100%;
+}
+.es-create__input:focus { border-color: var(--md-primary); }
+.es-create__btn {
+    background: var(--md-primary);
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 500;
+    transition: filter 0.12s;
+}
+.es-create__btn:hover { filter: brightness(0.94); }
+
+/* ── Кнопка «Из пресета…» под блоком создания ─────────────────────────────── */
+.es-preset-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: calc(100% - 20px);
+    margin: 6px 10px 10px;
+    padding: 7px 10px;
+    background: transparent;
+    border: 1px dashed var(--md-outline);
+    border-radius: 6px;
+    color: var(--md-on-surface-variant);
+    font-size: 0.76rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.es-preset-btn:hover {
+    background: var(--md-primary-light);
+    border-color: var(--md-primary);
+    color: var(--md-primary-dark);
+    border-style: solid;
+}
+
+/* ── Модалка выбора пресета ───────────────────────────────────────────────── */
+.preset-picker__overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: preset-fade-in 0.18s ease-out;
+}
+@keyframes preset-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.preset-picker {
+    background: var(--md-surface);
+    border-radius: var(--md-radius-lg);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+    width: min(820px, calc(100vw - 40px));
+    max-height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.preset-picker__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 22px 12px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.preset-picker__title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    margin: 0;
+}
+.preset-picker__close {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--md-on-surface-hint);
+    font-size: 1.1rem;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    transition: background 0.12s;
+}
+.preset-picker__close:hover {
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface);
+}
+
+.preset-picker__hint {
+    padding: 12px 22px 0;
+    font-size: 0.82rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.5;
+    margin: 0;
+}
+
+.preset-picker__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    padding: 16px 22px 22px;
+    overflow-y: auto;
+}
+
+.preset-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 14px 12px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: border-color 0.12s, box-shadow 0.12s, transform 0.08s;
+}
+.preset-card:hover {
+    border-color: var(--md-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.preset-card:active { transform: translateY(1px); }
+
+.preset-card__name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+.preset-card__desc {
+    flex: 1;
+    font-size: 0.76rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.45;
+}
+.preset-card__stats {
+    display: flex;
+    gap: 10px;
+    font-size: 0.72rem;
+    color: var(--md-on-surface-hint);
+    padding-top: 4px;
+    border-top: 1px dashed var(--md-outline-variant);
+    margin-top: 2px;
+}
+
+/* ── Tools-bar: убираем «Новый список» и «Группа» ─────────────────────────── */
+/* Обе функции теперь inline:
+     «Новый список» → поле внизу сайдбара.
+     «Группа»      → строка «+ Добавить группу» в конце таблицы редактора.
+   Скрываем их кнопки и раскрывающиеся панели чтобы не дублировать. */
+#tab-editor .tool-trigger[data-panel="panel-new-list"],
+#tab-editor .tool-trigger[data-panel="panel-group"],
+#tab-editor #panel-new-list,
+#tab-editor #panel-group { display: none !important; }
+
+/* ── Inline «+ Добавить группу» в конце таблицы редактора ─────────────────── */
+.group-header--add td {
+    background: var(--md-surface) !important;
+    padding: 10px 14px !important;
+    border-top: 1px dashed var(--md-outline-variant);
+}
+
+.add-group-stub {
+    display: flex;
+    justify-content: center;
+}
+.add-group-trigger {
+    min-width: 200px;
+    color: var(--md-primary);
+    border-color: var(--md-outline-variant);
+    background: transparent;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.add-group-trigger:hover {
+    background: rgba(74, 124, 111, 0.08);
+    border-color: var(--md-primary);
+}
+
+.add-group-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.add-group-form.hidden { display: none; }
+.add-group-input {
+    flex: 1;
+    max-width: 360px;
+    min-width: 220px;
+    border: 1px solid var(--md-primary);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    outline: none;
+}
+.add-group-input:focus {
+    box-shadow: 0 0 0 2px rgba(74, 124, 111, 0.18);
+}
+.add-group-submit[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ── Subtoolbar редактора: поиск занимает максимум, фильтры справа ─────────── */
+#editor-subtoolbar {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto;
+    grid-template-areas:
+        "search filters"
+        "stats  stats";
+    gap: 10px 14px;
+    padding: 10px 18px;
+    background: var(--md-surface-variant);
+    border-bottom: 1px solid var(--md-outline-variant);
+    align-items: center;
+}
+@media (max-width: 700px) {
+    #editor-subtoolbar {
+        grid-template-columns: 1fr;
+        grid-template-areas: "search" "filters" "stats";
+    }
+}
+
+/* Поле поиска: полная ширина колонки */
+.editor-sub__search {
+    grid-area: search;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.editor-sub__search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--md-on-surface-hint);
+    pointer-events: none;
+}
+#editor-search-input {
+    width: 100%;
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 7px 12px 7px 32px;   /* место под иконку слева */
+    border-radius: var(--md-radius-sm, 8px);
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+#editor-search-input:focus {
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 3px rgba(74, 124, 111, 0.12);
+}
+#editor-search-input::placeholder { color: var(--md-on-surface-hint); }
+
+/* Фильтры: управление / пустые / сброс */
+.editor-sub__filters {
+    grid-area: filters;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+#editor-filter-dept {
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 6px 8px;
+    border-radius: var(--md-radius-sm, 8px);
+    font-size: 0.82rem;
+    min-width: 160px;
+    cursor: pointer;
+}
+#editor-filter-dept:focus { border-color: var(--md-primary); outline: none; }
+
+/* Строка статистики — отдельная, не конкурирует с поиском */
+.editor-sub__stats {
+    grid-area: stats;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Графики нарядов: rename + блок действий (edit/del) ───────────────────── */
+.duty-sched-item__actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+.duty-sched-item:hover .duty-sched-item__actions,
+.duty-sched-item--active .duty-sched-item__actions {
+    opacity: 1;
+}
+.duty-sched-item__edit,
+.duty-sched-item__save,
+.duty-sched-item__cancel {
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s, color 0.12s;
+    flex-shrink: 0;
+    padding: 0;
+    line-height: 1;
+}
+.duty-sched-item__edit {
+    color: var(--md-on-surface-variant);
+}
+.duty-sched-item__edit:hover {
+    background: var(--md-surface-variant);
+    color: var(--md-primary);
+}
+.duty-sched-item__save {
+    color: var(--md-success, #1D9E75);
+}
+.duty-sched-item__save:hover {
+    background: rgba(29, 158, 117, 0.14);
+}
+.duty-sched-item__cancel {
+    color: var(--md-on-surface-hint);
+}
+.duty-sched-item__cancel:hover {
+    background: var(--md-surface-variant);
+    color: var(--md-error);
+}
+
+/* В режиме редактирования actions всегда видны — без hover-зависимости */
+.duty-sched-item:has(.duty-sched-item__rename-input) .duty-sched-item__actions {
+    opacity: 1;
+}
+
+.duty-sched-item__rename-input {
+    width: 100%;
+    border: 1px solid var(--md-primary);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(74, 124, 111, 0.14);
+}
+
+/* ── Расписание: счётчик назначений и кнопка очистки дня ──────────────────── */
+
+/* Синий бейдж «назначено N» — отличается от зелёного "countBadge"
+   (уже созданные списки) чтобы их не путать. */
+.sched-assigned-badge {
+    font-size: 0.62rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: rgba(74, 124, 111, 0.14);
+    color: var(--md-primary-dark, #2f5a4f);
+    min-width: 16px;
+    text-align: center;
+    line-height: 1.4;
+}
+
+/* ✕ в шапке дня — очистка назначений ИМЕННО этого дня */
+.sched-day-clear {
+    background: transparent;
+    border: none;
+    color: var(--md-on-surface-hint);
+    cursor: pointer;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    padding: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    transition: background 0.12s, color 0.12s;
+}
+.sched-day-clear:hover {
+    background: rgba(226, 75, 74, 0.12);
+    color: var(--md-error);
+}
+

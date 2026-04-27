@@ -1,0 +1,13 @@
+# Запрещаем автоконверсию CRLF в файлах которые должны быть LF.
+# Shell-скрипты с CRLF ломают bash/sh внутри Linux-контейнеров:
+#   "/bin/sh^M: bad interpreter"  — в начале строки shebang появляется \r.
+*.sh             text eol=lf
+Dockerfile       text eol=lf
+entrypoint.sh    text eol=lf
+
+# Python и всё остальное — нормализуем line endings при коммите
+*.py             text
+*.yml            text
+*.yaml           text
+*.json           text
+*.md             text

@@ -1,0 +1,902 @@
+/* ============================================================
+   duty.css — Графики наряда (duty schedules)
+   Основной layout + полировка из duty-grid.css
+   ============================================================ */
+
+/* ─────────────────────────────────────────────────────────────
+   Графики наряда — все стили
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Layout ─────────────────────────────────────────────────── */
+.duty-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 18px;
+    align-items: start;
+    min-height: 400px;
+}
+
+@media (max-width: 700px) {
+    .duty-layout { grid-template-columns: 1fr; }
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.duty-sidebar {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    overflow: hidden;
+}
+
+.duty-sidebar__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--md-primary);
+}
+
+.duty-sidebar__title {
+    font-family: var(--md-font-display);
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.92);
+    letter-spacing: 0.02em;
+}
+
+.duty-sidebar__body {
+    padding: 14px;
+}
+
+/* ── Create form ─────────────────────────────────────────────── */
+.duty-create-form {
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    padding: 12px;
+    margin-bottom: 10px;
+}
+
+/* ── Schedule items ──────────────────────────────────────────── */
+.duty-sched-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 10px;
+    border-radius: var(--md-radius-sm);
+    cursor: pointer;
+    transition: background var(--md-duration-short);
+    border: 1px solid transparent;
+    margin-bottom: 4px;
+}
+
+.duty-sched-item:hover {
+    background: var(--md-surface-container);
+}
+
+.duty-sched-item--active {
+    background: var(--md-primary-light);
+    border-color: var(--md-primary);
+}
+
+.duty-sched-item__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.duty-sched-item__title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.duty-sched-item__pos {
+    font-size: 0.7rem;
+    color: var(--md-on-surface-hint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.duty-sched-item__del {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--md-error);
+    font-size: 0.72rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity var(--md-duration-short), background var(--md-duration-short);
+}
+
+.duty-sched-item:hover .duty-sched-item__del {
+    opacity: 1;
+}
+
+.duty-sched-item__del:hover {
+    background: var(--md-error-light);
+}
+
+/* ── Grid panel ──────────────────────────────────────────────── */
+.duty-grid-panel {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    overflow: hidden;
+}
+
+/* Empty state */
+.duty-grid-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 64px 24px;
+    color: var(--md-on-surface-hint);
+    font-size: 0.875rem;
+}
+
+/* Toolbar */
+.duty-grid-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.duty-month-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.duty-month-label {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--md-on-surface);
+    min-width: 160px;
+    text-align: center;
+    letter-spacing: -0.01em;
+}
+
+/* Person search */
+.duty-person-search {
+    margin: 10px 16px;
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-radius-sm);
+    overflow: hidden;
+}
+
+.duty-person-search__input {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: var(--md-surface);
+    font-size: 0.85rem;
+    color: var(--md-on-surface);
+    outline: none;
+}
+
+.duty-person-results {
+    border-top: 1px solid var(--md-outline-variant);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.duty-person-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background var(--md-duration-short);
+}
+
+.duty-person-result:hover {
+    background: var(--md-primary-light);
+}
+
+.duty-person-result__name {
+    font-size: 0.83rem;
+    color: var(--md-on-surface);
+    flex: 1;
+}
+
+.duty-person-result__rank {
+    font-size: 0.71rem;
+    padding: 2px 6px;
+    border-radius: var(--md-radius-full);
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    white-space: nowrap;
+}
+
+/* Grid wrap — horizontal scroll */
+.duty-grid-wrap {
+    overflow-x: auto;
+    padding: 12px 16px 0;
+}
+
+/* ── The actual grid table ───────────────────────────────────── */
+.duty-grid {
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    min-width: max-content;
+}
+
+/* Column headers (day numbers) */
+.duty-grid__name-hdr {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--md-surface-container);
+    text-align: left;
+    padding: 6px 12px 6px 8px;
+    font-weight: 700;
+    color: var(--md-on-surface-hint);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    border-right: 2px solid var(--md-outline-variant);
+    border-bottom: 2px solid var(--md-outline-variant);
+    white-space: nowrap;
+}
+
+.duty-grid__day-hdr {
+    width: 32px;
+    min-width: 28px;
+    max-width: 36px;
+    text-align: center;
+    padding: 5px 2px;
+    font-weight: 600;
+    color: var(--md-on-surface-hint);
+    font-size: 0.72rem;
+    border-bottom: 2px solid var(--md-outline-variant);
+    border-right: 1px solid var(--md-outline-variant);
+    user-select: none;
+}
+
+.duty-grid__day-hdr--weekend {
+    background: var(--md-surface-variant);
+    color: var(--md-error);
+}
+
+.duty-grid__day-hdr--today {
+    background: var(--md-primary);
+    color: #fff;
+    border-radius: 4px 4px 0 0;
+}
+
+/* Name cell (sticky left column) */
+.duty-grid__name-cell {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--md-surface);
+    border-right: 2px solid var(--md-outline-variant);
+    border-bottom: 1px solid var(--md-outline-variant);
+    padding: 0;
+    min-width: 200px;
+    max-width: 240px;
+}
+
+.duty-grid__name-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 8px;
+}
+
+.duty-grid__remove-person {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--md-error);
+    font-size: 0.65rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--md-duration-short), background var(--md-duration-short);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+}
+
+tr:hover .duty-grid__remove-person {
+    opacity: 0.7;
+}
+
+.duty-grid__remove-person:hover {
+    opacity: 1 !important;
+    background: var(--md-error-light);
+}
+
+.duty-grid__name-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.duty-grid__rank {
+    font-size: 0.65rem;
+    color: var(--md-on-surface-hint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.duty-grid__fullname {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Data cells */
+.duty-grid__cell {
+    width: 32px;
+    min-width: 28px;
+    height: 32px;
+    text-align: center;
+    vertical-align: middle;
+    border-right: 1px solid var(--md-outline-variant);
+    border-bottom: 1px solid var(--md-outline-variant);
+    cursor: pointer;
+    transition: background var(--md-duration-short);
+    user-select: none;
+}
+
+.duty-grid__cell:hover {
+    background: var(--md-primary-light);
+}
+
+.duty-grid__cell--weekend {
+    background: var(--md-surface-variant);
+}
+
+.duty-grid__cell--weekend:hover {
+    background: #ddf0ea;
+}
+
+.duty-grid__cell--today {
+    background: rgba(74,124,111,0.08);
+}
+
+.duty-grid__cell--on {
+    background: #1a1a1a;
+}
+
+.duty-grid__cell--on:hover {
+    background: #333;
+}
+
+.duty-grid__cell--on.duty-grid__cell--today {
+    background: #1a1a1a;
+}
+
+.duty-grid__mark {
+    color: #fff;
+    font-size: 1rem;
+    line-height: 1;
+    pointer-events: none;
+}
+
+/* Zebra stripes */
+.duty-grid tbody tr:nth-child(even) .duty-grid__name-cell {
+    background: var(--md-surface-container);
+}
+
+.duty-grid tbody tr:nth-child(even) .duty-grid__cell {
+    background: rgba(0,0,0,0.02);
+}
+
+.duty-grid tbody tr:nth-child(even) .duty-grid__cell--weekend {
+    background: var(--md-surface-variant);
+}
+
+.duty-grid tbody tr:nth-child(even) .duty-grid__cell--on {
+    background: #1a1a1a;
+}
+
+/* Hint below grid */
+.duty-grid-hint {
+    font-size: 0.72rem;
+    color: var(--md-on-surface-hint);
+    padding: 10px 16px 14px;
+    line-height: 1.5;
+}
+
+/* ── Боевой расчёт — стили ──────────────────────────────────────────── */
+
+/* Layout */
+.cc-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 16px;
+    align-items: start;
+}
+@media (max-width: 700px) { .cc-layout { grid-template-columns: 1fr; } }
+
+/* ── Sidebar ────────────────────────────────────────────────────────── */
+.cc-sidebar {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    overflow: hidden;
+}
+.cc-sidebar__header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    background: var(--md-primary);
+}
+.cc-sidebar__title {
+    font-family: var(--md-font-display);
+    font-size: 0.84rem; font-weight: 600;
+    color: rgba(255,255,255,0.92); letter-spacing: 0.02em;
+}
+.cc-sidebar__body { padding: 12px; }
+
+/* Admin create form */
+.cc-create-form {
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    padding: 12px; margin-bottom: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+}
+
+/* Группа дат в левом меню */
+.cc-date-group { margin-bottom: 14px; }
+
+.cc-date-group__header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--md-on-surface-variant);
+    padding: 6px 8px 6px;
+    border-bottom: 2px solid var(--md-outline-variant);
+    margin-bottom: 6px;
+    letter-spacing: 0.01em;
+}
+
+.cc-date-group__header--today {
+    color: var(--md-primary-dark);
+    border-bottom-color: #c5ddd8;
+}
+
+/* Бейдж "Сегодня" */
+.cc-today-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    background: var(--md-primary);
+    color: #fff;
+    border-radius: var(--md-radius-full);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-left: auto; /* Прижимает бейдж к правому краю */
+    box-shadow: 0 1px 3px rgba(74, 124, 111, 0.2);
+}
+
+.cc-inst-card {
+    display: flex;
+    flex-direction: column; /* Выстраиваем заголовок и кнопки вертикально */
+    align-items: stretch;   /* Растягиваем на всю ширину */
+    gap: 6px;
+    padding: 8px;
+    border-radius: var(--md-radius-sm);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all var(--md-duration-short);
+    margin-bottom: 4px;
+    overflow: hidden; /* Обрезаем всё, что пытается вылезти за края */
+}
+.cc-inst-card:hover { background: var(--md-surface-container); }
+.cc-inst-card--active {
+    background: var(--md-primary-light);
+    border-color: var(--md-primary);
+}
+.cc-inst-card__body {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 2px;
+}
+.cc-inst-card__title {
+    font-size: 0.8rem; font-weight: 500;
+    color: var(--md-on-surface);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cc-inst-card__actions { display: flex; gap: 3px; flex-shrink: 0; }
+
+/* Badges */
+.cc-badge {
+    font-size: 0.65rem; font-weight: 600;
+    padding: 1px 6px; border-radius: var(--md-radius-full);
+    border: 1px solid; white-space: nowrap;
+}
+.cc-badge--draft  { background: var(--md-surface-variant); color: var(--md-on-surface-hint); border-color: var(--md-outline-variant); }
+.cc-badge--active { background: #e6f5ee; color: #2a7a4b; border-color: #b3d9c5; }
+.cc-badge--closed { background: #fff0e0; color: #b55a00; border-color: #f0cfa0; }
+
+/* ── View panel ─────────────────────────────────────────────────────── */
+.cc-view-panel {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    overflow: hidden;
+}
+.cc-view-empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; padding: 64px 24px;
+    color: var(--md-on-surface-hint); font-size: 0.875rem;
+}
+.cc-view-header {
+    display: flex; align-items: center;
+    justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.cc-view-header__title {
+    font-size: 0.95rem; font-weight: 600;
+    color: var(--md-on-surface); margin: 0;
+}
+/* Дата в заголовке открытого расчёта (справа от названия) */
+.cc-view-header__date {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--md-primary-dark);
+    background: var(--md-primary-light);
+    padding: 4px 12px;
+    border-radius: var(--md-radius-full);
+    border: 1px solid #c5ddd8;
+    margin-top: 4px;
+}
+
+.cc-closed-banner {
+    background: #fff8ed; border-bottom: 1px solid #f0d9a0;
+    color: #8a5700; font-size: 0.8rem; font-weight: 500;
+    padding: 8px 18px;
+}
+
+/* ── Section and table ──────────────────────────────────────────────── */
+.cc-section { margin: 0; }
+.cc-section__title {
+    font-size: 0.75rem; font-weight: 700;
+    color: var(--md-primary-dark);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 10px 18px 6px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-variant);
+}
+.cc-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 0.8rem;
+}
+.cc-th {
+    background: var(--md-surface-container);
+    padding: 6px 10px; text-align: left;
+    font-weight: 600; font-size: 0.7rem;
+    color: var(--md-on-surface-hint); text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 2px solid var(--md-outline-variant);
+    border-right: 1px solid var(--md-outline-variant);
+    white-space: nowrap;
+}
+.cc-th--label { min-width: 220px; }
+.cc-th--time  { width: 70px; }
+.cc-th--who   { min-width: 150px; }
+.cc-th--loc   { width: 100px; }
+.cc-th--person{ min-width: 200px; }
+
+.cc-td {
+    padding: 5px 10px; vertical-align: middle;
+    border-bottom: 1px solid var(--md-outline-variant);
+    border-right: 1px solid var(--md-outline-variant);
+}
+.cc-td--label { font-weight: 500; color: var(--md-on-surface); }
+.cc-td--time  { font-family: var(--md-font-mono); font-size: 0.75rem; color: var(--md-on-surface-hint); white-space: nowrap; }
+.cc-td--who   { font-size: 0.75rem; color: var(--md-on-surface-variant); }
+.cc-td--loc   { font-size: 0.72rem; color: var(--md-on-surface-hint); }
+
+/* Row states */
+.cc-row { transition: background var(--md-duration-short); }
+.cc-row:hover { background: var(--md-surface-container); }
+.cc-slot--filled { background: #f2fff7; }
+.cc-slot--filled .cc-td--person { font-weight: 600; }
+.cc-row--dirty .cc-td--person::after {
+    content: '●'; color: var(--md-primary); font-size: 0.5rem;
+    vertical-align: super; margin-left: 3px;
+}
+
+/* Person input cell */
+.cc-person-wrap {
+    display: flex; align-items: center; gap: 6px;
+}
+.cc-slot-input {
+    border: 1px solid transparent; border-radius: var(--md-radius-sm);
+    background: transparent; color: var(--md-on-surface);
+    font-family: var(--md-font-body); font-size: 0.82rem;
+    padding: 3px 7px; outline: none;
+    transition: border-color var(--md-duration-short), background var(--md-duration-short);
+    width: 100%;
+}
+.cc-slot-input:focus {
+    border-color: var(--md-primary);
+    background: var(--md-surface);
+}
+.cc-slot-input:disabled { cursor: default; opacity: 0.8; }
+.cc-rank-input { max-width: 110px; flex-shrink: 0; }
+.cc-name-input { flex: 1; }
+
+/* Autocomplete dropdown */
+.cc-ac-dropdown {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-radius-sm);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    max-height: 220px; overflow-y: auto;
+}
+.cc-ac-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px; cursor: pointer;
+    transition: background var(--md-duration-short);
+}
+.cc-ac-item:hover { background: var(--md-primary-light); }
+.cc-ac-name { font-size: 0.83rem; color: var(--md-on-surface); flex: 1; }
+.cc-ac-rank {
+    font-size: 0.7rem; padding: 1px 6px;
+    border-radius: var(--md-radius-full);
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+}
+
+
+/* ============================================================
+   Duty grid polish (бывший duty-grid.css)
+   ============================================================ */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Graphика нарядов — улучшенная стилизация: Н/У/О квадраты, подсветка
+   выходных и праздников, колонки счётчиков, полоса «Отпуск».
+   Применяется поверх уже существующих .duty-grid* в style.css.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Режимы отметок (кнопки-пилюли) ─────────────────────────────────────── */
+.duty-mode-group {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    background: var(--md-surface-variant, #f1f5f9);
+    border-radius: 999px;
+    margin-right: 8px;
+}
+.duty-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border: none;
+    background: transparent;
+    color: var(--md-on-surface-variant, #475569);
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 999px;
+    transition: all 0.12s;
+}
+.duty-mode-btn:hover { color: var(--md-on-surface, #111); }
+.duty-mode-btn.active {
+    color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.duty-mode-btn.active[data-mark="N"] { background: #1e293b; }
+.duty-mode-btn.active[data-mark="U"] { background: #d97706; }
+.duty-mode-btn.active[data-mark="V"] { background: #059669; }
+
+.duty-mode-btn__letter {
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: currentColor;
+    color: inherit;
+    border-radius: 3px;
+    font-weight: 800;
+    font-size: 0.68rem;
+    position: relative;
+}
+.duty-mode-btn__letter::after {
+    content: attr(data-letter);
+    position: absolute;
+    color: var(--md-surface, #fff);
+    mix-blend-mode: difference;
+}
+.duty-mode-btn.active .duty-mode-btn__letter { background: rgba(255,255,255,0.9); }
+.duty-mode-btn.active .duty-mode-btn__letter::after { color: inherit; mix-blend-mode: normal; }
+
+/* ── Подсветка столбцов выходных / праздников ────────────────────────── */
+.duty-grid th.duty-col--weekend,
+.duty-grid td.duty-col--weekend {
+    background: #f8fafc;
+}
+.duty-grid th.duty-col--holiday,
+.duty-grid td.duty-col--holiday {
+    background: #fff1f2;   /* лёгкая роза для праздников */
+}
+.duty-grid th.duty-col--weekend,
+.duty-grid th.duty-col--holiday {
+    color: #b91c1c !important;
+}
+
+/* День недели под числом */
+.duty-grid .duty-dow {
+    display: block;
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: var(--md-on-surface-hint, #9ca3af);
+    margin-top: 1px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.duty-grid th.duty-col--weekend .duty-dow,
+.duty-grid th.duty-col--holiday .duty-dow { color: #b91c1c; }
+
+/* ── Квадратики отметок ─────────────────────────────────────────────────── */
+.duty-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 0.74rem;
+    color: #fff;
+    line-height: 1;
+    user-select: none;
+    pointer-events: none;   /* клик ловит родительская td */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+.duty-mark--N { background: #1e293b; }   /* чёрный/графит — Наряд */
+.duty-mark--U { background: #d97706; }   /* янтарный — Увольнение */
+.duty-mark--V { background: #059669; }   /* изумрудный — Отпуск (одиночный) */
+
+/* Hover на ячейку — показываем что клик сработает */
+.duty-grid tbody td {
+    cursor: pointer;
+    transition: background-color 0.08s;
+    position: relative;
+}
+.duty-grid tbody td:hover:not(.duty-cell--disabled) {
+    background: rgba(25, 118, 210, 0.06);
+}
+.duty-grid tbody td.duty-cell--disabled { cursor: not-allowed; }
+
+/* ── Полоса отпуска (объединённые ячейки) ──────────────────────────────── */
+/* Рендерится в первой ячейке диапазона и выходит за её пределы через
+   z-index + abs-positioning. Родительская td имеет overflow: visible
+   (см. ниже). */
+.duty-vacation-bar {
+    /* Фикс: раньше height:24px + top:50%+translate давали съезд полосы
+       за пределы строки когда рядом tr разной высоты (у владельцев
+       двустрочного ФИО + звание). Теперь полоса строго внутри своей
+       td через top/bottom — автоматически подстраивается под высоту.
+       !important — чтобы перебить возможный закэшированный старый файл. */
+    position: absolute !important;
+    left: 2px !important;
+    right: auto;
+    top: 4px !important;
+    bottom: 4px !important;
+    height: auto !important;
+    transform: none !important;
+    background: linear-gradient(90deg,
+                rgba(5, 150, 105, 0.22),
+                rgba(5, 150, 105, 0.34),
+                rgba(5, 150, 105, 0.22));
+    border: 1px solid rgba(5, 150, 105, 0.55);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #064e3b;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    overflow: hidden;
+    white-space: nowrap;
+    z-index: 2;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Чтобы vacation-bar мог перекрыть соседние td (width: calc(N*100%+...))
+   td которая содержит полосу должна позволять overflow visible. */
+.duty-grid tbody td.duty-cell--in-vacation { overflow: visible; }
+
+/* Подсветка фона ячеек в диапазоне отпуска */
+.duty-cell--in-vacation {
+    background: rgba(5, 150, 105, 0.05);
+}
+
+/* ── Счётчики (колонки в конце строки) ────────────────────────────────── */
+.duty-grid .duty-summary-th,
+.duty-grid .duty-summary-td {
+    background: var(--md-surface-variant, #f8fafc);
+    border-left: 2px solid var(--md-outline-variant, #e5e7eb);
+    text-align: center;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 4px 8px;
+}
+
+.duty-grid .duty-summary-td__num {
+    display: inline-block;
+    min-width: 22px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: var(--md-on-surface-variant, #334155);
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.duty-grid .duty-summary-td__num--hours {
+    background: #e0f2fe;
+    color: #075985;
+}
+.duty-grid .duty-summary-td__num--duty {
+    background: #1e293b;
+    color: #fff;
+}
+
+/* ── ФИО первой колонки ─────────────────────────────────────────────────── */
+.duty-grid .duty-name-td {
+    font-weight: 500;
+    color: var(--md-on-surface, #111);
+    white-space: nowrap;
+    position: sticky;
+    left: 0;
+    background: var(--md-surface, #fff);
+    z-index: 1;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+    padding-right: 8px;
+}
+
+.duty-grid tbody tr:hover .duty-name-td {
+    background: rgba(25, 118, 210, 0.04);
+}
+
+/* ── Лёгкая зебра для читаемости широкой таблицы ───────────────────────── */
+.duty-grid tbody tr:nth-child(even) td:not(.duty-col--weekend):not(.duty-col--holiday):not(.duty-name-td):not(.duty-summary-td) {
+    background: #fafbfc;
+}

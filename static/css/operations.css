@@ -1,0 +1,155 @@
+/* ============================================================
+   operations.css — Аккордеон вкладки «Операции».
+   Карточки-кнопки с иконкой, заголовком и описанием; клик
+   раскрывает содержимое (История / Пользователи / База людей /
+   Календарь). См. app.js:consolidateOperations().
+   ============================================================ */
+
+.ops-accordion {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* Растягиваем на всю ширину страницы — иначе содержимое (база людей,
+       история, пользователи) зажато в узкую колонку по центру при том
+       что вокруг пустое пространство. Отступы по бокам уже даёт .page. */
+    width: 100%;
+    padding: 4px 0 40px;
+}
+
+/* ─── Секция (карточка + раскрывающийся контент) ─────────────── */
+.ops-section {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    overflow: hidden;
+    transition: border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short);
+}
+.ops-section:hover {
+    border-color: var(--md-outline);
+}
+.ops-section--open {
+    border-color: var(--md-primary);
+    box-shadow: 0 4px 16px rgba(74, 124, 111, 0.08);
+}
+
+/* ─── Карточка-кнопка ────────────────────────────────────────── */
+.ops-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 16px 20px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    color: var(--md-on-surface);
+    transition: background var(--md-duration-short);
+}
+.ops-card:hover {
+    background: var(--md-surface-variant);
+}
+.ops-section--open .ops-card {
+    background: var(--md-primary-light);
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.ops-card__icon {
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    border-radius: var(--md-radius-md);
+    background: var(--md-surface-variant);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--md-primary);
+    transition: background var(--md-duration-short),
+                color var(--md-duration-short);
+}
+.ops-card__icon svg { width: 20px; height: 20px; }
+.ops-section--open .ops-card__icon {
+    background: var(--md-primary);
+    color: #fff;
+}
+
+.ops-card__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.ops-card__title {
+    font-family: var(--md-font-display);
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    letter-spacing: -0.01em;
+}
+.ops-card__desc {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-hint);
+    line-height: 1.4;
+}
+
+.ops-card__chevron {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    color: var(--md-on-surface-hint);
+    transition: transform var(--md-duration-medium) var(--md-motion-emphasized),
+                color var(--md-duration-short);
+}
+.ops-section--open .ops-card__chevron {
+    transform: rotate(180deg);
+    color: var(--md-primary);
+}
+
+/* ─── Содержимое секции ──────────────────────────────────────── */
+/* По умолчанию скрыто через max-height: 0. При раскрытии снимается
+   ограничение. none-анимация не годится: переход от display:none
+   к block резкий, а max-height даёт плавный слайд. */
+.ops-section__content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height var(--md-duration-long) var(--md-motion-emphasized);
+}
+.ops-section--open .ops-section__content {
+    /* Достаточно, чтобы вместить самую большую секцию; при этом overflow
+       переключаем на visible, чтобы вложенные dropdown'ы и поповеры
+       не обрезались. */
+    max-height: none;
+    overflow: visible;
+}
+
+/* Внутренние панели tab-history / tab-users / ... — у них был
+   padding: 0 (они жили как отдельные вкладки). Добавляем отступ
+   внутри секции аккордеона. */
+.ops-section__content > [role="tabpanel"] {
+    padding: 18px 20px 22px;
+}
+
+/* ─── Активное состояние кнопки «История утверждений» ──────── */
+#duty-history-toggle.active {
+    background: var(--md-primary);
+    color: #fff;
+    border-color: var(--md-primary);
+}
+
+/* ─── Mobile ─────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+    .ops-card {
+        padding: 12px 14px;
+        gap: 10px;
+    }
+    .ops-card__icon { width: 36px; height: 36px; }
+    .ops-card__icon svg { width: 18px; height: 18px; }
+    .ops-card__title { font-size: 0.9rem; }
+    .ops-card__desc  { font-size: 0.74rem; }
+    .ops-section__content > [role="tabpanel"] {
+        padding: 12px;
+    }
+}

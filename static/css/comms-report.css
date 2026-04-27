@@ -1,0 +1,295 @@
+/* ============================================================
+   comms-report.css — редактор Формы 3-СВЯЗЬ (отдел связи).
+   Оверлей с 18 направлениями-карточками, раскрытие по клику,
+   inline-редактирование числовых полей с авто-пересчётом
+   производных столбцов (всего/процент/+−).
+   ============================================================ */
+
+/* ─── Overlay ──────────────────────────────────────────────── */
+.cr-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.48);
+    z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: cr-fade 0.12s ease-out;
+}
+@keyframes cr-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.cr-dialog {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    width: min(1400px, 100%);
+    height: 94vh;                  /* фикс-высота, чтобы body получил scroll */
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.26);
+}
+
+/* ─── Header ───────────────────────────────────────────────── */
+.cr-header {
+    flex-shrink: 0;                /* не даём шапке сжиматься при прокрутке */
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; padding: 14px 22px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+}
+.cr-header__titles { flex: 1; min-width: 0; }
+.cr-header__title {
+    font-family: var(--md-font-display);
+    font-size: 1.1rem; font-weight: 600;
+    color: var(--md-on-surface);
+}
+.cr-header__subtitle {
+    font-size: 0.78rem; color: var(--md-on-surface-hint);
+    margin-top: 2px;
+}
+.cr-header__actions {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+.cr-status {
+    font-size: 0.78rem; padding: 4px 10px;
+    border-radius: var(--md-radius-full);
+    font-weight: 500; display: inline-flex; align-items: center;
+    min-width: 80px; justify-content: center;
+}
+.cr-status--ok, .cr-status--saved  { background: var(--md-success-light); color: var(--md-success); }
+.cr-status--saving                 { background: var(--md-warning-light); color: var(--md-warning); }
+.cr-status--error                  { background: var(--md-error-light);   color: var(--md-error); }
+.cr-status:empty                   { display: none; }
+
+/* ─── Body ─────────────────────────────────────────────────── */
+/* min-height: 0 обязательно: дочерние flex-элементы по умолчанию
+   не сжимаются ниже своего content-size → скролл не работает,
+   шапка уезжает за экран. С min-height:0 body корректно
+   уступает шапке и разворачивает свой overflow. */
+.cr-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 18px 22px;
+    background: var(--md-background);
+    display: flex; flex-direction: column; gap: 10px;
+}
+.cr-loading, .cr-error {
+    text-align: center; padding: 40px;
+    color: var(--md-on-surface-hint);
+}
+
+/* ─── Карточка-направление ─────────────────────────────────── */
+.cr-card {
+    /* flex-shrink: 0 критичен. Без него flex-column body сжимает карточки
+       до тонких полосок чтобы вместить все 18 в видимую область, и скролл
+       не появляется. С 0 — каждая занимает свою честную высоту, body
+       переполняется и включает overflow-y: auto. */
+    flex-shrink: 0;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline);
+    border-radius: var(--md-radius-md);
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short),
+                transform var(--md-duration-short);
+}
+.cr-card:hover {
+    border-color: var(--md-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+.cr-card--open {
+    border-color: var(--md-primary);
+    box-shadow: 0 6px 20px rgba(74, 124, 111, 0.14);
+    transform: none;
+}
+
+.cr-card__head {
+    display: flex; align-items: center; gap: 14px;
+    width: 100%;
+    min-height: 64px;                /* фикс высоты — без неё длинные titles ломали верстку */
+    padding: 12px 18px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    color: var(--md-on-surface);
+    transition: background var(--md-duration-short);
+}
+.cr-card__head:hover { background: var(--md-surface-variant); }
+.cr-card--open .cr-card__head {
+    background: var(--md-primary-light);
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.cr-card__num {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--md-surface-variant);
+    color: var(--md-primary-dark);
+    border-radius: 50%;
+    font-family: var(--md-font-mono); font-weight: 600;
+    font-size: 0.86rem;
+}
+.cr-card--open .cr-card__num {
+    background: var(--md-primary); color: #fff;
+}
+
+.cr-card__title {
+    flex: 1 1 auto;
+    min-width: 0;                        /* иначе длинное название сдвинет stats */
+    font-family: var(--md-font-display);
+    font-size: 0.98rem; font-weight: 600;
+    color: var(--md-on-surface);
+    /* Разрешаем перенос слов для длинных названий (≥40 симв.) —
+       ellipsis в nowrap обрезал бы важный контекст. */
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.cr-card__stats {
+    flex-shrink: 0;
+    display: flex; gap: 6px; flex-wrap: wrap;
+}
+.cr-stat {
+    display: inline-flex; flex-direction: column; align-items: center;
+    padding: 4px 10px;
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    font-family: var(--md-font-mono);
+    font-size: 0.9rem; font-weight: 700;
+    min-width: 62px;
+    color: var(--md-on-surface);
+}
+.cr-stat__lbl {
+    font-family: var(--md-font-body);
+    font-size: 0.62rem; font-weight: 500;
+    color: var(--md-on-surface-hint);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 1px;
+}
+.cr-stat--ok    { background: var(--md-success-light); color: var(--md-success); }
+.cr-stat--warn  { background: var(--md-warning-light); color: var(--md-warning); }
+.cr-stat--alert { background: var(--md-error-light);   color: var(--md-error); }
+
+.cr-card__chevron {
+    flex-shrink: 0; width: 18px; height: 18px;
+    color: var(--md-on-surface-hint);
+    transition: transform var(--md-duration-medium) var(--md-motion-emphasized);
+}
+.cr-card--open .cr-card__chevron {
+    transform: rotate(180deg);
+    color: var(--md-primary);
+}
+
+/* ─── Тело карточки (таблица) ──────────────────────────────── */
+.cr-card__body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height var(--md-duration-long) var(--md-motion-emphasized);
+}
+.cr-card--open .cr-card__body {
+    max-height: none;
+    overflow: visible;
+}
+
+.cr-table-wrap { overflow-x: auto; }
+.cr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+.cr-table thead th {
+    /* Sticky отключён намеренно: position:sticky привязывался к скроллящемуся
+       cr-body, и шапка таблицы из открытой карточки прилипала поверх соседних
+       (закрытых) карточек, скрывая их заголовки. Внутри карточки таблица
+       небольшая — sticky не нужен. */
+    background: var(--md-surface-container);
+    padding: 9px 6px;
+    text-align: center;
+    font-size: 0.72rem; font-weight: 700;
+    color: var(--md-on-surface-variant);
+    text-transform: uppercase; letter-spacing: 0.03em;
+    border-bottom: 2px solid var(--md-outline);
+    white-space: nowrap;
+}
+.cr-table tbody td {
+    padding: 6px 5px;                /* было 3 — слишком плоско, текст слипался */
+    border-bottom: 1px solid var(--md-outline-variant);
+    text-align: center;
+    vertical-align: middle;
+}
+.cr-table tbody tr:hover td { background: var(--md-surface-variant); }
+
+.cr-row__name {
+    text-align: left !important;
+    padding-left: 14px !important;
+    color: var(--md-on-surface);
+}
+.cr-row--group { background: var(--md-surface-container); }
+.cr-row--group td { padding: 6px 14px !important; }
+.cr-row__group-title {
+    text-align: left !important;
+    font-weight: 600;
+    color: var(--md-primary-dark);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.cr-cell {
+    /* После расширения таблицы до 19 числовых колонок («+ доп.» был один,
+       теперь 8 — НЗ/ТД/Подм. фонд/Резерв/Кап. рем./МБ/Списано/В запасах)
+       сужаем input до 44px, чтобы строка влезала в типичный десктоп. */
+    width: 44px;
+    padding: 4px 4px;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: var(--md-radius-sm);
+    font-family: var(--md-font-mono);
+    font-size: 0.78rem;
+    color: var(--md-on-surface);
+    text-align: center;
+    outline: none;
+    transition: border-color var(--md-duration-short),
+                background var(--md-duration-short);
+}
+.cr-cell:hover  { background: var(--md-surface-variant); }
+.cr-cell:focus  {
+    background: var(--md-surface);
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 2px rgba(74, 124, 111, 0.14);
+}
+/* Спрячем стрелки number-inputs (Chrome/Firefox) */
+.cr-cell::-webkit-outer-spin-button,
+.cr-cell::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cr-cell[type=number] { -moz-appearance: textfield; }
+
+.cr-cell--text { width: 100%; min-width: 140px; text-align: left; font-family: inherit; }
+
+/* Производные (только для чтения) */
+.cr-derived {
+    font-family: var(--md-font-mono);
+    font-weight: 600;
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface);
+}
+.cr-pct--ok    { background: var(--md-success-light); color: var(--md-success); }
+.cr-pct--warn  { background: var(--md-warning-light); color: var(--md-warning); }
+.cr-pct--alert { background: var(--md-error-light);   color: var(--md-error); }
+.cr-diff--plus  { color: var(--md-success); }
+.cr-diff--minus { color: var(--md-error); }
+
+/* ─── Mobile ───────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .cr-card__stats { display: none; }          /* слишком тесно */
+    .cr-card__title { white-space: normal; }
+    .cr-body        { padding: 10px 12px; }
+    .cr-header      { padding: 10px 14px; }
+}

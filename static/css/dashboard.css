@@ -1,0 +1,720 @@
+/* ============================================================
+   dashboard.css — Дашборд готовности (админ landing)
+   .db-* селекторы + полировка из dashboard-polish.css
+   ============================================================ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ДАШБОРД ГОТОВНОСТИ
+   Добавить в конец static/style.css
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+
+.db-layout {
+    display: grid;
+    /* 3 колонки: календарь слева · контент в центре · уведомления справа.
+       Центр гибкий (1fr), боковые фиксированные. */
+    grid-template-columns: 236px minmax(0, 1fr) 320px;
+    gap: 20px;
+    align-items: start;
+    padding-top: 4px;
+}
+
+@media (max-width: 1280px) {
+    /* На средних экранах уведомления уходят под контент */
+    .db-layout { grid-template-columns: 236px minmax(0, 1fr); }
+    .db-notif-col { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+    .db-layout { grid-template-columns: 1fr; }
+    .db-notif-col { grid-column: auto; }
+}
+
+.db-notif-col {
+    position: sticky;
+    top: 20px;
+}
+
+/* ── Sidebar (sticky) ────────────────────────────────────────────────────── */
+
+.db-sidebar {
+    position: sticky;
+    top: 72px; /* высота navbar */
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ── Мини-календарь ──────────────────────────────────────────────────────── */
+
+.db-cal {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    padding: 14px 12px 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.db-cal__nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 6px;
+}
+
+.db-cal__label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    text-align: center;
+    flex: 1;
+    letter-spacing: 0.01em;
+}
+
+.db-cal__grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+}
+
+.db-cal__dow {
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: var(--md-on-surface-hint);
+    text-align: center;
+    padding: 2px 0 5px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.db-cal__day {
+    position: relative;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.74rem;
+    border-radius: var(--md-radius-sm);
+    cursor: pointer;
+    color: var(--md-on-surface);
+    transition: background var(--md-duration-short) var(--md-motion-standard);
+    user-select: none;
+    font-family: var(--md-font-mono);
+}
+
+.db-cal__day:hover:not(.db-cal__day--empty) {
+    background: var(--md-surface-container);
+}
+
+.db-cal__day--empty {
+    cursor: default;
+}
+
+.db-cal__day--weekend {
+    color: var(--md-error);
+}
+
+.db-cal__day--today {
+    font-weight: 600;
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+}
+
+.db-cal__day--today.db-cal__day--weekend {
+    color: var(--md-error);
+}
+
+.db-cal__day--sel {
+    background: var(--md-primary) !important;
+    color: var(--md-on-primary) !important;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(74,124,111,0.28);
+}
+
+/* Точка на дне с активными списками */
+.db-cal__dot {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--md-primary);
+    pointer-events: none;
+}
+
+.db-cal__day--sel .db-cal__dot {
+    background: rgba(255,255,255,0.65);
+}
+
+/* Точка для легенды (вне сетки) */
+.db-cal__dot--legend {
+    position: static;
+    transform: none;
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    background: var(--md-primary);
+}
+
+/* ── Легенда ─────────────────────────────────────────────────────────────── */
+
+.db-legend {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.db-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 0.74rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.3;
+}
+
+.db-legend__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+}
+
+/* ── Правая колонка ──────────────────────────────────────────────────────── */
+
+.db-main {
+    min-width: 0; /* не выезжать за grid */
+}
+
+/* ── Шапка с общим прогрессом ────────────────────────────────────────────── */
+
+.db-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding: 16px 20px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.db-header__date {
+    font-family: var(--md-font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    letter-spacing: -0.01em;
+}
+
+.db-header__summary {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.db-header__counts {
+    display: flex;
+    gap: 18px;
+}
+
+.db-header__count {
+    text-align: center;
+    line-height: 1.15;
+}
+
+.db-header__num {
+    display: block;
+    font-family: var(--md-font-mono);
+    font-size: 1.45rem;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    letter-spacing: -0.02em;
+}
+
+.db-header__sub {
+    font-size: 0.68rem;
+    color: var(--md-on-surface-hint);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.db-header__count--filled .db-header__num { color: var(--md-success); }
+.db-header__count--empty  .db-header__num { color: var(--md-error); }
+
+/* ── Кольцевой прогресс-индикатор ───────────────────────────────────────── */
+
+.db-ring {
+    position: relative;
+    width: 54px;
+    height: 54px;
+    flex-shrink: 0;
+}
+
+.db-ring__svg {
+    width: 54px;
+    height: 54px;
+    transform: rotate(-90deg);
+    overflow: visible;
+}
+
+.db-ring__bg {
+    fill: none;
+    stroke: var(--md-outline-variant);
+    stroke-width: 4;
+}
+
+.db-ring__fg {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+    transition: stroke-dasharray var(--md-duration-long) var(--md-motion-standard);
+}
+
+.db-ring__label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--md-font-mono);
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--md-on-surface);
+}
+
+/* ── Сетка карточек событий ──────────────────────────────────────────────── */
+
+.db-events {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 10px;
+}
+
+/* ── Карточка одного события ─────────────────────────────────────────────── */
+
+.db-event-card {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    padding: 14px 16px;
+    cursor: pointer;
+    transition:
+        border-color var(--md-duration-short) var(--md-motion-standard),
+        box-shadow   var(--md-duration-short) var(--md-motion-standard),
+        transform    var(--md-duration-short) var(--md-motion-standard);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.db-event-card:hover {
+    border-color: var(--md-primary);
+    box-shadow: 0 3px 10px rgba(74,124,111,0.12);
+    transform: translateY(-1px);
+}
+
+.db-event-card--skel {
+    cursor: default;
+    pointer-events: none;
+}
+
+/* ── Внутренности карточки ───────────────────────────────────────────────── */
+
+.db-event-card__top {
+    margin-bottom: 10px;
+}
+
+.db-event-card__title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.db-event-card__title {
+    font-size: 0.855rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    line-height: 1.35;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.db-event-card__progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.db-event-card__bar {
+    flex: 1;
+    height: 6px;
+    background: var(--md-outline-variant);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.db-event-card__bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width var(--md-duration-long) var(--md-motion-standard);
+    min-width: 2px;
+}
+
+.db-event-card__pct {
+    font-family: var(--md-font-mono);
+    font-size: 0.74rem;
+    font-weight: 500;
+    min-width: 32px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.db-event-card__counts {
+    font-size: 0.69rem;
+    color: var(--md-on-surface-hint);
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: var(--md-font-mono);
+}
+
+/* ── Статус-бейдж ────────────────────────────────────────────────────────── */
+
+.db-status {
+    font-size: 0.63rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: var(--md-radius-sm);
+    white-space: nowrap;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+}
+
+.db-status--active {
+    background: var(--md-success-light);
+    color: var(--md-primary-dark);
+    border-color: #c5ddd8;
+}
+
+.db-status--draft {
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    border-color: var(--md-outline-variant);
+}
+
+/* ── Прогресс по управлениям (нижняя часть карточки) ────────────────────── */
+
+.db-depts {
+    border-top: 1px solid var(--md-outline-variant);
+    padding-top: 10px;
+    margin-top: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.db-dept {
+    cursor: default;
+}
+
+.db-dept__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 3px;
+    gap: 6px;
+}
+
+.db-dept__name {
+    font-size: 0.74rem;
+    color: var(--md-on-surface-variant);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
+
+.db-dept__nums {
+    font-family: var(--md-font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    flex-shrink: 0;
+}
+
+.db-dept__bar {
+    height: 4px;
+    background: var(--md-outline-variant);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.db-dept__bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width var(--md-duration-long) var(--md-motion-standard);
+    min-width: 2px;
+}
+
+/* ── Пустое состояние ────────────────────────────────────────────────────── */
+
+.db-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 64px 24px;
+    color: var(--md-on-surface-hint);
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+.db-empty svg {
+    opacity: 0.25;
+}
+
+/* ── Скелетон загрузки ───────────────────────────────────────────────────── */
+
+.db-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.db-skel-row {
+    height: 14px;
+    background: var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    animation: db-pulse 1.5s ease-in-out infinite;
+}
+
+.db-skel-row--wide  { height: 66px; border-radius: var(--md-radius-lg); }
+.db-skel-row--bar   { height: 6px; }
+.db-skel-row--short { width: 55%; }
+
+@keyframes db-pulse {
+    0%, 100% { opacity: 0.3; }
+    50%       { opacity: 0.6; }
+}
+
+
+/* ============================================================
+   Dashboard polish (бывший dashboard-polish.css)
+   ============================================================ */
+
+/* ── Шапка дашборда ───────────────────────────────────────────────────────── */
+.db-header {
+    position: relative;
+}
+.db-header__date {
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+/* Маленький бейдж «сегодня» справа от даты — рендерим из JS */
+.db-date-chip {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    vertical-align: middle;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+.db-date-chip--today {
+    background: rgba(29, 158, 117, 0.14);
+    color: var(--md-success, #1D9E75);
+}
+.db-date-chip--future {
+    background: rgba(74, 124, 111, 0.12);
+    color: var(--md-primary-dark, #2f5a4f);
+}
+.db-date-chip--past {
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-hint);
+}
+
+/* ── Event-карточки: аккуратнее, с иконкой «открыть» на hover ──────────────── */
+.db-event-card {
+    position: relative;
+    transition: transform 0.12s, box-shadow 0.15s, border-color 0.12s;
+    cursor: pointer;
+}
+.db-event-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Уголок «→» в правом верхнем углу — показывает что карточка кликабельная.
+   Рендерим через CSS псевдоэлемент, чтобы не трогать разметку dashboard.js. */
+.db-event-card::after {
+    content: "→";
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-hint);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.12s, transform 0.12s, background 0.12s, color 0.12s;
+    transform: translateX(-4px);
+    pointer-events: none;
+}
+.db-event-card:hover::after {
+    opacity: 1;
+    transform: translateX(0);
+    background: var(--md-primary);
+    color: white;
+}
+/* В skeleton состоянии стрелки не нужно */
+.db-event-card--skel::after { display: none; }
+
+/* Заголовок карточки — больше места под длинные названия,
+   чтобы стрелка не заходила на текст */
+.db-event-card__title-row {
+    padding-right: 30px;
+}
+
+/* ── Бары прогресса — чуть плотнее, с анимацией заполнения ────────────────── */
+.db-event-card__bar-fill,
+.db-dept__bar-fill {
+    transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ── Департаменты внутри карточки ─────────────────────────────────────────── */
+.db-dept {
+    padding: 4px 0;
+}
+.db-dept__head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.76rem;
+    margin-bottom: 3px;
+    gap: 8px;
+}
+.db-dept__name {
+    color: var(--md-on-surface-variant);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 70%;
+}
+.db-dept__nums {
+    color: var(--md-on-surface-hint);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+}
+
+/* ── Статус-бейдж: чуть плотнее, без тени ─────────────────────────────────── */
+.db-status {
+    padding: 2px 8px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.db-status--active {
+    background: rgba(29, 158, 117, 0.14);
+    color: var(--md-success, #1D9E75);
+}
+.db-status--draft {
+    background: rgba(186, 117, 23, 0.14);
+    color: var(--md-warning, #BA7517);
+}
+
+/* ── Empty-стейт: дружелюбнее ─────────────────────────────────────────────── */
+.db-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--md-on-surface-hint);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    background: var(--md-surface);
+    border: 1px dashed var(--md-outline-variant);
+    border-radius: var(--md-radius-md, 12px);
+}
+.db-empty p { margin: 8px 0 2px; }
+.db-empty-hint {
+    font-size: 0.74rem;
+    margin-top: 10px;
+    color: var(--md-on-surface-hint);
+}
+
+/* ── Mini-календарь: активный день чуть ярче ──────────────────────────────── */
+.db-cal__day--sel {
+    box-shadow: inset 0 0 0 2px var(--md-primary);
+    font-weight: 600;
+}
+.db-cal__day--today:not(.db-cal__day--sel) {
+    /* точка-индикатор «сегодня» — если выбран другой день */
+    position: relative;
+}
+.db-cal__day--today:not(.db-cal__day--sel)::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 5px; height: 5px;
+    background: var(--md-primary);
+    border-radius: 50%;
+}
+
+/* ── Лёгкая анимация появления карточек при смене даты ────────────────────── */
+@keyframes db-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.db-events .db-event-card {
+    animation: db-fade-in 0.25s ease-out both;
+}
+/* staggered через nth-child — чтобы карточки появлялись волной */
+.db-events .db-event-card:nth-child(1) { animation-delay: 0.00s; }
+.db-events .db-event-card:nth-child(2) { animation-delay: 0.05s; }
+.db-events .db-event-card:nth-child(3) { animation-delay: 0.10s; }
+.db-events .db-event-card:nth-child(4) { animation-delay: 0.15s; }
+.db-events .db-event-card:nth-child(n+5) { animation-delay: 0.20s; }
+
+/* ── Легенда: чуть аккуратнее ─────────────────────────────────────────────── */
+.db-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.72rem;
+    color: var(--md-on-surface-variant);
+    padding: 3px 0;
+}

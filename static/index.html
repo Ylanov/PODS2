@@ -1,0 +1,1699 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#4a7c6f">
+    <title>Штабная Платформа</title>
+    <!-- Foundation -->
+    <link rel="stylesheet" href="/static/css/tokens.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <!-- Pages / features -->
+    <link rel="stylesheet" href="/static/css/login.css">
+    <link rel="stylesheet" href="/static/css/editor.css">
+    <link rel="stylesheet" href="/static/css/overview.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="/static/css/duty.css">
+    <link rel="stylesheet" href="/static/css/schedule.css">
+    <link rel="stylesheet" href="/static/css/department.css">
+    <link rel="stylesheet" href="/static/css/persons.css">
+    <link rel="stylesheet" href="/static/css/users.css">
+    <link rel="stylesheet" href="/static/css/audit.css">
+    <link rel="stylesheet" href="/static/css/event-editor.css">
+    <link rel="stylesheet" href="/static/css/history-calendar.css">
+    <link rel="stylesheet" href="/static/css/operations.css">
+    <link rel="stylesheet" href="/static/css/comms-report.css?v=3">
+    <link rel="stylesheet" href="/static/css/procurement.css">
+    <link rel="stylesheet" href="/static/css/media.css">
+    <link rel="stylesheet" href="/static/css/training.css">
+    <link rel="stylesheet" href="/static/css/person_conflicts.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════
+     TOP APP BAR
+     ═══════════════════════════════════════════════ -->
+<header id="navbar" class="top-app-bar hidden">
+    <div class="top-app-bar__inner">
+        <a class="top-app-bar__brand" href="#">
+            <div class="top-app-bar__logo">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+            </div>
+            <span class="top-app-bar__title">Штабная Платформа</span>
+        </a>
+
+        <div class="top-app-bar__actions">
+            <button id="admin-mode-btn" class="btn btn-outlined btn-sm hidden" style="margin-right:8px;" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                <span>Режим заполнения</span>
+            </button>
+
+            <!-- Кнопка «Расхождения данных» — видна только админу когда есть
+                 открытые конфликты между анкетами участников и общей базой людей -->
+            <button id="conflicts-header-btn" class="notif-header-btn hidden"
+                    type="button" title="Расхождения данных в общей базе людей"
+                    style="margin-right: 6px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 9v4M12 17h.01"/>
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                </svg>
+                <span id="conflicts-header-dot" class="notif-header-btn__dot hidden">0</span>
+            </button>
+
+            <!-- Колокольчик уведомлений — всегда в header,
+                 активируется после логина через window.currentUser -->
+            <div style="position:relative;">
+                <button id="notif-header-btn" class="notif-header-btn hidden" type="button" title="Уведомления">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                    <span id="notif-header-dot" class="notif-header-btn__dot hidden">0</span>
+                </button>
+                <div id="notif-header-dropdown" class="notif-dropdown hidden">
+                    <div class="notif-center__header">
+                        <span class="notif-center__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                            </svg>
+                            Уведомления
+                        </span>
+                        <button id="notif-header-mark-all"
+                                class="notif-center__mark-all" type="button">
+                            Прочитать все
+                        </button>
+                    </div>
+                    <div id="notif-header-list" class="notif-center__list"></div>
+                </div>
+            </div>
+
+            <div class="user-chip" id="user-chip" style="display:none;">
+                <div class="user-avatar" id="user-avatar">А</div>
+                <span class="user-name" id="user-display"></span>
+            </div>
+            <button id="logout-btn" class="btn btn-text btn-sm" type="button">Выйти</button>
+        </div>
+    </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════
+     MAIN CONTENT
+     ═══════════════════════════════════════════════ -->
+<main id="app-root">
+
+    <!-- ─── Login View ─────────────────────────────────────────────────────── -->
+    <div id="login-view" style="
+        display:flex; align-items:center; justify-content:center;
+        min-height:100vh; background:var(--md-background); padding:24px;">
+        <div class="login-card">
+            <div class="login-card__header">
+                <div class="login-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+                        <line x1="12" y1="22" x2="12" y2="15.5"/>
+                        <polyline points="22 8.5 12 15.5 2 8.5"/>
+                    </svg>
+                </div>
+                <h1 class="login-card__title">Войти</h1>
+                <p class="login-card__subtitle">Штабная Платформа Сборов</p>
+            </div>
+            <div class="login-card__body">
+                <form id="login-form" novalidate>
+                    <div class="field" style="margin-bottom:12px;">
+                        <label class="field-label" for="username">Логин</label>
+                        <input type="text" id="username" placeholder="Например: upr_1"
+                               required autocomplete="username">
+                    </div>
+                    <div class="field" style="margin-bottom:12px;">
+                        <label class="field-label" for="password">Пароль</label>
+                        <input type="password" id="password" placeholder="Введите пароль"
+                               required autocomplete="current-password">
+                    </div>
+                    <div id="login-error" class="login-error" role="alert" aria-live="polite"></div>
+                    <button type="submit" class="btn btn-filled"
+                            style="width:100%; margin-top:8px; height:44px; font-size:.95rem;">
+                        Войти
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Department View ────────────────────────────────────────────────── -->
+    <div id="department-view" class="hidden">
+        <div class="page">
+            <div class="dept-header" style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px;">
+                <div>
+                    <h2 class="page-title">Мои задачи</h2>
+                    <p class="dept-header__sub">Управление списками и нарядами</p>
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                    <button id="dept-main-tab-btn" class="btn btn-filled btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <path d="M12 5v14M5 12h14"/>
+                        </svg>
+                        Списки
+                    </button>
+                    <button id="dept-duty-tab-btn" class="btn btn-outlined btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8"  y1="2" x2="8"  y2="6"/>
+                            <line x1="3"  y1="10" x2="21" y2="10"/>
+                        </svg>
+                        Графики нарядов
+                    </button>
+                    <button id="cc-dept-tab-btn" class="btn btn-outlined btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                            <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                        Боевой расчёт
+                    </button>
+                    <button id="dept-tasks-tab-btn" class="btn btn-outlined btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <rect x="3" y="4" width="18" height="18" rx="2"/>
+                            <path d="M16 2v4M8 2v4M3 10h18"/>
+                            <path d="M9 16l2 2 4-4"/>
+                        </svg>
+                        Календарь
+                    </button>
+                    <button id="dept-persons-tab-btn" class="btn btn-outlined btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        База людей
+                    </button>
+                    <!-- «Операции» — видна только отделам (role='unit'). Вешается в app.js. -->
+                    <button id="dept-ops-tab-btn" class="btn btn-outlined btn-sm hidden" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                        </svg>
+                        Операции
+                    </button>
+                </div>
+            </div>
+
+            <!-- Панель «Операции» (отдел): список кнопок-операций.
+                 Для отдела связи — «Сформировать отчёт 3-СВЯЗЬ». -->
+            <div id="dept-ops-panel" class="hidden" style="padding-top:8px;">
+                <div class="ops-accordion" id="dept-ops-buttons">
+                    <!-- заполняется через comms_report.js: mountOpsPanel -->
+                </div>
+            </div>
+
+            <!-- Сетка карточек -->
+            <div id="dept-event-cards" class="dept-event-grid"></div>
+
+            <!-- Скрытый select — совместимость с ui.js -->
+            <select id="dept-event-id" class="hidden"></select>
+            <!-- Скрытая кнопка — совместимость с app.js -->
+            <button id="load-slots-btn" class="hidden" type="button"></button>
+
+            <!-- Зона таблицы (Обычные списки) -->
+            <div id="dept-content" class="dept-content hidden">
+                <div class="dept-content__header">
+                    <div class="dept-content__back">
+                        <button id="dept-back-btn" class="btn btn-text btn-sm" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M19 12H5M12 5l-7 7 7 7"/>
+                            </svg>
+                            К спискам
+                        </button>
+                        <span class="dept-content__title" id="dept-active-title"></span>
+                    </div>
+                </div>
+
+                <div id="groups-container" class="groups-container"></div>
+
+                <div class="data-table-wrap" id="slots-table-wrap">
+                    <table id="slots-table">
+                        <thead>
+                            <tr>
+                                <th>Должность</th>
+                                <th>Звание</th>
+                                <th>ФИО</th>
+                                <th>№ Документа</th>
+                                <th>Позывной</th>
+                                <th style="width:90px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="slots-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Зона: Графики нарядов управления -->
+            <div id="dept-duty-panel" class="hidden" style="margin-top:24px;">
+                <div class="duty-layout">
+                    <!-- Левая панель -->
+                    <aside class="duty-sidebar">
+                        <div class="duty-sidebar__header">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8"  y1="2" x2="8"  y2="6"/>
+                                <line x1="3"  y1="10" x2="21" y2="10"/>
+                            </svg>
+                            <span class="duty-sidebar__title">Мои графики</span>
+                        </div>
+
+                        <div class="duty-sidebar__body">
+                            <!-- Форма создания (скрытая) -->
+                            <div id="dept-duty-create-form" class="duty-create-form hidden">
+                                <div class="field">
+                                    <label class="field-label" for="dept-duty-create-position">Должность</label>
+                                    <select id="dept-duty-create-position" style="width:100%;"></select>
+                                </div>
+                                <div class="field" style="margin-top:8px;">
+                                    <label class="field-label" for="dept-duty-create-title">Название графика</label>
+                                    <input type="text" id="dept-duty-create-title" placeholder="График операторов" autocomplete="off">
+                                </div>
+                                <div style="display:flex; gap:6px; margin-top:10px;">
+                                    <button id="dept-duty-create-save"   class="btn btn-success btn-sm" style="flex:1;" type="button">Создать</button>
+                                    <button id="dept-duty-create-cancel" class="btn btn-outlined btn-sm" type="button">Отмена</button>
+                                </div>
+                            </div>
+
+                            <button id="dept-duty-add-schedule-btn" class="btn btn-success btn-sm"
+                                    style="width:100%; margin-bottom:10px;" type="button">
+                                + Создать график
+                            </button>
+
+                            <div id="dept-duty-schedules-list">
+                                <p class="hint">Нет графиков — создайте первый</p>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <!-- Правая панель: сетка -->
+                    <div class="duty-grid-panel">
+                        <div id="dept-duty-grid-empty" class="duty-grid-empty">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                 stroke="var(--md-on-surface-hint)" stroke-width="1.5">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8"  y1="2" x2="8"  y2="6"/>
+                                <line x1="3"  y1="10" x2="21" y2="10"/>
+                            </svg>
+                            <p>Выберите график из списка слева</p>
+                        </div>
+
+                        <div id="dept-duty-grid-container" class="hidden">
+                            <div class="duty-grid-toolbar">
+                                <div class="duty-month-nav">
+                                    <button id="dept-duty-prev-month"  class="btn btn-outlined btn-xs" type="button">←</button>
+                                    <span   id="dept-duty-month-label" class="duty-month-label"></span>
+                                    <button id="dept-duty-next-month"  class="btn btn-outlined btn-xs" type="button">→</button>
+                                    <button id="dept-duty-today-month" class="btn btn-text btn-xs"     type="button">Сегодня</button>
+                                </div>
+                                <!-- Статус утверждения месяца + кнопка Утвердить/Редактировать -->
+                                <span id="dept-duty-approval-badge"
+                                      style="display:none; margin-left:auto; padding:4px 10px;
+                                             font-size:0.78rem; font-weight:600; border-radius:10px;
+                                             white-space:nowrap;"></span>
+                                <button id="dept-duty-approve-btn"
+                                        class="btn btn-success btn-sm"
+                                        style="display:none; white-space:nowrap;" type="button">
+                                    📌 Утвердить
+                                </button>
+                                <button id="dept-duty-unapprove-btn"
+                                        class="btn btn-outlined btn-sm"
+                                        style="display:none; white-space:nowrap;" type="button">
+                                    ✎ Редактировать
+                                </button>
+                                <button id="dept-duty-add-person-btn" class="btn btn-outlined btn-sm" type="button">
+                                    + Добавить человека
+                                </button>
+                            </div>
+
+                            <!-- Поиск человека (автокомплит через fio_autocomplete.js) -->
+                            <div id="dept-duty-person-search-wrap" class="duty-person-search hidden">
+                                <input type="text" id="dept-duty-person-search-input"
+                                       placeholder="Поиск по ФИО…" autocomplete="off"
+                                       class="duty-person-search__input">
+                            </div>
+
+                            <div class="duty-grid-wrap">
+                                <table id="dept-duty-grid-table" class="duty-grid"></table>
+                            </div>
+
+                            <p class="duty-grid-hint" style="margin-top:12px; font-size:0.8rem; color:var(--md-on-surface-hint);">
+                                Нажмите на клетку чтобы поставить / снять наряд. При постановке —
+                                ваши слоты в списках за эту дату заполнятся автоматически.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Зона Календаря задач (Для управлений) -->
+            <div id="dept-tasks-panel" class="hidden" style="margin-top:24px;">
+                <div id="tasks-root-dept" data-role="department"></div>
+            </div>
+
+            <!-- ════════════════════════════════════════════════════════════════
+                 Зона Базы людей (Для управлений).
+                 Разметку внутри #dept-persons-root рендерит dept_persons.js
+                 (режимы «Мои люди» / «Личный состав», поиск, сортировка,
+                 пагинация, форма добавления с подсказкой из общей базы).
+                 ════════════════════════════════════════════════════════════════ -->
+            <div id="dept-persons-panel" class="hidden" style="margin-top:24px;">
+                <div id="dept-persons-root" class="persons-panel"></div>
+            </div>
+
+            <!-- Зона Боевого расчёта (Для управлений) -->
+            <div id="dept-combat-calc" class="hidden" style="margin-top:24px;">
+
+                <!-- Раскрывающийся Тулбар -->
+                <div class="tools-bar">
+                    <div class="tools-bar__buttons">
+                        <button class="tool-trigger active" data-panel="cc-panel-calendar-dept" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8"  y1="2" x2="8"  y2="6"/>
+                                <line x1="3"  y1="10" x2="21" y2="10"/>
+                            </svg>
+                            Календарь расчётов
+                            <svg class="tool-trigger__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="tools-panel open" id="cc-panel-calendar-dept">
+                        <div class="tools-panel__inner" style="padding-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                <button id="cc-prev-week-dept" class="btn btn-outlined btn-xs" type="button">← Пред.</button>
+                                <div style="display:flex; flex-direction:column; align-items:center; min-width:130px;">
+                                    <span id="cc-week-label-dept" style="font-size:0.85rem; font-weight:600; text-align:center;"></span>
+                                    <span id="cc-today-week-dept" style="font-size:0.7rem; color:var(--md-primary); cursor:pointer; margin-top:2px;">Текущая неделя</span>
+                                </div>
+                                <button id="cc-next-week-dept" class="btn btn-outlined btn-xs" type="button">След. →</button>
+                            </div>
+
+                            <div id="cc-instances-list-dept" style="display:grid; grid-template-columns:repeat(7, minmax(140px, 1fr)); gap:8px; overflow-x:auto; padding-bottom:4px;">
+                                <p class="hint" style="grid-column:1 / -1; text-align:center;">Загрузка...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Зона Редактора (внизу) -->
+                <div class="editor-panel" style="margin-top:16px;">
+                    <div id="cc-view-empty-dept" style="padding:48px 24px; text-align:center; color:var(--md-on-surface-hint);">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.5" style="margin-bottom:12px;">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8"  y1="2" x2="8"  y2="6"/>
+                            <line x1="3"  y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <p style="font-size:.875rem;">Выберите расчёт на любой день из календаря сверху</p>
+                    </div>
+                    <div id="cc-view-panel-dept" class="hidden" style="padding:24px;"></div>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ─── Admin View ──────────────────────────────────────────────────────── -->
+    <div id="admin-view" class="hidden">
+        <div class="page">
+            <div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                <h2 class="page-title">Управление</h2>
+            </div>
+
+            <!-- ── Tab Bar ─────────────────────────────────────────────────── -->
+            <!-- Оставили 5 основных вкладок. Вкладки «История», «Пользователи»,
+                 «База людей», «Календарь» скрыты в аккордеоне «Операции».
+                 «История утверждений» переехала в «Графики наряда» (кнопка). -->
+            <nav class="tab-bar" role="tablist">
+                <button class="tab-btn active"
+                        role="tab" aria-selected="true" aria-controls="tab-dashboard" type="button">
+                    Дашборд
+                </button>
+                <button class="tab-btn"
+                        role="tab" aria-selected="false" aria-controls="tab-editor" type="button">
+                    Редактор шаблонов
+                </button>
+                <button class="tab-btn"
+                        role="tab" aria-selected="false" aria-controls="tab-duty" type="button">
+                    Графики наряда
+                </button>
+                <button class="tab-btn"
+                        role="tab" aria-selected="false" aria-controls="tab-combat" type="button">
+                    Боевой расчёт
+                </button>
+                <button class="tab-btn"
+                        role="tab" aria-selected="false" aria-controls="tab-operations" type="button">
+                    Операции
+                </button>
+            </nav>
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Дашборд
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-dashboard" role="tabpanel">
+                <div class="db-layout">
+
+                    <!-- ── Левая колонка: календарь ────────────────────────── -->
+                    <aside class="db-sidebar">
+                        <div class="db-cal">
+                            <div class="db-cal__nav">
+                                <button id="db-cal-prev" class="btn btn-outlined btn-xs" type="button">←</button>
+                                <span   id="db-cal-label" class="db-cal__label"></span>
+                                <button id="db-cal-next" class="btn btn-outlined btn-xs" type="button">→</button>
+                            </div>
+                            <div id="db-cal-grid" class="db-cal__grid"></div>
+                            <button id="db-today-btn" class="btn btn-text btn-xs" type="button"
+                                    style="width:100%; margin-top:4px;">
+                                Сегодня
+                            </button>
+                        </div>
+
+                        <!-- Легенда -->
+                        <div class="db-legend">
+                            <div class="db-legend__item">
+                                <span class="db-legend__dot" style="background:#1D9E75;"></span>
+                                <span>≥ 90% заполнено</span>
+                            </div>
+                            <div class="db-legend__item">
+                                <span class="db-legend__dot" style="background:#BA7517;"></span>
+                                <span>60–89%</span>
+                            </div>
+                            <div class="db-legend__item">
+                                <span class="db-legend__dot" style="background:#E24B4A;"></span>
+                                <span>&lt; 60%</span>
+                            </div>
+                            <div class="db-legend__item">
+                                <span class="db-cal__dot db-cal__dot--legend"></span>
+                                <span>Есть списки на дату</span>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <!-- ── Центральная колонка: контент ────────────────────── -->
+                    <div class="db-main">
+                        <div id="db-content">
+                            <div style="text-align:center; padding:60px; color:var(--md-on-surface-hint);">
+                                Загрузка…
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Правая колонка: центр уведомлений ──────────────── -->
+                    <aside class="db-notif-col">
+                        <div class="notif-center" id="dashboard-notif-center">
+                            <div class="notif-center__header">
+                                <span class="notif-center__title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                                        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                                    </svg>
+                                    Уведомления
+                                    <span id="notif-center-badge" class="notif-center__badge zero">0</span>
+                                </span>
+                                <button id="notif-center-mark-all"
+                                        class="notif-center__mark-all" type="button" disabled>
+                                    Прочитать все
+                                </button>
+                            </div>
+                            <div id="notif-center-list" class="notif-center__list"></div>
+                        </div>
+                    </aside>
+
+                </div>
+            </div><!-- /#tab-dashboard -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Редактор шаблонов
+                 В редакторе доступны только шаблоны. Рабочие списки по датам
+                 генерируются из шаблонов через «Расписание» и после даты
+                 уходят во вкладку «История».
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-editor" class="hidden" role="tabpanel">
+
+              <div class="editor-layout">
+
+               <aside class="editor-sidebar tools-bar tools-bar--vertical">
+                    <!-- Список шаблонов (рендерит editor_sidebar.js).
+                         Поиск + inline-создание + кликабельные карточки.
+                         Заменяет старую кнопку «Новый список» и dropdown в тулбаре. -->
+                    <div id="editor-sidebar"></div>
+
+                    <div class="tools-bar__buttons"
+                         style="display:flex; flex-direction:column; gap:6px; align-items:stretch;">
+
+                        <!-- Должности -->
+                        <button class="tool-trigger" data-panel="panel-positions" type="button"
+                                style="justify-content:space-between; width:100%;">
+                            <span style="display:inline-flex; align-items:center; gap:8px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+                                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                            </svg>
+                            Должности
+                            </span>
+                            <svg class="tool-trigger__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </button>
+
+                        <!-- Расписание -->
+                        <button class="tool-trigger" data-panel="panel-schedule" type="button"
+                                style="justify-content:space-between; width:100%;">
+                            <span style="display:inline-flex; align-items:center; gap:8px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2"/>
+                                <path d="M16 2v4M8 2v4M3 10h18"/>
+                                <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
+                            </svg>
+                            Расписание
+                            </span>
+                            <svg class="tool-trigger__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </button>
+
+                        <!-- Выгрузка .docx -->
+                        <button class="tool-trigger tool-trigger--export" data-panel="panel-export" type="button"
+                                style="justify-content:space-between; width:100%;">
+                            <span style="display:inline-flex; align-items:center; gap:8px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Выгрузка .docx
+                            </span>
+                            <svg class="tool-trigger__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </button>
+
+                    </div>
+
+                    <!-- Скрытые элементы для совместимости с admin.js
+                         (create-event-btn, event-title, event-is-template
+                         создавали шаблон через старый блок; теперь это делает
+                         inline-поле в #editor-sidebar → editor_sidebar.js). -->
+                    <input type="text"     id="event-title"       class="hidden">
+                    <input type="checkbox" id="event-is-template" class="hidden" checked>
+                    <button                id="create-event-btn"  class="hidden" type="button"></button>
+
+                    <!-- Панель: Должности -->
+                    <div class="tools-panel" id="panel-positions">
+                        <div class="tools-panel__inner">
+                            <div class="tools-panel__row tools-panel__row--positions">
+                                <div style="display:flex; flex-direction:column; gap:8px; max-width:260px;">
+                                    <div class="field">
+                                        <label class="field-label" for="new-position-name">Новая должность</label>
+                                        <input type="text" id="new-position-name" placeholder="Введите название">
+                                    </div>
+                                    <button id="add-position-btn" class="btn btn-success btn-sm" type="button">
+                                        + Добавить
+                                    </button>
+                                </div>
+                                <div id="positions-list" class="positions-list-inline">
+                                    <p class="hint" style="font-size:0.75rem;">Загрузка...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Панель: Расписание -->
+                    <div class="tools-panel" id="panel-schedule">
+                        <div class="tools-panel__inner" style="padding-bottom:0;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;
+                                        flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+                                <div style="display:flex; gap:6px; align-items:center;">
+                                    <button id="sched-prev-week"  class="btn btn-outlined btn-xs" type="button">← Пред.</button>
+                                    <span   id="sched-week-label" style="font-size:0.82rem; font-weight:600; min-width:140px; text-align:center;"></span>
+                                    <button id="sched-next-week"  class="btn btn-outlined btn-xs" type="button">След. →</button>
+                                    <button id="sched-today-week" class="btn btn-text btn-xs"     type="button">Сегодня</button>
+                                </div>
+                                <div style="display:flex; gap:8px;">
+                                    <button id="sched-save-btn"     class="btn btn-outlined btn-sm" type="button">💾 Сохранить</button>
+                                    <button id="sched-generate-btn" class="btn btn-filled btn-sm"   type="button">▶ Создать списки</button>
+                                </div>
+                            </div>
+                            <div id="sched-grid" class="sched-grid"></div>
+                            <p style="font-size:0.72rem; color:var(--md-on-surface-hint); padding:8px 0 12px; line-height:1.5;">
+                                Назначьте шаблон на каждый день и нажмите «Создать списки» — они появятся в редакторе автоматически.<br>
+                                Дни без шаблона пропускаются.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Панель: Выгрузка .docx -->
+                    <div class="tools-panel" id="panel-export">
+                        <div class="tools-panel__inner">
+                            <div class="tools-panel__row" style="align-items:flex-end; flex-wrap:wrap; gap:14px;">
+                                <!-- Блок дежурного -->
+                                <div class="duty-block">
+                                    <div class="duty-block__label">Дежурный (подпись в документе)</div>
+                                    <div class="duty-block__fields">
+                                        <div class="field" style="min-width:140px; flex:0 0 140px;">
+                                            <label class="field-label" for="duty-rank">Звание</label>
+                                            <input type="text" id="duty-rank" placeholder="подполковник" autocomplete="off">
+                                        </div>
+                                        <div class="field" style="flex:1; min-width:180px;">
+                                            <label class="field-label" for="duty-name">ФИО</label>
+                                            <input type="text" id="duty-name" placeholder="Д.М. Фамилия" autocomplete="off">
+                                        </div>
+                                        <button id="duty-save-btn" class="btn btn-outlined btn-sm" type="button" style="flex-shrink:0;">
+                                            Сохранить
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="tools-bar__sep" style="height:44px;"></div>
+
+                                <!-- Выгрузка -->
+                                <div class="select-field" style="min-width:220px;">
+                                    <label class="field-label" for="export-event-id">Список для выгрузки</label>
+                                    <select id="export-event-id"></select>
+                                </div>
+                                <button id="export-btn" class="btn btn-outlined btn-sm" type="button" style="flex-shrink:0;">
+                                    ⬇ Скачать .docx
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+               </aside><!-- /.editor-sidebar (tools-bar) -->
+
+               <div class="editor-main">
+                <!-- ── Editor Panel ─────────────────────────────────────────── -->
+                <div class="editor-panel">
+                    <div class="editor-toolbar">
+                        <div class="editor-toolbar__left">
+                            <span class="card-title">Редактор шаблонов</span>
+                            <span class="card-subtitle">Выберите шаблон — откроется автоматически. Готовые списки по датам — во вкладке «История».</span>
+                        </div>
+                        <div class="editor-toolbar__right">
+                            <div class="select-field" style="min-width:260px;">
+                                <label class="field-label" for="editor-event-id">Шаблон</label>
+                                <select id="editor-event-id"></select>
+                            </div>
+                            <!-- Кнопка оставлена как страховка (ручная перезагрузка) -->
+                            <button id="load-editor-btn" class="btn btn-outlined btn-sm" type="button"
+                                    style="margin-top:18px; flex-shrink:0;" title="Перезагрузить выбранный шаблон">
+                                ↻
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Контейнер редактора (скрыт до загрузки) -->
+                    <div id="editor-container" class="hidden">
+
+                        <!-- Bulk-панель массовых действий (появляется при выделении строк) -->
+                        <div id="editor-bulk-bar" class="editor-bulk-bar hidden">
+                            <span class="editor-bulk-bar__count" id="editor-bulk-count">0</span>
+                            <span>строк выделено</span>
+                            <div class="editor-bulk-bar__actions">
+                                <button id="editor-bulk-reassign" class="btn btn-filled  btn-sm" type="button">
+                                    🔀 Переназначить / Очистить
+                                </button>
+                                <button id="editor-bulk-clear" class="btn btn-outlined btn-sm" type="button">
+                                    Снять выделение
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="editor-header" style="display:flex; align-items:center;
+                             justify-content:space-between; flex-wrap:wrap; gap:10px;
+                             padding:14px 18px; border-bottom:1px solid var(--md-outline-variant);">
+                            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                <strong id="editor-title" style="font-size:0.95rem;"></strong>
+                                <div id="editor-template-toggle-wrap" class="hidden"
+                                     style="display:flex; align-items:center; gap:6px;">
+                                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none;">
+                                        <input type="checkbox" id="editor-is-template-cb"
+                                               style="accent-color:var(--md-primary);">
+                                        <span style="font-size:0.78rem; font-weight:500; color:var(--md-primary-dark);">Шаблон</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                                <button id="editor-columns-btn"       class="btn btn-outlined btn-xs" type="button">⚙ Столбцы</button>
+                                <button id="editor-toggle-status-btn" class="btn btn-sm hidden"       type="button"></button>
+                                <button id="editor-delete-event-btn"  class="btn btn-danger btn-xs"  type="button">🗑 Удалить список</button>
+                            </div>
+                        </div>
+
+                        <!-- Toolbar внутри редактора: поиск, статистика, массовые действия -->
+                        <div id="editor-subtoolbar" style="display:flex; align-items:center;
+                             justify-content:space-between; flex-wrap:wrap; gap:10px;
+                             padding:10px 18px; background:var(--md-surface-variant);
+                             border-bottom:1px solid var(--md-outline-variant);">
+                            <div style="display:flex; align-items:center; gap:8px; flex:1; max-width:380px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                     style="flex-shrink:0; color:var(--md-on-surface-hint);">
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <path d="M21 21l-4.35-4.35"/>
+                                </svg>
+                                <input type="text" id="editor-search-input"
+                                       placeholder="Быстрый поиск: ФИО, должность, позывной…"
+                                       autocomplete="off"
+                                       style="flex:1; border:1px solid var(--md-outline-variant);
+                                              background:var(--md-surface); padding:5px 8px;
+                                              border-radius:var(--md-radius-sm); font-size:0.82rem;
+                                              outline:none; color:var(--md-on-surface);">
+                                <select id="editor-filter-dept" title="Фильтр по управлению"
+                                        style="border:1px solid var(--md-outline-variant);
+                                               background:var(--md-surface); padding:5px 6px;
+                                               border-radius:var(--md-radius-sm); font-size:0.78rem;
+                                               min-width:140px; cursor:pointer;
+                                               color:var(--md-on-surface);">
+                                    <option value="">Все управления</option>
+                                </select>
+                                <button id="editor-filter-unfilled" class="btn btn-outlined btn-xs" type="button"
+                                        title="Показать только незаполненные строки (без ФИО)"
+                                        style="white-space:nowrap;">Пустые</button>
+                                <button id="editor-filter-clear" class="btn btn-text btn-xs" type="button"
+                                        title="Сбросить фильтры" style="white-space:nowrap;">✕</button>
+                            </div>
+                            <div style="display:flex; gap:10px; align-items:center; font-size:0.78rem;
+                                        color:var(--md-on-surface-variant);">
+                                <span id="editor-stats-total" title="Всего строк">Всего: —</span>
+                                <span id="editor-stats-filled" title="Заполнено (есть ФИО)" style="color:var(--md-success, #1D9E75);">✓ —</span>
+                                <span id="editor-stats-empty" title="Пустые строки" style="color:var(--md-warning, #BA7517);">○ —</span>
+                                <span id="editor-stats-visible" title="Видимо с учётом фильтров" class="hidden">Показано: —</span>
+                            </div>
+                        </div>
+
+                        <div class="data-table-wrap">
+                            <table id="master-table">
+                                <thead id="master-thead"><tr></tr></thead>
+                                <tbody id="master-tbody"></tbody>
+                            </table>
+                        </div>
+
+                        <!-- Добавление новой группы внизу редактора.
+                             eventId берётся из текущего открытого шаблона
+                             (admin.js currentEditorEventId). -->
+                        <div id="editor-add-group-row"
+                             style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;
+                                    padding:12px 18px; border-top:1px solid var(--md-outline-variant);
+                                    background:var(--md-surface-variant);">
+                            <div class="field" style="flex:1; min-width:200px; max-width:320px;">
+                                <label class="field-label" for="editor-new-group-name">Новая группа</label>
+                                <input type="text" id="editor-new-group-name"
+                                       placeholder="Например: Группа управления" autocomplete="off">
+                            </div>
+                            <button id="editor-add-group-btn"
+                                    class="btn btn-success btn-sm" type="button">
+                                + Добавить группу
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="editor-empty" style="padding:48px 24px; text-align:center;">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                             stroke="var(--md-on-surface-hint)" stroke-width="1.5" style="margin-bottom:12px;">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <path d="M3 9h18M9 21V9"/>
+                        </svg>
+                        <p style="font-size:.92rem; color:var(--md-on-surface); margin-bottom:6px; font-weight:500;">
+                            Выберите шаблон в списке слева
+                        </p>
+                        <p style="font-size:.8rem; color:var(--md-on-surface-hint); line-height:1.5; max-width:440px; margin:0 auto;">
+                            Если шаблонов ещё нет — введите название внизу сайдбара и нажмите <b>«+ Создать»</b>.
+                            <br>Готовые списки по датам находятся во вкладке <b>«История»</b>.
+                        </p>
+                    </div>
+                </div><!-- /.editor-panel -->
+               </div><!-- /.editor-main -->
+              </div><!-- /.editor-layout -->
+
+            </div><!-- /#tab-editor -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: История
+                 Все списки по датам (is_template=false) — архив того что уже
+                 было сгенерировано из шаблонов. Списки, у которых дата прошла,
+                 автоматически отображаются в разделе «Прошедшие».
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-history" class="hidden" role="tabpanel">
+                <div class="hist-cal">
+
+                    <!-- ── Верхний тулбар ───────────────────────────────── -->
+                    <div class="hist-cal__toolbar">
+                        <div class="hist-cal__month-nav">
+                            <button id="hist-cal-prev"  class="hist-cal__nav-btn" type="button" title="Предыдущий месяц">‹</button>
+                            <div class="hist-cal__month-label" id="hist-cal-month-label">—</div>
+                            <button id="hist-cal-next"  class="hist-cal__nav-btn" type="button" title="Следующий месяц">›</button>
+                            <button id="hist-cal-today" class="btn btn-outlined btn-xs" type="button">Сегодня</button>
+                        </div>
+
+                        <div class="hist-cal__mode-group">
+                            <button class="hist-cal__mode-btn active" data-mode="month" type="button">Месяц</button>
+                            <button class="hist-cal__mode-btn"        data-mode="list"  type="button">Список</button>
+                        </div>
+
+                        <div class="hist-cal__search">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="M21 21l-4.35-4.35"/>
+                            </svg>
+                            <input type="text" id="history-search-input"
+                                   placeholder="Поиск по названию списка…" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <!-- ── Сводка месяца ────────────────────────────────── -->
+                    <div class="hist-cal__summary">
+                        <div class="hist-cal__summary-item">
+                            <div class="hist-cal__summary-icon" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="4" width="18" height="18" rx="2"/>
+                                    <line x1="16" y1="2" x2="16" y2="6"/>
+                                    <line x1="8" y1="2"  x2="8" y2="6"/>
+                                    <line x1="3" y1="10" x2="21" y2="10"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="hist-cal__summary-value" id="hist-cal-sum-events">—</div>
+                                <div class="hist-cal__summary-label">списков в месяце</div>
+                            </div>
+                        </div>
+
+                        <div class="hist-cal__summary-item">
+                            <div class="hist-cal__summary-icon" style="background:linear-gradient(135deg,#16a34a,#15803d);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="hist-cal__summary-value" id="hist-cal-sum-past">—</div>
+                                <div class="hist-cal__summary-label">прошедшие</div>
+                            </div>
+                        </div>
+
+                        <div class="hist-cal__summary-item">
+                            <div class="hist-cal__summary-icon" style="background:linear-gradient(135deg,#7c3aed,#a855f7);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="hist-cal__summary-value" id="hist-cal-sum-upcoming">—</div>
+                                <div class="hist-cal__summary-label">предстоящие</div>
+                            </div>
+                        </div>
+
+                        <div class="hist-cal__summary-item">
+                            <div class="hist-cal__summary-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="hist-cal__summary-value" id="hist-cal-sum-audit">—</div>
+                                <div class="hist-cal__summary-label">изменений</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Main layout: календарь + панель детали дня ──── -->
+                    <div class="hist-cal__layout">
+                        <!-- Большой месячный календарь -->
+                        <div class="hist-cal__grid-wrap">
+                            <div class="hist-cal__weekdays">
+                                <div>ПН</div><div>ВТ</div><div>СР</div>
+                                <div>ЧТ</div><div>ПТ</div>
+                                <div class="hist-cal__weekend">СБ</div>
+                                <div class="hist-cal__weekend">ВС</div>
+                            </div>
+                            <div id="hist-cal-grid" class="hist-cal__grid">
+                                <!-- Клетки генерятся в history.js -->
+                            </div>
+                        </div>
+
+                        <!-- Правая панель: детали выбранного дня -->
+                        <aside id="hist-cal-day-panel" class="hist-cal__day-panel">
+                            <div class="hist-cal__day-empty">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="4" width="18" height="18" rx="2"/>
+                                    <line x1="16" y1="2" x2="16" y2="6"/>
+                                    <line x1="8"  y1="2" x2="8" y2="6"/>
+                                    <line x1="3"  y1="10" x2="21" y2="10"/>
+                                </svg>
+                                <p>Выберите день</p>
+                                <span>Кликните по дню в календаре, чтобы посмотреть списки и историю изменений</span>
+                            </div>
+                        </aside>
+                    </div>
+
+                    <!-- ── Режим "Список" (fallback-таблица) ──────────── -->
+                    <div id="hist-cal-list-view" class="hist-cal__list-view hidden">
+                        <div class="data-table-wrap">
+                            <table id="history-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:44px;">ID</th>
+                                        <th style="min-width:200px;">Название</th>
+                                        <th style="min-width:130px;">Дата</th>
+                                        <th style="min-width:120px;">День недели</th>
+                                        <th style="min-width:100px;">Статус</th>
+                                        <th style="min-width:110px;">Заполнение</th>
+                                        <th style="min-width:180px;">Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Скрытые элементы backward-compat (для кода который их ищет) -->
+                    <span id="history-empty" class="hidden" style="display:none;"></span>
+                    <span id="history-filter-period" class="hidden" style="display:none;"></span>
+                    <button id="history-refresh-btn" class="hidden" style="display:none;" type="button"></button>
+                    <span id="history-stat-total"    class="hidden" style="display:none;"></span>
+                    <span id="history-stat-past"     class="hidden" style="display:none;"></span>
+                    <span id="history-stat-upcoming" class="hidden" style="display:none;"></span>
+                    <span id="history-stat-today"    class="hidden" style="display:none;"></span>
+                </div>
+            </div><!-- /#tab-history -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Пользователи (переработан: статистика, поиск, фильтр,
+                 collapsible-форма, компактные карточки)
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-users" class="hidden" role="tabpanel">
+                <div class="users-v2">
+
+                    <!-- ── Статистика (4 мини-карточки) ──────────────────── -->
+                    <div class="users-v2__stats">
+                        <div class="users-v2__stat">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <div>
+                                <div class="users-v2__stat-value" id="users-stat-total">—</div>
+                                <div class="users-v2__stat-label">Всего</div>
+                            </div>
+                        </div>
+                        <div class="users-v2__stat users-v2__stat--admin">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            </svg>
+                            <div>
+                                <div class="users-v2__stat-value" id="users-stat-admins">—</div>
+                                <div class="users-v2__stat-label">Админов</div>
+                            </div>
+                        </div>
+                        <div class="users-v2__stat users-v2__stat--dept">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 21h18M6 21V9l6-4 6 4v12"/>
+                                <path d="M10 21v-6h4v6"/>
+                            </svg>
+                            <div>
+                                <div class="users-v2__stat-value" id="users-stat-depts">—</div>
+                                <div class="users-v2__stat-label">Управлений</div>
+                            </div>
+                        </div>
+                        <div class="users-v2__stat users-v2__stat--unit">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="7" width="18" height="13" rx="2"/>
+                                <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            <div>
+                                <div class="users-v2__stat-value" id="users-stat-units">—</div>
+                                <div class="users-v2__stat-label">Отделов</div>
+                            </div>
+                        </div>
+                        <div class="users-v2__stat users-v2__stat--active">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                            <div>
+                                <div class="users-v2__stat-value" id="users-stat-active">—</div>
+                                <div class="users-v2__stat-label">Активны</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── Тулбар: поиск + фильтр + кнопка "Добавить" ───── -->
+                    <div class="users-v2__toolbar">
+                        <div class="users-v2__search">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="M21 21l-4.35-4.35"/>
+                            </svg>
+                            <input type="text" id="users-search"
+                                   placeholder="Поиск по логину…" autocomplete="off">
+                        </div>
+
+                        <div class="users-v2__filter-group">
+                            <button class="users-v2__filter-btn active" data-role-filter="all" type="button">Все</button>
+                            <button class="users-v2__filter-btn"        data-role-filter="admin" type="button">Админы</button>
+                            <button class="users-v2__filter-btn"        data-role-filter="department" type="button">Управления</button>
+                        </div>
+
+                        <button id="users-v2-toggle-create" class="btn btn-success btn-sm" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+                                 style="margin-right:4px;">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Добавить пользователя
+                        </button>
+                    </div>
+
+                    <!-- ── Форма создания (collapsible) ─────────────────── -->
+                    <div id="users-v2-create-form" class="users-v2__create hidden">
+                        <div class="users-v2__create-grid">
+                            <div class="field">
+                                <label class="field-label" for="new-username">Логин</label>
+                                <input type="text" id="new-username" placeholder="upr_1" autocomplete="off">
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="new-password">Пароль</label>
+                                <input type="text" id="new-password"
+                                       placeholder="Мин. 10 симв., буква + цифра"
+                                       autocomplete="new-password">
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="new-role">Роль</label>
+                                <select id="new-role">
+                                    <option value="department">Управление</option>
+                                    <option value="unit">Отдел</option>
+                                    <option value="admin">Администратор</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="new-user-perms-block" class="users-v2__perms-block">
+                            <div class="users-v2__perms-header">
+                                <span class="field-label">Доступные вкладки</span>
+                                <button id="users-v2-perms-all"  class="users-v2__perms-quick" type="button">Все</button>
+                                <button id="users-v2-perms-none" class="users-v2__perms-quick" type="button">Ничего</button>
+                            </div>
+                            <div id="new-user-perms" class="users-v2__perms-chips">
+                                <!-- Чипы генерятся в admin.js:renderPermsCheckboxes -->
+                            </div>
+                            <p class="hint users-v2__perms-hint">
+                                Для роли «Администратор» игнорируется — он всегда видит всё.
+                            </p>
+                        </div>
+
+                        <div class="users-v2__create-actions">
+                            <button id="users-v2-cancel-create" class="btn btn-outlined btn-sm" type="button">Отмена</button>
+                            <button id="create-user-btn" class="btn btn-success btn-sm" type="button">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+                                     style="margin-right:4px;">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                </svg>
+                                Создать
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ── Список пользователей (карточки) ──────────────── -->
+                    <div id="users-v2-list" class="users-v2__list"></div>
+
+                    <!-- Пустое состояние (после фильтра) -->
+                    <div id="users-v2-empty" class="users-v2__empty hidden">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <p>Никого не найдено</p>
+                        <span>Попробуйте изменить запрос или фильтр</span>
+                    </div>
+
+                    <!-- Скрытый tbody для обратной совместимости -->
+                    <tbody id="users-tbody" class="hidden" style="display:none;"></tbody>
+                </div>
+            </div><!-- /#tab-users -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: База людей
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-persons" class="hidden" role="tabpanel">
+                <div class="persons-panel">
+
+                    <!-- Тулбар: поиск + фильтры + кнопки -->
+                    <div style="display:flex; align-items:center; justify-content:space-between;
+                                flex-wrap:wrap; gap:12px; padding:16px 20px;
+                                border-bottom:1px solid var(--md-outline-variant);">
+                        <div style="display:flex; align-items:center; gap:10px; flex:1; flex-wrap:wrap;">
+                            <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:220px; max-width:360px;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                     style="flex-shrink:0; color:var(--md-on-surface-hint);">
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <path d="M21 21l-4.35-4.35"/>
+                                </svg>
+                                <input type="text" id="persons-search" placeholder="Поиск по ФИО…" autocomplete="off"
+                                       style="flex:1; border:none; background:transparent; font-size:0.88rem; outline:none; color:var(--md-on-surface);">
+                            </div>
+                            <!-- Фильтр по управлению (только для админа) -->
+                            <select id="persons-filter-dept" class="admin-only-field hidden" title="Фильтр по управлению"
+                                    style="border:1px solid var(--md-outline-variant); background:var(--md-surface);
+                                           padding:5px 8px; border-radius:var(--md-radius-sm);
+                                           font-size:0.82rem; outline:none; cursor:pointer; min-width:170px;
+                                           color:var(--md-on-surface);">
+                                <option value="">Все управления</option>
+                            </select>
+                            <!-- Показать уволенных (admin-only) -->
+                            <label class="admin-only-field hidden"
+                                   style="display:flex; align-items:center; gap:6px;
+                                          font-size:0.82rem; color:var(--md-on-surface-variant);
+                                          cursor:pointer; user-select:none;"
+                                   title="Показать уволенных (read-only, с меткой даты)">
+                                <input type="checkbox" id="persons-show-fired" style="cursor:pointer;">
+                                Уволенные
+                            </label>
+                        </div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <input type="file" id="persons-import-input" accept=".xlsx,.xls" class="hidden">
+                            <button id="persons-export-btn" class="btn btn-outlined btn-sm" type="button"
+                                    title="Выгрузить видимые записи в Excel">
+                                ⬇ Экспорт
+                            </button>
+                            <button id="persons-template-btn" class="btn btn-outlined btn-sm" type="button"
+                                    title="Скачать шаблон Excel для заполнения">
+                                ⬇ Шаблон
+                            </button>
+                            <button id="persons-import-btn" class="btn btn-outlined btn-sm" type="button">
+                                ⬆ Импорт Excel
+                            </button>
+                            <button id="persons-add-btn" class="btn btn-success btn-sm" type="button">
+                                + Добавить
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Стат. строка для админа -->
+                    <div id="persons-stats" class="hidden" style="display:none; gap:16px; padding:8px 20px;
+                                background:var(--md-surface-variant);
+                                border-bottom:1px solid var(--md-outline-variant);
+                                font-size:0.78rem; color:var(--md-on-surface-variant); flex-wrap:wrap;">
+                        <span>Всего: <b id="persons-stat-total">—</b></span>
+                        <span>Показано: <b id="persons-stat-visible">—</b></span>
+                        <span>Управлений: <b id="persons-stat-depts">—</b></span>
+                    </div>
+
+                    <!-- ════════════════════════════════════════════════════════
+                         ФОРМА ДОБАВЛЕНИЯ — ИСПРАВЛЕНО:
+                         убран display:flex из inline-style, теперь .hidden
+                         работает корректно. JS управляет показом через
+                         form.style.display = 'flex' / classList.add('hidden')
+                         ════════════════════════════════════════════════════════ -->
+                        <!-- Форма добавления -->
+                    <div id="persons-add-form" class="hidden">
+                        <!-- Первый ряд -->
+                        <div style="display:flex; gap:12px; width:100%; flex-wrap:wrap;">
+                            <div class="field" style="flex:2; min-width:180px;">
+                                <label class="field-label" for="person-fullname">ФИО</label>
+                                <input type="text" id="person-fullname" placeholder="Иванов Иван Иванович" autocomplete="off">
+                            </div>
+                            <div class="field" style="flex:1; min-width:130px;">
+                                <label class="field-label" for="person-rank">Звание</label>
+                                <input type="text" id="person-rank" placeholder="подполковник">
+                            </div>
+                            <div class="field" style="flex:1; min-width:130px;">
+                                <label class="field-label" for="person-doc">№ Документа</label>
+                                <input type="text" id="person-doc" placeholder="АБ123456">
+                            </div>
+                            <div class="field admin-only-field hidden" style="flex:1; min-width:160px;">
+                                <label class="field-label" for="person-dept">Управление</label>
+                                <select id="person-dept">
+                                    <option value="">— без управления —</option>
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Второй ряд (доп. данные из Excel) -->
+                        <div style="display:flex; gap:12px; width:100%; flex-wrap:wrap; margin-top:8px;">
+                            <div class="field" style="flex:1; min-width:140px;">
+                                <label class="field-label" for="person-pos">Должность</label>
+                                <input type="text" id="person-pos" placeholder="Начальник отдела">
+                            </div>
+                            <div class="field" style="flex:1; min-width:120px;">
+                                <label class="field-label" for="person-birth">Дата рождения</label>
+                                <input type="date" id="person-birth">
+                            </div>
+                            <div class="field" style="flex:1; min-width:120px;">
+                                <label class="field-label" for="person-phone">Телефон</label>
+                                <input type="text" id="person-phone" placeholder="+7...">
+                            </div>
+                            <div class="field" style="flex:2; min-width:160px;">
+                                <label class="field-label" for="person-notes">Примечание</label>
+                                <input type="text" id="person-notes" placeholder="Доп. информация">
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:flex-end; padding-bottom:1px; margin-left:auto;">
+                                <button id="persons-save-btn"   class="btn btn-filled btn-sm"   type="button">Сохранить</button>
+                                <button id="persons-cancel-btn" class="btn btn-outlined btn-sm" type="button">Отмена</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Таблица -->
+                    <div class="data-table-wrap">
+                        <table id="persons-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:44px;">ID</th>
+                                    <th style="min-width:180px;">ФИО</th>
+                                    <th style="min-width:100px;">Звание</th>
+                                    <th style="min-width:100px;">№ Док.</th>
+                                    <th id="persons-dept-col" class="hidden" style="min-width:120px;">Управление</th>
+                                    <th style="min-width:140px;">Должность</th>
+                                    <th style="min-width:90px;">Дата рожд.</th>
+                                    <th style="min-width:110px;">Телефон</th>
+                                    <th style="min-width:140px;">Примечание</th>
+                                    <th style="min-width:80px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="persons-tbody"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="persons-empty" class="persons-empty hidden">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
+                             stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        <p>База пока пуста</p>
+                        <span>Добавьте людей вручную или импортируйте из Excel</span>
+                    </div>
+
+                </div>
+            </div><!-- /#tab-persons -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Графики наряда
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-duty" class="hidden" role="tabpanel">
+                <div class="duty-layout">
+
+                    <!-- ── Левая панель: список графиков ─────────────────── -->
+                    <aside class="duty-sidebar">
+                        <div class="duty-sidebar__header">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8"  y1="2" x2="8"  y2="6"/>
+                                <line x1="3"  y1="10" x2="21" y2="10"/>
+                            </svg>
+                            <span class="duty-sidebar__title">Графики наряда</span>
+                        </div>
+
+                        <div class="duty-sidebar__body">
+
+                            <!-- Форма создания (скрыта по умолчанию) -->
+                            <div id="duty-create-form" class="duty-create-form hidden">
+                                <div class="field">
+                                    <label class="field-label" for="duty-create-position">Должность</label>
+                                    <select id="duty-create-position" style="width:100%;"></select>
+                                </div>
+                                <div class="field" style="margin-top:8px;">
+                                    <label class="field-label" for="duty-create-title">Название графика</label>
+                                    <input type="text" id="duty-create-title"
+                                           placeholder="График операторов АМГ" autocomplete="off">
+                                </div>
+                                <div style="display:flex; gap:6px; margin-top:10px;">
+                                    <button id="duty-create-save"   class="btn btn-success btn-sm" style="flex:1;" type="button">Создать</button>
+                                    <button id="duty-create-cancel" class="btn btn-outlined btn-sm" type="button">Отмена</button>
+                                </div>
+                            </div>
+
+                            <!-- Кнопка «+ Создать график» -->
+                            <button id="duty-add-schedule-btn" class="btn btn-success btn-sm"
+                                    style="width:100%; margin-bottom:10px;" type="button">
+                                + Создать график
+                            </button>
+
+                            <!-- Кнопка «История утверждений» — скрывает/показывает
+                                 блок tab-duty-history, перемещённый внутрь tab-duty
+                                 через app.js:consolidateOperations(). Переключение
+                                 через атрибут aria-expanded. -->
+                            <button id="duty-history-toggle" class="btn btn-outlined btn-sm"
+                                    style="width:100%; margin-bottom:10px;" type="button"
+                                    aria-expanded="false" aria-controls="tab-duty-history">
+                                📜 История утверждений
+                            </button>
+
+                            <!-- Список существующих графиков -->
+                            <div id="duty-schedules-list">
+                                <p class="hint">Нет графиков — создайте первый</p>
+                            </div>
+
+                        </div>
+                    </aside>
+
+                    <!-- ── Правая панель: сетка наряда ──────────────────── -->
+                    <div class="duty-grid-panel">
+
+                        <!-- Пустое состояние -->
+                        <div id="duty-grid-empty" class="duty-grid-empty">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                 stroke="var(--md-on-surface-hint)" stroke-width="1.5">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8"  y1="2" x2="8"  y2="6"/>
+                                <line x1="3"  y1="10" x2="21" y2="10"/>
+                            </svg>
+                            <p>Выберите график из списка слева</p>
+                        </div>
+
+                        <!-- Контейнер сетки (показывается после выбора графика) -->
+                        <div id="duty-grid-container" class="hidden">
+
+                            <!-- Toolbar: навигация + утверждение + добавить человека -->
+                            <div class="duty-grid-toolbar">
+                                <div class="duty-month-nav">
+                                    <button id="duty-prev-month"  class="btn btn-outlined btn-xs" type="button">←</button>
+                                    <span   id="duty-month-label" class="duty-month-label"></span>
+                                    <button id="duty-next-month"  class="btn btn-outlined btn-xs" type="button">→</button>
+                                    <button id="duty-today-month" class="btn btn-text btn-xs"     type="button">Сегодня</button>
+                                </div>
+                                <span id="duty-approval-badge"
+                                      style="display:none; margin-left:auto; padding:4px 10px;
+                                             font-size:0.78rem; font-weight:600; border-radius:10px;
+                                             white-space:nowrap;"></span>
+                                <button id="duty-approve-btn" class="btn btn-success btn-sm"
+                                        style="display:none; white-space:nowrap;" type="button">
+                                    📌 Утвердить
+                                </button>
+                                <button id="duty-unapprove-btn" class="btn btn-outlined btn-sm"
+                                        style="display:none; white-space:nowrap;" type="button">
+                                    ✎ Редактировать
+                                </button>
+                                <button id="duty-add-person-btn" class="btn btn-outlined btn-sm" type="button">
+                                    + Добавить человека
+                                </button>
+                            </div>
+
+                            <!-- Поиск человека (автокомплит через fio_autocomplete.js) -->
+                            <div id="duty-person-search-wrap" class="duty-person-search hidden">
+                                <input type="text" id="duty-person-search-input"
+                                       placeholder="Поиск по ФИО…" autocomplete="off"
+                                       class="duty-person-search__input">
+                            </div>
+
+                            <!-- Индикатор загрузки -->
+                            <div id="duty-grid-loading" class="hidden"
+                                 style="padding:16px; text-align:center;
+                                        color:var(--md-on-surface-hint); font-size:0.85rem;">
+                                Загрузка…
+                            </div>
+
+                            <!-- Таблица (горизонтальный скролл) -->
+                            <div class="duty-grid-wrap">
+                                <table id="duty-grid-table" class="duty-grid"></table>
+                            </div>
+
+                            <p class="duty-grid-hint">
+                                Нажмите на клетку чтобы выставить / снять наряд. При выставлении наряда
+                                все списки за эту дату с совпадающей должностью заполнятся автоматически.
+                            </p>
+
+                        </div><!-- /#duty-grid-container -->
+
+                    </div><!-- /.duty-grid-panel -->
+                </div><!-- /.duty-layout -->
+            </div><!-- /#tab-duty -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: История утверждений (admin)
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-duty-history" class="hidden" role="tabpanel">
+                <div class="page-header" style="margin-bottom:16px;">
+                    <h2 class="page-title">История утверждений графиков наряда</h2>
+                </div>
+
+                <!-- Фильтры -->
+                <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;
+                            padding:12px 0; margin-bottom:8px;">
+                    <div class="field" style="min-width:220px;">
+                        <label class="field-label" for="dh-filter-schedule">График</label>
+                        <select id="dh-filter-schedule">
+                            <option value="">— все графики —</option>
+                        </select>
+                    </div>
+                    <div class="field" style="min-width:120px;">
+                        <label class="field-label" for="dh-filter-year">Год</label>
+                        <select id="dh-filter-year">
+                            <option value="">— все —</option>
+                        </select>
+                    </div>
+                    <button id="dh-reset-btn" class="btn btn-outlined btn-sm" type="button">Сбросить</button>
+                </div>
+
+                <!-- Список утверждений -->
+                <div class="data-table-wrap">
+                    <table id="dh-table">
+                        <thead>
+                            <tr>
+                                <th style="min-width:220px;">График</th>
+                                <th style="min-width:120px;">Управление</th>
+                                <th style="min-width:90px;">Месяц</th>
+                                <th style="min-width:140px;">Утверждён</th>
+                                <th style="min-width:110px;">Кем</th>
+                                <th style="width:110px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="dh-tbody">
+                            <tr><td colspan="6" style="padding:24px; text-align:center; color:var(--md-on-surface-hint);">
+                                Загрузка…
+                            </td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Детали выбранного snapshot'а -->
+                <div id="dh-detail" class="hidden" style="margin-top:20px; padding:16px;
+                            background:var(--md-surface-variant);
+                            border-radius:var(--md-radius-md);"></div>
+            </div><!-- /#tab-duty-history -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Боевой расчёт
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-combat" class="hidden" role="tabpanel">
+
+                <!-- Раскрывающийся Тулбар -->
+                <div class="tools-bar">
+                    <div class="tools-bar__buttons">
+                        <button class="tool-trigger active" data-panel="cc-panel-calendar-admin" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8"  y1="2" x2="8"  y2="6"/>
+                                <line x1="3"  y1="10" x2="21" y2="10"/>
+                            </svg>
+                            Календарь расчётов
+                            <svg class="tool-trigger__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="tools-panel open" id="cc-panel-calendar-admin">
+                        <div class="tools-panel__inner" style="padding-bottom:16px;">
+                            <!-- Статистика боевых расчётов -->
+                            <div id="cc-stats-admin" style="display:flex; gap:14px; padding:8px 10px; margin-bottom:10px;
+                                        background:var(--md-surface-variant); border-radius:var(--md-radius-sm);
+                                        font-size:0.78rem; color:var(--md-on-surface-variant); flex-wrap:wrap; align-items:center;">
+                                <span><b>Неделя:</b></span>
+                                <span title="Всего расчётов">Всего: <b id="cc-stat-total">—</b></span>
+                                <span title="В статусе Активен" style="color:var(--md-primary);">Активные: <b id="cc-stat-active">—</b></span>
+                                <span title="В статусе Черновик" style="color:var(--md-warning, #BA7517);">Черновики: <b id="cc-stat-draft">—</b></span>
+                                <span title="В статусе Закрыт" style="color:var(--md-on-surface-hint);">Закрытые: <b id="cc-stat-closed">—</b></span>
+                                <span style="margin-left:auto; font-size:0.72rem; color:var(--md-on-surface-hint);">Шаблонов: <b id="cc-stat-templates">—</b></span>
+                            </div>
+
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                                <button id="cc-prev-week-admin" class="btn btn-outlined btn-xs" type="button">← Пред.</button>
+                                <div style="display:flex; flex-direction:column; align-items:center; min-width:130px;">
+                                    <span id="cc-week-label-admin" style="font-size:0.85rem; font-weight:600; text-align:center;"></span>
+                                    <span id="cc-today-week-admin" style="font-size:0.7rem; color:var(--md-primary); cursor:pointer; margin-top:2px;">Текущая неделя</span>
+                                </div>
+                                <button id="cc-next-week-admin" class="btn btn-outlined btn-xs" type="button">След. →</button>
+                            </div>
+
+                            <div id="cc-instances-list-admin" style="display:grid; grid-template-columns:repeat(7, minmax(140px, 1fr)); gap:8px; overflow-x:auto; padding-bottom:4px;">
+                                <p class="hint" style="grid-column:1 / -1; text-align:center;">Загрузка...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Зона Редактора (внизу) -->
+                <div class="editor-panel" style="margin-top:16px;">
+                    <div id="cc-view-empty-admin" style="padding:48px 24px; text-align:center; color:var(--md-on-surface-hint);">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.5" style="margin-bottom:12px;">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="16" y1="2" x2="16" y2="6"/>
+                            <line x1="8"  y1="2" x2="8"  y2="6"/>
+                            <line x1="3"  y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <p style="font-size:.875rem;">Выберите расчёт на любой день из календаря сверху</p>
+                    </div>
+                    <div id="cc-view-panel-admin" class="hidden" style="padding:24px;"></div>
+                </div>
+
+            </div><!-- /#tab-combat -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Календарь задач (админ — сводный вид по всем)
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-calendar" class="hidden" role="tabpanel">
+                <div id="tasks-root" data-role="admin"></div>
+            </div><!-- /#tab-calendar -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Операции — аккордеон с редко используемыми разделами
+                 Содержимое (tab-history, tab-users, tab-persons, tab-calendar)
+                 переезжает сюда через app.js:consolidateOperations() при старте.
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-operations" class="hidden" role="tabpanel">
+                <div class="ops-accordion" id="ops-accordion">
+                    <!-- cards генерирует consolidateOperations() -->
+                </div>
+            </div><!-- /#tab-operations -->
+
+        </div><!-- /.page -->
+    </div><!-- /#admin-view -->
+
+</main>
+
+<!-- ═══════════════════════════════════════════════
+     SNACKBAR
+     ═══════════════════════════════════════════════ -->
+<div id="snackbar" role="status" aria-live="polite">
+    <span id="snackbar-text"></span>
+    <button class="snackbar__close" onclick="closeSnackbar()" aria-label="Закрыть">✕</button>
+</div>
+
+<script>
+    let _snackbarTimer = null;
+
+    window.showSnackbar = function(message, type = 'default', duration = 4000) {
+        const sb   = document.getElementById('snackbar');
+        const text = document.getElementById('snackbar-text');
+        text.textContent = message;
+        sb.className = 'visible';
+        if (type === 'error')   sb.classList.add('snackbar--error');
+        if (type === 'success') sb.classList.add('snackbar--success');
+        clearTimeout(_snackbarTimer);
+        _snackbarTimer = setTimeout(closeSnackbar, duration);
+    };
+
+    window.closeSnackbar = function() {
+        document.getElementById('snackbar').className = '';
+    };
+
+    window.showError = function(msg) { showSnackbar(msg, 'error'); };
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     TOOLS BAR — toggle panels
+     ═══════════════════════════════════════════════ -->
+<script type="module">
+    import { loadAndRenderPositions } from '/static/js/admin.js';
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.tool-trigger').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.dataset.panel;
+                const panel    = document.getElementById(targetId);
+                const isOpen   = panel?.classList.contains('open');
+
+                // Закрываем все
+                document.querySelectorAll('.tools-panel').forEach(p => p.classList.remove('open'));
+                document.querySelectorAll('.tool-trigger').forEach(b => b.classList.remove('active'));
+
+                // Открываем нужную, если была закрыта
+                if (!isOpen && panel) {
+                    panel.classList.add('open');
+                    btn.classList.add('active');
+
+                    if (targetId === 'panel-positions') {
+                        loadAndRenderPositions();
+                    }
+                }
+            });
+        });
+    });
+</script>
+
+<script type="module" src="/static/js/app.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,269 @@
+/* ============================================================
+   layout.css — App Shell, Top App Bar, Page, Tabs,
+   Admin Layout, Sidebar, Responsive
+   ============================================================ */
+
+/* ─── App Shell ───────────────────────────────────────────── */
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* ─── Top App Bar ────────────────────────────────────────── */
+.top-app-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--md-surface);
+    border-bottom: 1px solid var(--md-outline-variant);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: box-shadow var(--md-duration-medium) var(--md-motion-standard);
+}
+
+.top-app-bar__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* Full-width: раньше было max-width: 1440px и margin: 0 auto —
+       на широких мониторах шапка сжималась в центр, и большая часть
+       экрана пустовала. Теперь растягивается на всю ширину, отступ
+       только через padding. */
+    max-width: none;
+    width: 100%;
+    padding: 0 24px;
+    height: 60px;
+    gap: 16px;
+}
+
+.top-app-bar__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+}
+
+.top-app-bar__logo {
+    width: 30px;
+    height: 30px;
+    background: var(--md-primary);
+    border-radius: var(--md-radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(58, 99, 88, 0.25);
+}
+
+.top-app-bar__logo svg {
+    width: 16px;
+    height: 16px;
+    stroke: white;
+    fill: none;
+    stroke-width: 2;
+}
+
+.top-app-bar__title {
+    font-family: var(--md-font-display);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    letter-spacing: -0.015em;
+}
+
+.top-app-bar__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.user-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 4px 4px;
+    background: var(--md-surface-variant);
+    border-radius: var(--md-radius-full);
+    border: 1px solid var(--md-outline-variant);
+    transition: background var(--md-duration-short);
+}
+
+.user-chip:hover { background: var(--md-surface-container); }
+
+.user-avatar {
+    width: 26px;
+    height: 26px;
+    background: var(--md-primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--md-font-display);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: white;
+    flex-shrink: 0;
+}
+
+.user-name {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    max-width: 160px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+
+/* ─── Page Layout ─────────────────────────────────────────── */
+.page {
+    /* Full-width: раньше max-width: 1440px отжимал контент в центр
+       с пустотой по бокам на широких экранах. Теперь растягивается
+       на всю ширину вьюпорта, отступы через padding.
+       Для очень широких мониторов (>2560px) ставим мягкий потолок
+       чтобы строки не разрастались до нечитабельных — 2400px хватает. */
+    max-width: 2400px;
+    margin: 0 auto;
+    padding: 22px 28px 48px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.page-header {
+    margin-bottom: 20px;
+}
+
+.page-title {
+    font-family: var(--md-font-display);
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    letter-spacing: -0.02em;
+}
+
+
+/* ─── Tab Bar ────────────────────────────────────────────── */
+.tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--md-outline-variant);
+    margin-bottom: 20px;
+    background: transparent;
+    padding: 0;
+}
+
+.tab-btn {
+    position: relative;
+    padding: 0 18px;
+    height: 44px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--md-on-surface-hint);
+    font-family: var(--md-font-body);
+    font-size: 0.84rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color var(--md-duration-short), border-color var(--md-duration-short);
+    white-space: nowrap;
+    border-radius: 0;
+    letter-spacing: 0.01em;
+}
+
+.tab-btn:hover { color: var(--md-on-surface-variant); }
+
+.tab-btn.active {
+    color: var(--md-primary-dark);
+    border-bottom-color: var(--md-primary-dark);
+    font-weight: 600;
+}
+
+/* ─── Admin Layout ────────────────────────────────────────── */
+.admin-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 18px;
+    align-items: start;
+}
+
+/* ─── Sidebar ─────────────────────────────────────────────── */
+.sidebar__header {
+    padding: 14px 18px;
+    background: var(--md-primary);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.sidebar__header svg {
+    opacity: 0.85;
+}
+
+.sidebar__header-title {
+    font-family: var(--md-font-display);
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.92);
+    letter-spacing: 0.02em;
+}
+
+.sidebar__section {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.sidebar__section:last-child { border-bottom: none; }
+
+.sidebar__section-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--md-on-surface-hint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+}
+
+.sidebar__section-label .step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+    font-size: 0.68rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    border: 1px solid #c5ddd8;
+}
+
+.sidebar__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+
+/* ─── Responsive ──────────────────────────────────────────── */
+@media (max-width: 1024px) {
+    .admin-layout { grid-template-columns: 1fr; }
+    .editor-toolbar { flex-direction: column; align-items: flex-start; }
+    .editor-toolbar__right { width: 100%; flex-wrap: wrap; }
+    .editor-toolbar__right select { flex: 1; min-width: 0; }
+}
+
+@media (max-width: 640px) {
+    .top-app-bar__inner { padding: 0 14px; }
+    .page { padding: 14px 14px 40px; }
+    .create-user-row { flex-direction: column; }
+    .create-user-row .field,
+    .create-user-row .field--role { flex: 1 1 100%; }
+    .login-card__header,
+    .login-card__body { padding-left: 22px; padding-right: 22px; }
+}
+

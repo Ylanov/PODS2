@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Тестирование</title>
+    <link rel="stylesheet" href="/static/css/training_public.css">
+</head>
+<body>
+    <div class="tp-card" id="tp-card">
+        <div class="tp-loading">Загрузка…</div>
+    </div>
+
+    <!-- Шаблон формы регистрации (этап 1) -->
+    <template id="tpl-register">
+        <div class="tp-step">
+            <h1 class="tp-title">Тестирование</h1>
+            <p class="tp-hello">Здравствуйте, <b data-fio>—</b></p>
+            <p class="tp-topic" data-topic></p>
+            <p class="tp-hint">
+                Заполните анкету — данные уйдут в отдел профессиональной
+                подготовки. После этого начнётся сам тест.
+            </p>
+            <form class="tp-form" id="tp-form">
+                <label class="tp-field">
+                    <span class="tp-field__label">Управление / отдел *</span>
+                    <input type="text" name="department" required maxlength="100"
+                           autocomplete="organization">
+                </label>
+                <label class="tp-field">
+                    <span class="tp-field__label">Номер телефона *</span>
+                    <input type="tel" name="phone" required maxlength="50"
+                           autocomplete="tel" placeholder="+7…">
+                </label>
+                <button type="submit" class="tp-submit">Продолжить →</button>
+                <div class="tp-error" id="tp-error" hidden></div>
+            </form>
+        </div>
+    </template>
+
+    <!-- Шаблон контейнера для теста — вопросы рендерятся в JS -->
+    <template id="tpl-test">
+        <div class="tp-step tp-step--test">
+            <div class="tp-test__head">
+                <h1 class="tp-title">Тестирование</h1>
+                <p class="tp-test__sub">
+                    <b data-fio>—</b><span data-topic></span>
+                </p>
+                <p class="tp-test__progress" data-progress></p>
+            </div>
+            <form class="tp-test__form" id="tp-test-form">
+                <div class="tp-questions" id="tp-questions"></div>
+                <button type="submit" class="tp-submit" id="tp-test-submit">
+                    Завершить тест
+                </button>
+                <div class="tp-error" id="tp-test-error" hidden></div>
+            </form>
+        </div>
+    </template>
+
+    <!-- Завершено: показываем результат -->
+    <template id="tpl-completed">
+        <div class="tp-step">
+            <h1 class="tp-title" data-result-title>Тест завершён</h1>
+            <p class="tp-hello">Спасибо, <b data-fio>—</b></p>
+            <div class="tp-result" data-result>
+                <!-- наполнение из training_public.js -->
+            </div>
+            <p class="tp-hint tp-hint--muted">
+                Результат передан в отдел профессиональной подготовки.
+            </p>
+        </div>
+    </template>
+
+    <!-- Срок истёк / отозвано -->
+    <template id="tpl-expired">
+        <div class="tp-step tp-step--error">
+            <h1 class="tp-title">Ссылка недействительна</h1>
+            <p class="tp-hint">
+                Срок действия ссылки истёк или она была отозвана.
+                Обратитесь в отдел профессиональной подготовки за новой ссылкой.
+            </p>
+        </div>
+    </template>
+
+    <script type="module" src="/static/js/training_public.js"></script>
+</body>
+</html>

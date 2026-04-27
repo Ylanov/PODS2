@@ -1,0 +1,295 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Event Editor — модалка редактирования списка для админа (с дашборда/истории).
+   Палитра синхронизирована с основным редактором шаблонов (tokens.css):
+   тёплый нейтральный + slate-green акцент. Никаких hardcoded-синих.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.evt-edit__backdrop {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, 0.48);
+    display: flex; align-items: center; justify-content: center;
+    padding: 18px;
+    animation: evt-edit-fade 0.12s ease-out;
+}
+
+@keyframes evt-edit-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.evt-edit__dialog {
+    background: var(--md-surface);
+    border-radius: var(--md-radius-lg);
+    border: 1px solid var(--md-outline-variant);
+    max-width: 1280px;
+    width: 100%;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.28);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.evt-edit__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    flex-wrap: wrap;
+    background: var(--md-surface);
+}
+.evt-edit__title-group { flex: 1; min-width: 0; }
+.evt-edit__title {
+    font-family: var(--md-font-display);
+    font-size: 1.04rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    line-height: 1.2;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.evt-edit__subtitle {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-hint);
+    margin-top: 2px;
+    text-transform: capitalize;
+}
+
+.evt-edit__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Status pill "Сохранено / Сохранение / Ошибка" — семантические цвета
+   (зелёный/жёлтый/красный) берём из токенов, а не из Tailwind-палитры */
+.evt-edit__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--md-radius-full);
+    font-size: 0.76rem;
+    font-weight: 500;
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    transition: all 0.15s;
+}
+.evt-edit__status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: currentColor; opacity: 0.75;
+}
+.evt-edit__status--ok     { background: var(--md-success-light); color: var(--md-success); }
+.evt-edit__status--saving { background: var(--md-warning-light); color: var(--md-warning); }
+.evt-edit__status--error  { background: var(--md-error-light);   color: var(--md-error); }
+.evt-edit__status--saving .evt-edit__status-dot {
+    animation: evt-edit-pulse 1.1s ease-in-out infinite;
+}
+@keyframes evt-edit-pulse {
+    0%, 100% { opacity: 0.3; }
+    50%      { opacity: 1; }
+}
+
+/* ── Панель «Дежурный (подпись в документе)» ───────────────────────────── */
+/* Между header и таблицей: компактная строка с двумя инпутами и сохранением.
+   Идентична блоку в «Редакторе шаблонов» (панель «Выгрузка .docx»),
+   чтобы админ не искал этот функционал по всему UI. */
+.evt-edit__duty {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 10px 20px;
+    background: var(--md-surface-variant);
+    border-bottom: 1px solid var(--md-outline-variant);
+    flex-wrap: wrap;
+}
+.evt-edit__duty-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--md-on-surface-hint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    align-self: center;
+    flex-shrink: 0;
+    padding-right: 4px;
+}
+.evt-edit__duty-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.evt-edit__duty-field-label {
+    font-size: 0.68rem;
+    color: var(--md-on-surface-hint);
+    font-weight: 500;
+}
+.evt-edit__duty-field input {
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    padding: 5px 9px;
+    border-radius: var(--md-radius-sm);
+    font-size: 0.82rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short);
+}
+.evt-edit__duty-field input:focus {
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 2px rgba(74, 124, 111, 0.14);
+}
+.evt-edit__duty-field--rank input { width: 140px; }
+.evt-edit__duty-field--name input { width: 220px; }
+.evt-edit__duty-save { flex-shrink: 0; }
+.evt-edit__duty-note {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.72rem;
+    color: var(--md-on-surface-hint);
+    line-height: 1.4;
+    align-self: center;
+}
+
+/* ── Body ───────────────────────────────────────────────────────────────── */
+.evt-edit__body {
+    flex: 1;
+    overflow: auto;
+    background: var(--md-surface);
+}
+
+.evt-edit__loading {
+    padding: 48px;
+    text-align: center;
+    color: var(--md-on-surface-hint);
+    font-size: 0.92rem;
+}
+.evt-edit__error {
+    padding: 24px;
+    text-align: center;
+    color: var(--md-error);
+    background: var(--md-error-light);
+    margin: 16px;
+    border-radius: var(--md-radius-md);
+}
+
+/* ── Таблица редактирования ─────────────────────────────────────────────── */
+.evt-edit__table-wrap {
+    padding: 0;
+}
+
+.evt-edit__table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+}
+
+.evt-edit__table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--md-surface-variant);
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--md-on-surface-variant);
+    border-bottom: 2px solid var(--md-outline-variant);
+}
+
+.evt-edit__table tbody td {
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    vertical-align: middle;
+}
+
+.evt-edit__table tbody tr:hover td {
+    background: var(--md-surface-variant);
+}
+
+/* Группа (заголовочная строка) — тот же визуал, что и в основном редакторе:
+   тёплый surface-container + primary-dark акцент, uppercase с letter-spacing */
+.evt-edit__group-row td {
+    background: var(--md-surface-container) !important;
+    padding: 9px 13px !important;
+    border-top: 1px solid var(--md-outline) !important;
+    border-bottom: 1px solid var(--md-outline-variant) !important;
+}
+.evt-edit__group-name {
+    font-family: var(--md-font-display);
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: var(--md-primary-dark);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* ── Inputs в ячейках ───────────────────────────────────────────────────── */
+.evt-edit__input {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: var(--md-radius-sm);
+    font-size: 0.84rem;
+    color: var(--md-on-surface);
+    outline: none;
+    font-family: inherit;
+    transition: background var(--md-duration-short),
+                border-color var(--md-duration-short),
+                box-shadow var(--md-duration-short);
+}
+.evt-edit__input:hover {
+    background: var(--md-surface-variant);
+}
+.evt-edit__input:focus {
+    background: var(--md-surface);
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 3px rgba(74, 124, 111, 0.14);
+}
+
+/* Select: треугольник SVG в цвет токена --md-on-surface-hint */
+select.evt-edit__input {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239e9a94' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 26px;
+    cursor: pointer;
+}
+
+/* Индикатор сохранения (✓ / ⋯ / ✕) */
+.evt-edit__saved-indicator {
+    display: inline-block;
+    width: 18px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--md-on-surface-hint);
+    transition: opacity 0.2s;
+}
+.evt-edit__saved-indicator--ok  { color: var(--md-success); }
+.evt-edit__saved-indicator--err { color: var(--md-error); }
+
+/* FIO suggest-box — переопределяем top/bottom чтобы висел под input'ом */
+.evt-edit__table td .fio-suggest-box {
+    top: calc(100% + 2px);
+    left: 0;
+    right: auto;
+    width: 320px;
+    max-width: none;
+}
+
+/* ── Mobile ─────────────────────────────────────────────────────────────── */
+@media (max-width: 760px) {
+    .evt-edit__backdrop { padding: 0; }
+    .evt-edit__dialog { border-radius: 0; max-height: 100vh; }
+    .evt-edit__header { padding: 10px 14px; }
+    .evt-edit__duty { padding: 8px 14px; }
+    .evt-edit__duty-field--rank input,
+    .evt-edit__duty-field--name input { width: 100%; min-width: 120px; }
+    .evt-edit__table thead th,
+    .evt-edit__table tbody td { padding: 4px 6px; font-size: 0.78rem; }
+}

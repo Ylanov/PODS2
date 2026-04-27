@@ -1,0 +1,30 @@
+<!-- views/login.html -->
+<div id="login-view" class="hidden">
+    <div class="login-card">
+        <div class="login-card__header">
+            <div class="login-logo">
+                <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <h1 class="login-card__title">Штабная Платформа</h1>
+            <p class="login-card__subtitle">Войдите в систему для продолжения</p>
+        </div>
+        <div class="login-card__body">
+            <form id="login-form" novalidate>
+                <div class="field" style="margin-bottom: 4px;">
+                    <label class="field-label" for="username">Логин</label>
+                    <input type="text" id="username" placeholder="Например: upr_1"
+                           required autocomplete="username">
+                </div>
+                <div class="field" style="margin-bottom: 4px;">
+                    <label class="field-label" for="password">Пароль</label>
+                    <input type="password" id="password" placeholder="Введите пароль"
+                           required autocomplete="current-password">
+                </div>
+                <div id="login-error" class="login-error" role="alert" aria-live="polite"></div>
+                <button type="submit" class="btn btn-filled" style="width:100%; margin-top: 8px;">
+                    Войти
+                </button>
+            </form>
+        </div>
+    </div>
+</div>

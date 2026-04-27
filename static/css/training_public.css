@@ -1,0 +1,272 @@
+/* ============================================================
+   training_public.css — публичная страница прохождения теста.
+   Открывается по QR-коду или ссылке /training/{token}.
+   Дизайн рассчитан на мобильные экраны: одна карточка по центру.
+   ============================================================ */
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #4A7C6F 0%, #2c5046 100%);
+    color: #1a2024;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.tp-card {
+    background: #ffffff;
+    border-radius: 18px;
+    width: 100%;
+    max-width: 440px;
+    padding: 28px 22px 24px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+    animation: tp-pop 0.16s ease-out;
+}
+@keyframes tp-pop {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.tp-loading {
+    text-align: center;
+    padding: 32px 0;
+    color: #6b7780;
+    font-size: 0.95rem;
+}
+
+.tp-step {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.tp-title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #2c5046;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.tp-step--error .tp-title { color: #b85450; }
+
+.tp-hello {
+    margin: 0;
+    text-align: center;
+    font-size: 1.05rem;
+    color: #1a2024;
+}
+.tp-hello b { font-weight: 600; }
+
+.tp-topic {
+    margin: 0;
+    text-align: center;
+    font-size: 0.92rem;
+    color: #4A7C6F;
+    font-weight: 500;
+}
+.tp-topic:empty { display: none; }
+
+.tp-hint {
+    margin: 0;
+    color: #5b6770;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    text-align: center;
+}
+.tp-hint--muted { color: #99a3ad; font-size: 0.84rem; }
+
+/* ── Форма ────────────────────────────────────────────────── */
+.tp-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 8px;
+}
+.tp-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.tp-field__label {
+    font-size: 0.82rem;
+    color: #4a5560;
+    font-weight: 500;
+}
+.tp-field input {
+    border: 1px solid #d4dade;
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-size: 1rem;
+    font-family: inherit;
+    background: #f8f9fa;
+    color: #1a2024;
+    outline: none;
+    transition: border-color 0.12s, background 0.12s;
+}
+.tp-field input:focus {
+    border-color: #4A7C6F;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(74, 124, 111, 0.12);
+}
+
+.tp-submit {
+    margin-top: 6px;
+    background: #4A7C6F;
+    color: #ffffff;
+    border: 0;
+    border-radius: 10px;
+    padding: 13px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.08s;
+}
+.tp-submit:hover  { background: #3d6a5e; }
+.tp-submit:active { transform: scale(0.98); }
+.tp-submit:disabled {
+    background: #99a3ad;
+    cursor: not-allowed;
+}
+
+.tp-error {
+    background: #fce8e6;
+    color: #b85450;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    text-align: center;
+}
+
+
+/* ─── Этап «Тест» ────────────────────────────────────────── */
+.tp-step--test {
+    width: 100%;
+}
+.tp-card:has(.tp-step--test) {
+    /* Тест может быть длинным — растягиваем карточку */
+    max-width: 720px;
+}
+.tp-test__head {
+    text-align: center;
+    margin-bottom: 8px;
+}
+.tp-test__sub {
+    margin: 6px 0 4px;
+    font-size: 0.92rem;
+    color: #4a5560;
+}
+.tp-test__progress {
+    margin: 0;
+    font-size: 0.82rem;
+    color: #99a3ad;
+}
+.tp-test__form {
+    display: flex; flex-direction: column; gap: 14px;
+}
+.tp-questions {
+    display: flex; flex-direction: column; gap: 14px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 4px 2px;
+}
+
+.tp-q {
+    background: #f8f9fa;
+    border: 1px solid #e8eaed;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+.tp-q__num {
+    font-size: 0.74rem;
+    color: #99a3ad;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+.tp-q__text {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #1a2024;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+.tp-q__opts {
+    display: flex; flex-direction: column; gap: 6px;
+}
+.tp-q__opt {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px;
+    background: #ffffff;
+    border: 1.5px solid #e0e4e8;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: all 0.12s;
+}
+.tp-q__opt:hover {
+    border-color: #4A7C6F;
+    background: rgba(74, 124, 111, 0.04);
+}
+.tp-q__opt:has(input:checked) {
+    border-color: #4A7C6F;
+    background: rgba(74, 124, 111, 0.08);
+}
+.tp-q__opt input {
+    margin-top: 2px;
+    accent-color: #4A7C6F;
+    width: 18px; height: 18px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.tp-q__opt span {
+    font-size: 0.92rem;
+    color: #1a2024;
+    line-height: 1.4;
+}
+
+
+/* ─── Результат ──────────────────────────────────────────── */
+.tp-result {
+    text-align: center;
+    background: #f8f9fa;
+    border: 1px solid #e8eaed;
+    border-radius: 14px;
+    padding: 20px 16px;
+    display: flex; flex-direction: column; gap: 6px;
+}
+.tp-result--ok {
+    background: rgba(46, 125, 50, 0.08);
+    border-color: rgba(46, 125, 50, 0.25);
+}
+.tp-result--fail {
+    background: rgba(184, 84, 80, 0.08);
+    border-color: rgba(184, 84, 80, 0.25);
+}
+.tp-result__big {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: #2c5046;
+    line-height: 1;
+    margin-bottom: 4px;
+}
+.tp-result--ok   .tp-result__big { color: #2e7d32; }
+.tp-result--fail .tp-result__big { color: #b85450; }
+.tp-result__row {
+    font-size: 0.92rem;
+    color: #4a5560;
+}
+.tp-result__row--muted {
+    font-size: 0.82rem;
+    color: #99a3ad;
+    margin-top: 4px;
+}
