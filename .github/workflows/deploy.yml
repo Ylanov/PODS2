@@ -1,0 +1,31 @@
+name: Deploy to VM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code
+        run: |
+          cd /srv/pods2
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Build & restart containers
+        run: |
+          cd /srv/pods2
+          docker compose up -d --build
+
+      - name: Apply DB migrations
+        run: |
+          cd /srv/pods2
+          docker compose exec -T web alembic upgrade head
+
+      - name: Healthcheck
+        run: |
+          sleep 8
+          curl -sIL -X GET -H "Host: staff.asy-tk.ru" http://10.23.1.183/ | head -5
