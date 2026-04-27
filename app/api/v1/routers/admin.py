@@ -190,6 +190,21 @@ class UserPermissionsUpdate(BaseModel):
         return UserCreate._validate_permissions.__func__(cls, v) or []
 
 
+class UserPasswordReset(BaseModel):
+    """
+    Сброс пароля админом для произвольного юзера.
+    Старый пароль не проверяется — это admin override (нужно когда юзер
+    забыл пароль или нужно его принудительно сменить).
+    Свой пароль юзер меняет через /auth/me/password (там проверяется старый).
+    """
+    new_password: str = Field(..., min_length=10, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _check(cls, v):
+        return UserCreate._password_strength.__func__(cls, v)
+
+
 class UserModulesUpdate(BaseModel):
     """Изменение списка модулей-операций (только для unit-юзеров)."""
     modules: List[str] = Field(default_factory=list)
@@ -1295,6 +1310,52 @@ def update_user_modules(
         )
         db.commit()
 
+    return user
+
+
+@router.put("/users/{user_id}/password", response_model=UserResponse,
+            summary="Сбросить пароль пользователя (админ)")
+def reset_user_password(
+        user_id:       int,
+        payload:       UserPasswordReset,
+        request:       Request,
+        db:            Session = Depends(get_db),
+        current_admin: User    = Depends(get_current_active_admin),
+):
+    """
+    Принудительная установка нового пароля админом. Старый пароль не нужен —
+    это override-операция для случаев когда пользователь забыл пароль или
+    его нужно сменить по требованию безопасности.
+
+    Свой собственный пароль юзеры меняют через /auth/me/password там
+    обязательна проверка текущего пароля.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+    db.refresh(user)
+
+    log_change(
+        db, request, current_admin,
+        action      = ACTION_UPDATE,
+        entity_type = "user_password",
+        entity_id   = user.id,
+        old_values  = {},                                # пароли в логе не храним
+        new_values  = {"reset_by_admin": True},
+        extra       = {"username": user.username},
+    )
+    notify_user(
+        db, user.id,
+        kind  = "password_changed",
+        title = "Пароль был сброшен администратором",
+        body  = "Ваш пароль был изменён администратором. "
+                "Если это сделали не вы — обратитесь к администратору.",
+        link  = None,
+    )
+    db.commit()
     return user
 
 

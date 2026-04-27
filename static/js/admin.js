@@ -1063,6 +1063,16 @@ function _renderUserCard(user) {
            </button>`
         : '';
 
+    // Кнопка «Сбросить пароль» — для всех кроме защищённого main-admin.
+    // Админ может назначать пароль любому пользователю принудительно
+    // (на случай если юзер забыл его).
+    const passwdBtn = isProtected
+        ? ''
+        : `<button class="users-v2__icon-btn" data-reset-password="${user.id}"
+                   title="Сбросить пароль пользователю">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/></svg>
+           </button>`;
+
     const delBtn = isProtected
         ? `<button class="users-v2__icon-btn users-v2__icon-btn--protected" title="Главный администратор — защищён от удаления" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -1085,7 +1095,7 @@ function _renderUserCard(user) {
             </div>
             <div class="users-v2__card-perms">${_cardPermsHtml(user)}</div>
             ${isUnit ? `<div class="users-v2__card-modules">${_cardModulesHtml(user)}</div>` : ''}
-            <div class="users-v2__card-actions">${editBtn}${modulesBtn}${delBtn}</div>
+            <div class="users-v2__card-actions">${editBtn}${modulesBtn}${passwdBtn}${delBtn}</div>
         </div>
     `;
 }
@@ -1172,10 +1182,124 @@ function _renderUsersList() {
             if (user) _openModulesModal(user);
         });
     });
+    list.querySelectorAll('[data-reset-password]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const userId = parseInt(btn.dataset.resetPassword, 10);
+            const user   = _usersCache.find(u => u.id === userId);
+            if (user) _openPasswordResetModal(user);
+        });
+    });
     list.querySelectorAll('[data-delete-id]').forEach(btn => {
         btn.addEventListener('click', () => {
             const userId = parseInt(btn.dataset.deleteId, 10);
             deleteUser(userId);
+        });
+    });
+}
+
+
+// Модалка «Сбросить пароль» — админ задаёт новый пароль любому юзеру.
+// Старый пароль не требуется (это admin override). Юзеру улетит уведомление.
+function _openPasswordResetModal(user) {
+    document.getElementById('passwd-modal')?.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'passwd-modal';
+    modal.style.cssText = `
+        position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.45);
+        display:flex; align-items:center; justify-content:center; padding:20px;
+        animation: users-v2-slide-in 0.15s ease-out;
+    `;
+    modal.innerHTML = `
+        <div style="background:var(--md-surface,#fff); border-radius:var(--md-radius-lg,14px);
+                    max-width:440px; width:100%; padding:22px;
+                    box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+                <div class="users-v2__avatar ${user.role === 'unit' ? 'users-v2__avatar--unit'
+                                              : user.role === 'admin' ? 'users-v2__avatar--admin'
+                                              : 'users-v2__avatar--dept'}"
+                     style="width:36px; height:36px; font-size:0.82rem;">
+                    ${esc(_initials(formatRole(user.username)))}
+                </div>
+                <div style="flex:1;">
+                    <h3 style="margin:0; font-size:1.02rem; font-weight:600;">
+                        Сбросить пароль
+                    </h3>
+                    <p style="margin:2px 0 0; font-size:0.78rem; color:var(--md-on-surface-hint);">
+                        ${esc(formatRole(user.username))} · @${esc(user.username)}
+                    </p>
+                </div>
+            </div>
+            <p style="margin:12px 0 14px; font-size:0.84rem; color:var(--md-on-surface-variant); line-height:1.45;">
+                Установите новый пароль. Минимум 10 символов, должен содержать
+                букву и цифру. Пользователь получит уведомление о смене.
+            </p>
+            <div class="field" style="margin-bottom:10px;">
+                <label class="field-label" for="passwd-modal-input">Новый пароль</label>
+                <input type="password" id="passwd-modal-input" autocomplete="new-password"
+                       placeholder="не менее 10 символов">
+            </div>
+            <div class="field" style="margin-bottom:14px;">
+                <label class="field-label" for="passwd-modal-confirm">Повторите</label>
+                <input type="password" id="passwd-modal-confirm" autocomplete="new-password">
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--md-on-surface-variant); cursor:pointer;">
+                    <input type="checkbox" id="passwd-modal-show"> Показать пароли
+                </label>
+                <div style="display:flex; gap:8px;">
+                    <button id="passwd-modal-cancel" class="btn btn-outlined btn-sm" type="button">Отмена</button>
+                    <button id="passwd-modal-save"   class="btn btn-success  btn-sm" type="button">Сбросить</button>
+                </div>
+            </div>
+            <div id="passwd-modal-error" style="display:none; margin-top:10px; padding:8px 10px;
+                background:rgba(239,68,68,0.1); color:#dc2626; border-radius:6px;
+                font-size:0.82rem;"></div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const inp     = modal.querySelector('#passwd-modal-input');
+    const confirm = modal.querySelector('#passwd-modal-confirm');
+    const errEl   = modal.querySelector('#passwd-modal-error');
+    inp.focus();
+
+    modal.querySelector('#passwd-modal-show').addEventListener('change', (e) => {
+        const t = e.target.checked ? 'text' : 'password';
+        inp.type     = t;
+        confirm.type = t;
+    });
+
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    modal.querySelector('#passwd-modal-cancel').addEventListener('click', () => modal.remove());
+
+    modal.querySelector('#passwd-modal-save').addEventListener('click', async () => {
+        errEl.style.display = 'none';
+        const pwd  = inp.value;
+        const conf = confirm.value;
+
+        if (pwd.length < 10) {
+            errEl.textContent = 'Пароль должен быть не менее 10 символов.';
+            errEl.style.display = 'block'; return;
+        }
+        if (pwd !== conf) {
+            errEl.textContent = 'Пароли не совпадают.';
+            errEl.style.display = 'block'; return;
+        }
+        try {
+            await api.put(`/admin/users/${user.id}/password`, { new_password: pwd });
+            notify('Пароль сброшен');
+            modal.remove();
+        } catch (e) {
+            errEl.textContent = e.message || 'Не удалось сменить пароль.';
+            errEl.style.display = 'block';
+        }
+    });
+
+    // Enter в любом из инпутов = save
+    [inp, confirm].forEach(el => {
+        el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') modal.querySelector('#passwd-modal-save').click();
         });
     });
 }

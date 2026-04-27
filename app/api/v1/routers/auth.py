@@ -1,18 +1,39 @@
 # app/api/v1/routers/auth.py
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.user import User
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.core.security import verify_password, create_access_token
+from app.core.security import verify_password, get_password_hash, create_access_token
 from app.schemas.token import Token
 from app.api.dependencies import get_current_user
 
 router = APIRouter()
+
+
+class PasswordChange(BaseModel):
+    """Смена своего пароля. Требует подтверждения старого."""
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password:     str = Field(..., min_length=10, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _strength(cls, v: str) -> str:
+        if not re.search(r"[A-Za-zА-Яа-яЁё]", v):
+            raise ValueError("Пароль должен содержать хотя бы одну букву")
+        if not re.search(r"\d", v):
+            raise ValueError("Пароль должен содержать хотя бы одну цифру")
+        weak = {"password", "qwerty", "admin123", "12345678", "1234567890"}
+        if v.lower() in weak:
+            raise ValueError("Пароль слишком простой")
+        return v
 
 
 @router.post("/login", response_model=Token, summary="Получить JWT-токен")
@@ -66,6 +87,32 @@ def read_users_me(current_user: User = Depends(get_current_user)):
         "permissions":       permissions,
         "available_modules": _available_modules(current_user),
     }
+
+
+@router.put("/me/password", summary="Изменить свой пароль")
+def change_my_password(
+        payload:      PasswordChange,
+        db:           Session = Depends(get_db),
+        current_user: User    = Depends(get_current_user),
+):
+    """
+    Любой залогиненный пользователь может сменить свой пароль.
+    Обязательна проверка текущего пароля — иначе если кто-то увёл
+    JWT-токен, он мог бы заблокировать настоящего владельца.
+    """
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Текущий пароль введён неверно",
+        )
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Новый пароль совпадает с текущим",
+        )
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+    return {"detail": "Пароль изменён"}
 
 
 def _available_modules(user: User) -> list[str]:

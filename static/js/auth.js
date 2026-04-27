@@ -93,6 +93,9 @@ async function _doInitSession() {
     // спрячет себя если юзер не admin. Безопасно вызывать всегда.
     import('./person_conflicts.js').then(m => m.initConflictsBadge()).catch(() => {});
 
+    // Кнопка «🔑 Пароль» в шапке — для всех залогиненных юзеров.
+    import('./change_password.js').then(m => m.initChangePasswordButton()).catch(() => {});
+
     // Показываем колокольчик в header сразу после успешного логина.
     // Изначально hidden чтобы не светиться на экране логина.
     document.getElementById('notif-header-btn')?.classList.remove('hidden');
