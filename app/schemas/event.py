@@ -12,11 +12,21 @@ class GroupBase(BaseModel):
     """Базовая схема для группы с общими полями."""
     name: str
     order_num: int = 0
+    # is_supplementary=True — группа выводится отдельной таблицей под
+    # основным списком (например, водители в ГРОЗА-555). Дефолт False.
+    is_supplementary: bool = False
 
 
 class GroupCreate(GroupBase):
     """Схема для создания новой группы. Наследует все от GroupBase."""
     pass
+
+
+class GroupUpdate(BaseModel):
+    """PATCH-схема — все поля опциональные, обновляем только переданные."""
+    name:             Optional[str]  = None
+    order_num:        Optional[int]  = None
+    is_supplementary: Optional[bool] = None
 
 
 class GroupResponse(GroupBase):

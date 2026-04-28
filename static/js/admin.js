@@ -84,14 +84,34 @@ export async function handleAddGroup() {
     if (!groupName) {
         return showError('Введите название группы');
     }
+    const isSupp = !!el('editor-new-group-supp')?.checked;
     try {
-        await api.post(`/admin/events/${currentEditorEventId}/groups`,
-                       { name: groupName, order_num: 1 });
-        notify('Группа добавлена!');
+        await api.post(`/admin/events/${currentEditorEventId}/groups`, {
+            name:             groupName,
+            order_num:        1,
+            is_supplementary: isSupp,
+        });
+        notify(isSupp ? 'Группа добавлена в доп. список' : 'Группа добавлена');
         if (input) input.value = '';
+        const suppCheckbox = el('editor-new-group-supp');
+        if (suppCheckbox) suppCheckbox.checked = false;
         // Перерисуем редактор чтобы новая группа сразу появилась в таблице
         await renderAdminEditor(currentEditorEventId, true);
     } catch (e) { console.error('handleAddGroup:', e); showError('Ошибка добавления группы'); }
+}
+
+// Toggle is_supplementary: переключаем группу между основным и доп. списком.
+export async function toggleGroupSupplementary(groupId, makeSupp) {
+    try {
+        await api.patch(`/admin/groups/${groupId}`, { is_supplementary: makeSupp });
+        notify(makeSupp ? 'Группа перенесена в доп. список' : 'Группа возвращена в основной список');
+        if (currentEditorEventId) {
+            await renderAdminEditor(currentEditorEventId, true);
+        }
+    } catch (e) {
+        console.error('toggleGroupSupplementary:', e);
+        showError('Ошибка переноса группы');
+    }
 }
 
 export async function handleDeleteEvent() {
@@ -260,7 +280,8 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
         let globalIndex = 1;
         const colspan   = visibleCols.length + 3; // чекбокс + № + столбцы + действия
 
-        const tableHtml = data.groups.map(group => {
+        const renderGroup = (group) => {
+            const isSupp = !!group.is_supplementary;
             const slotRows = group.slots.map(slot => `
                 <tr data-slot-id="${slot.id}" data-version="${slot.version || 1}">
                     <td style="text-align:center;">
@@ -285,6 +306,13 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
                     </td>
                 </tr>`).join('');
 
+            // Кнопка-toggle: переносит группу в дополнительный список / обратно.
+            // Для supplementary показываем «↑ В основной», для обычной — «↓ В доп.».
+            const toggleLabel = isSupp ? '↑ В основной' : '↓ В доп.';
+            const toggleTitle = isSupp
+                ? 'Перенести группу в основной список'
+                : 'Перенести группу в дополнительный список (отдельная таблица в Word)';
+
             return `
                 <tr class="group-header">
                     <td colspan="${colspan}">
@@ -292,13 +320,34 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
                             <span class="group-header__name">${esc(group.name)}</span>
                             <div style="display:flex; gap:6px;">
                                 <button class="btn btn-success btn-xs group-add-row-btn" data-group-id="${group.id}" title="Добавить пустую строку в группу">+ Строку</button>
+                                <button class="btn btn-outlined btn-xs group-toggle-supp-btn" data-group-id="${group.id}" data-make-supp="${isSupp ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
                                 <button class="btn btn-outlined btn-xs group-delete-btn" data-group-id="${group.id}" title="Удалить группу">✕ Группу</button>
                             </div>
                         </div>
                     </td>
                 </tr>
                 ${slotRows}`;
-        }).join('');
+        };
+
+        const mainGroups = data.groups.filter(g => !g.is_supplementary);
+        const suppGroups = data.groups.filter(g =>  g.is_supplementary);
+
+        let tableHtml = mainGroups.map(renderGroup).join('');
+
+        // Если есть supplementary-группы — рисуем разделитель и затем их.
+        if (suppGroups.length) {
+            tableHtml += `
+                <tr class="group-section-divider">
+                    <td colspan="${colspan}"
+                        style="background:var(--md-surface-variant); border-top:2px solid var(--md-outline);
+                               padding:10px 14px; text-align:center; font-weight:700;
+                               color:var(--md-on-surface-variant); font-size:0.86rem;
+                               text-transform:uppercase; letter-spacing:0.06em;">
+                        ── Дополнительный список (отдельная таблица в Word) ──
+                    </td>
+                </tr>`;
+            tableHtml += suppGroups.map(renderGroup).join('');
+        }
 
         el('master-tbody').innerHTML = tableHtml;
 
@@ -1700,6 +1749,13 @@ export function listenForUpdates() {
         const addRowBtn = e.target.closest('.group-add-row-btn');
         if (addRowBtn) {
             addBlankRow(addRowBtn.dataset.groupId);
+            return;
+        }
+        // Toggle is_supplementary: перенос группы между основным/доп. списком.
+        const toggleSuppBtn = e.target.closest('.group-toggle-supp-btn');
+        if (toggleSuppBtn) {
+            const makeSupp = toggleSuppBtn.dataset.makeSupp === '1';
+            toggleGroupSupplementary(toggleSuppBtn.dataset.groupId, makeSupp);
             return;
         }
     });

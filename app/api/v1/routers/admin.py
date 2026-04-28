@@ -15,7 +15,7 @@ from app.models.event import Event, Group, Slot, Position, DEFAULT_COLUMNS
 from app.models.duty import DutyMark, DutySchedule
 from app.models.person import Person
 from app.schemas.event import (
-    EventCreate, EventResponse, GroupCreate, GroupResponse,
+    EventCreate, EventResponse, GroupCreate, GroupResponse, GroupUpdate,
     EventInstantiate, EventUpdateTemplate,
 )
 from app.api.dependencies import get_current_active_admin
@@ -721,12 +721,33 @@ async def create_group_in_event(
         event_id=event.id,
         name=group_in.name,
         order_num=group_in.order_num,
+        is_supplementary=group_in.is_supplementary,
     )
     db.add(new_group)
     db.commit()
     db.refresh(new_group)
     await manager.broadcast({"event_id": event_id, "action": "update"})
     return new_group
+
+
+@router.patch("/groups/{group_id}", response_model=GroupResponse)
+async def update_group(
+        group_id:      int,
+        payload:       GroupUpdate,
+        db:            Session = Depends(get_db),
+        current_admin: User    = Depends(get_current_active_admin),
+):
+    """Обновить группу: переименовать, переставить, перевести в доп. список."""
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Группа не найдена")
+    data = payload.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(group, key, value)
+    db.commit()
+    db.refresh(group)
+    await manager.broadcast({"event_id": group.event_id, "action": "update"})
+    return group
 
 
 @router.delete("/groups/{group_id}")
