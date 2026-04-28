@@ -88,7 +88,10 @@ class DeptAddPersonPayload(BaseModel):
 class DeptMarkPayload(BaseModel):
     person_id: int
     duty_date: date_type
-    mark_type: str = "N"   # 'N' / 'U' / 'V'
+    mark_type: str = "N"   # 'N' / 'U' / 'V' / 'R'
+    # force=True — обойти предупреждение «через сутки» (дельта=2). Запрет
+    # для соседних дней (дельта=1) обойти нельзя.
+    force: bool = False
 
 @router.get("/positions", summary="Получить список должностей для выпадающего меню")
 def get_dept_positions(
@@ -342,6 +345,15 @@ async def toggle_my_mark(
             detail="На день отпуска нельзя ставить наряд. Сначала снимите отпуск.",
         )
 
+    # Валидация интервала: запрет соседних дней (delta=1), предупреждение
+    # «через сутки» (delta=2). Только для новых N-нарядов.
+    if mark_type == MARK_DUTY and (existing is None or existing.mark_type != MARK_DUTY):
+        from app.core.duty_validation import validate_duty_interval
+        validate_duty_interval(
+            db, schedule_id, payload.person_id, payload.duty_date,
+            force=payload.force,
+        )
+
     if existing:
         if existing.mark_type == mark_type:
             db.delete(existing)
@@ -468,6 +480,36 @@ def clear_my_marks_by_type(
         DutyMark.duty_date   <= date_type(year, month, last),
     ).delete(synchronize_session=False)
     db.commit()
+
+
+# ─── Экспорт графика в .docx ──────────────────────────────────────────────────
+
+@router.get("/schedules/{schedule_id}/export-docx")
+def export_my_schedule_docx(
+    schedule_id: int,
+    year:        int = Query(..., ge=2000, le=2100),
+    month:       int = Query(..., ge=1, le=12),
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user),
+):
+    """Скачать свой график наряда за месяц в формате Word (.docx)."""
+    from urllib.parse import quote
+    from fastapi.responses import StreamingResponse
+    from app.api.v1.routers.duty_export import build_duty_schedule_docx
+
+    schedule = _check_owner(db, schedule_id, user.username)
+
+    buf = build_duty_schedule_docx(db, schedule, year, month)
+    safe_title = (schedule.title or "schedule").replace(" ", "_")[:60]
+    filename = f"Naryad_{safe_title}_{month:02d}_{year}.docx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
+        },
+    )
 
 
 # ─── Вспомогательная функция ──────────────────────────────────────────────────

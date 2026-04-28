@@ -97,6 +97,10 @@ class MarkPayload(BaseModel):
     # сохраняет обратную совместимость с существующим фронтом, который
     # шлёт только person_id+duty_date без mark_type.
     mark_type: str = "N"
+    # force=True позволяет проигнорировать предупреждение «через сутки»
+    # (дельта=2 между нарядами одного человека). Жёсткий запрет для
+    # дельты=1 (соседние дни) не обходится никогда.
+    force: bool = False
 
 
 # ─── Schedules CRUD ───────────────────────────────────────────────────────────
@@ -323,6 +327,16 @@ async def toggle_mark(
             detail="На день отпуска нельзя ставить наряд. Сначала снимите отпуск.",
         )
 
+    # Валидация интервала: запрет соседних дней (delta=1), предупреждение
+    # «через сутки» (delta=2). Срабатывает только при постановке нового
+    # наряда (existing нет или existing другого типа).
+    if mark_type == MARK_DUTY and (existing is None or existing.mark_type != MARK_DUTY):
+        from app.core.duty_validation import validate_duty_interval
+        validate_duty_interval(
+            db, schedule_id, payload.person_id, payload.duty_date,
+            force=payload.force,
+        )
+
     if existing:
         if existing.mark_type == mark_type:
             db.delete(existing)
@@ -460,6 +474,38 @@ def clear_marks_by_type(
         DutyMark.duty_date   <= date_type(year, month, last),
     ).delete(synchronize_session=False)
     db.commit()
+
+
+# ─── Экспорт графика в .docx ──────────────────────────────────────────────────
+
+@router.get("/schedules/{schedule_id}/export-docx")
+def export_schedule_docx(
+    schedule_id: int,
+    year:        int = Query(..., ge=2000, le=2100),
+    month:       int = Query(..., ge=1, le=12),
+    db:          Session = Depends(get_db),
+    admin:       User    = Depends(get_current_active_admin),
+):
+    """Скачать график наряда за месяц в формате Word (.docx)."""
+    from urllib.parse import quote
+    from fastapi.responses import StreamingResponse
+    from app.api.v1.routers.duty_export import build_duty_schedule_docx
+
+    schedule = db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="График не найден")
+
+    buf = build_duty_schedule_docx(db, schedule, year, month)
+    safe_title = (schedule.title or "schedule").replace(" ", "_")[:60]
+    filename = f"Naryad_{safe_title}_{month:02d}_{year}.docx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
+        },
+    )
 
 
 # ─── Диагностика ──────────────────────────────────────────────────────────────

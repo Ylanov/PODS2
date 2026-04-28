@@ -59,6 +59,15 @@
     --md-font-body:    'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --md-font-mono:    'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
 
+    /* Breakpoints — конвенция для @media в проекте.
+       Сейчас разные файлы используют 560/640/700/720/760/900/1024/1100/1280px
+       (исторически). Новые правила пиши по этой шкале:
+         - phone     : @media (max-width: 600px)   — телефон
+         - tablet    : @media (max-width: 1024px)  — планшет / узкий ноут
+         - desktop   : > 1024px                    — обычный экран
+       CSS @media не поддерживает var() в условиях, поэтому это конвенция,
+       не CSS-переменные. */
+
     /* Z-index scale.
        Раньше модальные окна и dropdown'ы хардкодили `z-index: 9999`/`1000`
        в каждом файле, что давало непредсказуемый порядок при наложении.

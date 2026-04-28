@@ -342,9 +342,20 @@
                                 <button id="dept-duty-add-person-btn" class="btn btn-outlined btn-sm" type="button">
                                     + Добавить человека
                                 </button>
-                                <button id="dept-duty-clear-vacations-btn" class="btn btn-outlined btn-sm" type="button"
-                                        title="Снять все отпуска за выбранный месяц">
-                                    🧹 Очистить отпуска
+                                <details id="dept-duty-clear-menu" class="duty-clear-menu">
+                                    <summary class="btn btn-outlined btn-sm" title="Снять все отметки одного типа за выбранный месяц">
+                                        🧹 Очистить…
+                                    </summary>
+                                    <div class="duty-clear-menu__list">
+                                        <button type="button" data-clear-mark="N">Наряды (Н)</button>
+                                        <button type="button" data-clear-mark="R">Резервы (РЗ)</button>
+                                        <button type="button" data-clear-mark="U">Увольнения (У)</button>
+                                        <button type="button" data-clear-mark="V">Отпуска</button>
+                                    </div>
+                                </details>
+                                <button id="dept-duty-export-docx-btn" class="btn btn-outlined btn-sm" type="button"
+                                        title="Скачать график в формате Word">
+                                    ⬇ Word
                                 </button>
                             </div>
 
@@ -355,12 +366,37 @@
                                        class="duty-person-search__input">
                             </div>
 
+                            <!-- Шапка для печати (видна только при Ctrl+P).
+                                 Тексты УТВЕРЖДАЮ/подписи редактируются прямо
+                                 в HTML — это шаблон, общий для всех графиков
+                                 управления. JS заполняет заголовок и месяц. -->
+                            <div id="dept-duty-print-cover" class="duty-print-cover">
+                                <div class="duty-print-cover__approve">
+                                    <div class="duty-print-cover__approve-label">УТВЕРЖДАЮ</div>
+                                    <div class="duty-print-cover__approve-pos">Начальник штаба ФГКУ «ЦСООР «Лидер»</div>
+                                    <div class="duty-print-cover__approve-rank">полковник</div>
+                                    <div class="duty-print-cover__approve-name">«____» <span class="duty-print-cover__month-year"></span> г.&nbsp;&nbsp;&nbsp;&nbsp;А.А. Шевченко</div>
+                                </div>
+                                <h1 class="duty-print-cover__title">Г&nbsp;Р&nbsp;А&nbsp;Ф&nbsp;И&nbsp;К</h1>
+                                <p class="duty-print-cover__subtitle">
+                                    <span class="duty-print-cover__schedule-title"></span>
+                                    на <span class="duty-print-cover__full-month"></span> года
+                                </p>
+                            </div>
+
                             <div class="duty-grid-wrap">
                                 <table id="dept-duty-grid-table" class="duty-grid"></table>
                             </div>
 
                             <!-- Сводка по людям (Н/Часы/У/О/Р) — заполняется JS -->
                             <div id="dept-duty-grid-summary" class="duty-grid-summary"></div>
+
+                            <!-- Подвал для печати (видна только при Ctrl+P) -->
+                            <div class="duty-print-cover__footer">
+                                <div class="duty-print-cover__footer-pos">Начальник отдела (связи, автоматизированных систем управления и телекоммуникаций)</div>
+                                <div class="duty-print-cover__footer-rank">подполковник</div>
+                                <div class="duty-print-cover__footer-name">_____________ С.А. Цауменко</div>
+                            </div>
 
                             <p class="duty-grid-hint" style="margin-top:12px; font-size:0.8rem; color:var(--md-on-surface-hint);">
                                 Нажмите на клетку чтобы поставить / снять наряд. При постановке —
@@ -1446,9 +1482,24 @@
                                 <button id="duty-add-person-btn" class="btn btn-outlined btn-sm" type="button">
                                     + Добавить человека
                                 </button>
-                                <button id="duty-clear-vacations-btn" class="btn btn-outlined btn-sm" type="button"
-                                        title="Снять все отпуска за выбранный месяц">
-                                    🧹 Очистить отпуска
+                                <details id="duty-clear-menu" class="duty-clear-menu">
+                                    <summary class="btn btn-outlined btn-sm" title="Снять все отметки одного типа за выбранный месяц">
+                                        🧹 Очистить…
+                                    </summary>
+                                    <div class="duty-clear-menu__list">
+                                        <button type="button" data-clear-mark="N">Наряды (Н)</button>
+                                        <button type="button" data-clear-mark="R">Резервы (РЗ)</button>
+                                        <button type="button" data-clear-mark="U">Увольнения (У)</button>
+                                        <button type="button" data-clear-mark="V">Отпуска</button>
+                                    </div>
+                                </details>
+                                <button id="duty-print-settings-btn" class="btn btn-outlined btn-sm" type="button"
+                                        title="Изменить шапку и подпись для печати графика">
+                                    ⚙ Шапка печати
+                                </button>
+                                <button id="duty-export-docx-btn" class="btn btn-outlined btn-sm" type="button"
+                                        title="Скачать график в формате Word">
+                                    ⬇ Word
                                 </button>
                             </div>
 
@@ -1466,6 +1517,21 @@
                                 Загрузка…
                             </div>
 
+                            <!-- Шапка для печати (видна только при Ctrl+P) -->
+                            <div id="duty-print-cover" class="duty-print-cover">
+                                <div class="duty-print-cover__approve">
+                                    <div class="duty-print-cover__approve-label">УТВЕРЖДАЮ</div>
+                                    <div class="duty-print-cover__approve-pos">Начальник штаба ФГКУ «ЦСООР «Лидер»</div>
+                                    <div class="duty-print-cover__approve-rank">полковник</div>
+                                    <div class="duty-print-cover__approve-name">«____» <span class="duty-print-cover__month-year"></span> г.&nbsp;&nbsp;&nbsp;&nbsp;А.А. Шевченко</div>
+                                </div>
+                                <h1 class="duty-print-cover__title">Г&nbsp;Р&nbsp;А&nbsp;Ф&nbsp;И&nbsp;К</h1>
+                                <p class="duty-print-cover__subtitle">
+                                    <span class="duty-print-cover__schedule-title"></span>
+                                    на <span class="duty-print-cover__full-month"></span> года
+                                </p>
+                            </div>
+
                             <!-- Таблица (горизонтальный скролл) -->
                             <div class="duty-grid-wrap">
                                 <table id="duty-grid-table" class="duty-grid"></table>
@@ -1473,6 +1539,13 @@
 
                             <!-- Сводка по людям (Н/Часы/У/О/Р) — заполняется JS -->
                             <div id="duty-grid-summary" class="duty-grid-summary"></div>
+
+                            <!-- Подвал для печати (видна только при Ctrl+P) -->
+                            <div class="duty-print-cover__footer">
+                                <div class="duty-print-cover__footer-pos">Начальник отдела (связи, автоматизированных систем управления и телекоммуникаций)</div>
+                                <div class="duty-print-cover__footer-rank">подполковник</div>
+                                <div class="duty-print-cover__footer-name">_____________ С.А. Цауменко</div>
+                            </div>
 
                             <p class="duty-grid-hint">
                                 Нажмите на клетку чтобы выставить / снять наряд. При выставлении наряда

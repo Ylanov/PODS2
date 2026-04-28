@@ -6,10 +6,15 @@ const BASE_URL = '/api/v1';
 // Это позволяет в catch-блоках различать 401/403 от сетевых ошибок:
 //   catch(e) { if (e.status === 401) ... }
 export class ApiError extends Error {
-    constructor(message, status) {
+    constructor(message, status, detail = null) {
         super(message);
         this.name   = 'ApiError';
         this.status = status; // HTTP-статус ответа (400, 401, 403, 404, 500...)
+        // detail — raw поле из тела ответа FastAPI. Может быть строкой,
+        // объектом ({code, message, ...}) или массивом (validation errors).
+        // Объектную форму использует, например, валидация интервала нарядов:
+        // duty_too_close_warn / duty_too_close_strict.
+        this.detail = detail;
     }
 }
 
@@ -33,16 +38,21 @@ async function request(endpoint, options = {}) {
             const errorData = await response.json().catch(() => ({ detail: 'Unknown server error' }));
 
             // Если FastAPI вернул массив ошибок (например 422 ValidationError),
-            // превращаем его в читаемый текст, чтобы не было [object Object]
+            // превращаем его в читаемый текст, чтобы не было [object Object].
+            // Для object-detail ({code, message, ...}) сохраняем сам объект
+            // в err.detail, а message берём из его поля .message.
             let errorMessage = errorData.detail;
             if (Array.isArray(errorMessage)) {
                 errorMessage = errorMessage.map(e => `${e.loc.join('.')}: ${e.msg}`).join('\n');
+            } else if (errorMessage && typeof errorMessage === 'object') {
+                errorMessage = errorMessage.message || JSON.stringify(errorMessage);
             }
 
             // ApiError всегда несёт HTTP-статус — его можно проверить в catch.
             throw new ApiError(
                 errorMessage || `HTTP error! status: ${response.status}`,
-                response.status
+                response.status,
+                errorData.detail,
             );
         }
 

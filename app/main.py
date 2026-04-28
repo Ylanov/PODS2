@@ -97,6 +97,20 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
+# Cache-Control для статики: браузер кэширует CSS/JS/images на сутки и
+# не дёргает сервер при каждом обновлении страницы. В локалке без CDN
+# это самый дешёвый способ убрать сетевые задержки на повторных
+# открытиях. HTML (index.html) НЕ кэшируем — он всегда свежий, чтобы
+# изменения структуры подхватывались без релогина.
+@app.middleware("http")
+async def add_static_cache_headers(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/") and not path.endswith(".html"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 # ИСПРАВЛЕНО: раньше allow_methods/allow_headers=["*"] — слишком широко.
 # Теперь явный список методов которые реально используются API.
@@ -183,6 +197,7 @@ _CSS_BUNDLE_ORDER = [
     "audit.css",        "event-editor.css",   "history-calendar.css",
     "operations.css",   "comms-report.css",   "procurement.css",
     "media.css",        "training.css",       "person_conflicts.css",
+    "global_search.css",
 ]
 
 def _build_css_bundle() -> str:

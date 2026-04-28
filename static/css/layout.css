@@ -151,7 +151,16 @@
     margin-bottom: 20px;
     background: transparent;
     padding: 0;
+    /* На узких экранах вкладки не переносятся в две строки, а скроллятся
+       по горизонтали — линия активной вкладки остаётся видна и интуитивна. */
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
 }
+
+.tab-bar::-webkit-scrollbar        { height: 4px; }
+.tab-bar::-webkit-scrollbar-thumb  { background: var(--md-outline-variant); border-radius: 2px; }
 
 .tab-btn {
     position: relative;
@@ -169,6 +178,7 @@
     white-space: nowrap;
     border-radius: 0;
     letter-spacing: 0.01em;
+    flex-shrink: 0;   /* в скроллируемой ленте не сжимаем кнопки */
 }
 
 .tab-btn:hover { color: var(--md-on-surface-variant); }

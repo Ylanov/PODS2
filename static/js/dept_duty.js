@@ -10,12 +10,16 @@ import {
     MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate,
     groupMarks, computeSummary, extractVacationRanges,
-    sortByRank,
+    sortByRank, computeDutyZones,
 } from './duty_calc.js';
 import {
     renderSummaryBlock,
     attachPersonSearch,
-    clearVacations,
+    clearMarks,
+    renderModeSwitcher,
+    addPersonToSchedule,
+    updatePrintCover,
+    postDutyMark,
 } from './duty_ui.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -97,15 +101,42 @@ function _bindUI() {
     document.getElementById('dept-duty-unapprove-btn')
         ?.addEventListener('click', _unapproveCurrentMonth);
 
-    document.getElementById('dept-duty-clear-vacations-btn')
-        ?.addEventListener('click', () => clearVacations({
-            scheduleId: _currentId,
-            year:       _viewYear,
-            month:      _viewMonth,
-            apiPath:    `/dept/schedules/${_currentId}/marks`,
-            isReadOnly: _isReadOnly,
-            reload:     _loadMarksAndRender,
-        }));
+    document.querySelectorAll('#dept-duty-clear-menu [data-clear-mark]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('dept-duty-clear-menu')?.removeAttribute('open');
+            clearMarks({
+                scheduleId: _currentId,
+                markType:   btn.dataset.clearMark,
+                year:       _viewYear,
+                month:      _viewMonth,
+                apiPath:    `/dept/schedules/${_currentId}/marks`,
+                isReadOnly: _isReadOnly,
+                reload:     _loadMarksAndRender,
+            });
+        });
+    });
+
+    document.getElementById('dept-duty-export-docx-btn')
+        ?.addEventListener('click', () => _exportDocx());
+}
+
+async function _exportDocx() {
+    if (!_currentId) return;
+    try {
+        const blob = await api.download(
+            `/dept/schedules/${_currentId}/export-docx?year=${_viewYear}&month=${_viewMonth}`,
+        );
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        a.href = url;
+        a.download = `Naryad_${_viewYear}-${String(_viewMonth).padStart(2, '0')}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка экспорта: ${err?.message || err}`, 'error');
+    }
 }
 
 // ─── Должности (для формы создания) ──────────────────────────────────────────
@@ -354,12 +385,14 @@ async function _loadPersons() {
 }
 
 // Тонкий обёрток над общим duty_ui.attachPersonSearch — фиксирует
-// dept-специфичные параметры (id input'а, hint, callback на _addPerson).
+// dept-специфичные параметры. keepOpenOnSelect — multi-add: форма не
+// закрывается после выбора, можно добавлять людей подряд.
 function _attachPersonSearch() {
     attachPersonSearch({
-        inputId:   'dept-duty-person-search-input',
-        emptyHint: 'Не найдено в базе управления',
-        onSelect:  (person) => _addPerson(person.id),
+        inputId:          'dept-duty-person-search-input',
+        emptyHint:        'Не найдено в базе управления',
+        keepOpenOnSelect: true,
+        onSelect:         (person) => _addPerson(person.id),
     });
 }
 
@@ -373,22 +406,16 @@ function _showPersonSearch() {
 }
 
 async function _addPerson(personId) {
-    if (!_currentId) return;
-    if (_isReadOnly()) {
-        window.showSnackbar?.('График утверждён. Нажмите «✎ Редактировать» чтобы изменить.', 'error');
-        return;
-    }
-    try {
-        await api.post(`/dept/schedules/${_currentId}/persons`, { person_id: personId });
-        window.showSnackbar?.('Человек добавлен в график', 'success');
-        const input = document.getElementById('dept-duty-person-search-input');
-        if (input) input.value = '';
-        document.getElementById('dept-duty-person-search-wrap')?.classList.add('hidden');
-        await _loadPersonsAndMarks();
-    } catch (err) {
-        const msg = err?.status === 409 ? 'Уже в графике' : `Ошибка: ${err?.message || err}`;
-        window.showSnackbar?.(msg, 'error');
-    }
+    return addPersonToSchedule({
+        personId,
+        scheduleId:   _currentId,
+        apiPath:      `/dept/schedules/${_currentId}/persons`,
+        inputId:      'dept-duty-person-search-input',
+        wrapId:       'dept-duty-person-search-wrap',
+        reload:       _loadPersonsAndMarks,
+        isReadOnly:   _isReadOnly,
+        keepFormOpen: true,   // multi-add: форма остаётся открытой
+    });
 }
 
 async function _removePerson(personId) {
@@ -487,6 +514,8 @@ function _renderGrid() {
     const tbody = `<tbody>${sortedPersons.map(p => {
         const personMarks = marksByPerson.get(p.person_id) || new Map();
         const vacRanges   = extractVacationRanges(personMarks, monthDays);
+        // Зоны рядом с N-нарядами: подсветка дней-соседей и «через сутки».
+        const dutyZones   = computeDutyZones(personMarks, monthDays);
         const vacMap = new Map();
         for (const r of vacRanges) {
             const s = monthDays.indexOf(r.start_iso);
@@ -503,12 +532,15 @@ function _renderGrid() {
             const isToday = iso === today;
             const mark = personMarks.get(iso);
             const vac  = vacMap.get(iso);
+            const zone = (!mark && !vac) ? dutyZones.get(iso) : null;
             const cls = [
                 'duty-grid__cell',
                 isWk ? 'duty-col--weekend' : '',
                 holi ? 'duty-col--holiday' : '',
                 isToday ? 'duty-grid__cell--today' : '',
                 vac  ? 'duty-cell--in-vacation' : '',
+                zone === 'strict' ? 'duty-cell--zone-strict' : '',
+                zone === 'warn'   ? 'duty-cell--zone-warn'   : '',
             ].filter(Boolean).join(' ');
 
             let inner = '';
@@ -553,6 +585,9 @@ function _renderGrid() {
     renderSummaryBlock('dept-duty-grid-summary', sortedPersons,
                        marksByPerson, _holidays);
 
+    const schedule = _schedules.find(s => s.id === _currentId);
+    updatePrintCover('dept-duty-print-cover', schedule?.title, _viewYear, _viewMonth);
+
     if (!readOnly) {
         table.querySelectorAll('.duty-grid__cell').forEach(cell => {
             cell.addEventListener('click', () => {
@@ -566,37 +601,17 @@ function _renderGrid() {
 }
 
 function _renderModeSwitcher() {
-    const toolbar = document.querySelector('#dept-duty-grid-container .duty-grid-toolbar');
-    if (!toolbar) return;
-    if (toolbar.querySelector('.duty-mode-group')) return;
-    const group = document.createElement('div');
-    group.className = 'duty-mode-group';
-    group.innerHTML = `
-        <button class="duty-mode-btn ${_currentMode === MARK_DUTY     ? 'active' : ''}" data-mark="N" type="button">
-            <span class="duty-mode-btn__letter" data-letter="Н"></span>Наряд
-        </button>
-        <button class="duty-mode-btn ${_currentMode === MARK_RESERVE  ? 'active' : ''}" data-mark="R" type="button">
-            <span class="duty-mode-btn__letter" data-letter="РЗ"></span>Резерв
-        </button>
-        <button class="duty-mode-btn ${_currentMode === MARK_LEAVE    ? 'active' : ''}" data-mark="U" type="button">
-            <span class="duty-mode-btn__letter" data-letter="У"></span>Увольнение
-        </button>
-        <button class="duty-mode-btn ${_currentMode === MARK_VACATION ? 'active' : ''}" data-mark="V" type="button">
-            <span class="duty-mode-btn__letter" data-letter="О"></span>Отпуск
-        </button>
-    `;
-    group.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-mark]');
-        if (!b) return;
-        _currentMode   = b.dataset.mark;
-        _vacationStart = null;
-        group.querySelectorAll('.duty-mode-btn').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-        if (_currentMode === MARK_VACATION) {
-            window.showSnackbar?.('Режим «Отпуск»: кликните первую и последнюю дату диапазона', 'info');
-        }
+    renderModeSwitcher({
+        toolbarSelector: '#dept-duty-grid-container .duty-grid-toolbar',
+        currentMode:     _currentMode,
+        onModeChange:    (newMode) => {
+            _currentMode   = newMode;
+            _vacationStart = null;
+            if (newMode === MARK_VACATION) {
+                window.showSnackbar?.('Режим «Отпуск»: кликните первую и последнюю дату диапазона', 'info');
+            }
+        },
     });
-    toolbar.insertBefore(group, toolbar.firstChild);
 }
 
 async function _onCellClick(date, personId, cellEl) {
@@ -657,11 +672,12 @@ async function _toggleMark(date, personId, markType = MARK_DUTY) {
         }
     }
     try {
-        const result = await api.post(`/dept/schedules/${_currentId}/marks`, {
+        const result = await postDutyMark(`/dept/schedules/${_currentId}/marks`, {
             person_id: personId,
             duty_date: date,
             mark_type: markType,
         });
+        if (result === null) return;   // пользователь отказался / strict-запрет
         // Обновляем локальный массив
         if (result.action === 'removed') {
             _marks = _marks.filter(m => !(m.person_id === personId && m.duty_date === date));

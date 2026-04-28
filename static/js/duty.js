@@ -8,12 +8,16 @@ import {
     MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate, isWeekendOrHoliday,
     groupMarks, computeSummary, extractVacationRanges,
-    sortByRank,
+    sortByRank, computeDutyZones,
 } from './duty_calc.js';
 import {
     renderSummaryBlock,
     attachPersonSearch,
-    clearVacations,
+    clearMarks,
+    renderModeSwitcher,
+    addPersonToSchedule,
+    updatePrintCover,
+    postDutyMark,
 } from './duty_ui.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -74,27 +78,69 @@ export function initDuty() {
     document.getElementById('duty-unapprove-btn')
         ?.addEventListener('click', _unapproveCurrentMonth);
 
-    document.getElementById('duty-clear-vacations-btn')
-        ?.addEventListener('click', () => clearVacations({
-            scheduleId: _currentId,
-            year:       _year,
-            month:      _month,
-            apiPath:    `/admin/schedules/${_currentId}/marks`,
-            isReadOnly: _isReadOnly,
-            reload:     _loadGrid,
-        }));
+    // Dropdown «🧹 Очистить...» — пункты с data-clear-mark вызывают
+    // clearMarks с соответствующим типом (N/R/U/V). Все четыре в одной
+    // кнопке вместо четырёх кнопок в toolbar — компактнее.
+    document.querySelectorAll('#duty-clear-menu [data-clear-mark]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('duty-clear-menu')?.removeAttribute('open');
+            clearMarks({
+                scheduleId: _currentId,
+                markType:   btn.dataset.clearMark,
+                year:       _year,
+                month:      _month,
+                apiPath:    `/admin/schedules/${_currentId}/marks`,
+                isReadOnly: _isReadOnly,
+                reload:     _loadGrid,
+            });
+        });
+    });
 
     document.getElementById('duty-create-position')
         ?.addEventListener('change', () => _suggestTitle());
+
+    // Шапка/подпись печати графика — admin может править глобальные тексты.
+    // Загружаем модуль динамически, чтобы не таскать его всем юзерам.
+    document.getElementById('duty-print-settings-btn')
+        ?.addEventListener('click', () => {
+            import('./print_settings_dialog.js')
+                .then(m => m.openPrintSettingsDialog())
+                .catch(err => console.warn('print_settings_dialog import:', err));
+        });
+
+    document.getElementById('duty-export-docx-btn')
+        ?.addEventListener('click', () => _exportDocx());
+}
+
+async function _exportDocx() {
+    if (!_currentId) return;
+    try {
+        const blob = await api.download(
+            `/admin/schedules/${_currentId}/export-docx?year=${_year}&month=${_month}`,
+        );
+        const url = URL.createObjectURL(blob);
+        const a   = document.createElement('a');
+        a.href = url;
+        a.download = `Naryad_${_year}-${String(_month).padStart(2, '0')}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка экспорта: ${err?.message || err}`, 'error');
+    }
 }
 
 // Тонкий обёрток над общим duty_ui.attachPersonSearch — только чтобы зафиксировать
 // admin-специфичные параметры (id input'а, hint, callback).
+// keepOpenOnSelect — multi-add: форма не закрывается после выбора одного,
+// можно сразу выбирать следующего. Закрытие — Esc или клик вне формы.
 function _attachPersonSearch() {
     attachPersonSearch({
-        inputId:   'duty-person-search-input',
-        emptyHint: 'Не найдено',
-        onSelect:  (person) => _addPersonToSchedule(person.id),
+        inputId:          'duty-person-search-input',
+        emptyHint:        'Не найдено',
+        keepOpenOnSelect: true,
+        onSelect:         (person) => _addPersonToSchedule(person.id),
     });
 }
 
@@ -422,6 +468,9 @@ function _renderGrid() {
     const rows = sortByRank(_currentPersons).map(p => {
         const personMarks = marksByPerson.get(p.person_id) || new Map();
         const vacRanges   = extractVacationRanges(personMarks, monthDays);
+        // Зоны рядом с N-нарядами (см. duty_validation.py): подсветка
+        // соседних дней (strict) и «через сутки» (warn) в пустых ячейках.
+        const dutyZones = computeDutyZones(personMarks, monthDays);
 
         // Map iso → range info (only if vacation day)
         const vacMap = new Map();
@@ -444,6 +493,9 @@ function _renderGrid() {
             const isTdy   = isThisMonth && d === todayD;
             const mark    = personMarks.get(iso);
             const vac     = vacMap.get(iso);
+            // zone не применяется к ячейкам с уже стоящими марками или
+            // отпуском — там есть свой фон/контент.
+            const zone    = (!mark && !vac) ? dutyZones.get(iso) : null;
 
             const classes = [
                 'duty-grid__cell',
@@ -451,6 +503,8 @@ function _renderGrid() {
                 holi ? 'duty-col--holiday' : '',
                 isTdy ? 'duty-grid__cell--today' : '',
                 vac  ? 'duty-cell--in-vacation' : '',
+                zone === 'strict' ? 'duty-cell--zone-strict' : '',
+                zone === 'warn'   ? 'duty-cell--zone-warn'   : '',
             ].filter(Boolean).join(' ');
 
             let inner = '';
@@ -530,6 +584,9 @@ function _renderGrid() {
     renderSummaryBlock('duty-grid-summary', sortByRank(_currentPersons),
                        marksByPerson, _holidays);
 
+    const schedule = _schedules.find(s => s.id === _currentId);
+    updatePrintCover('duty-print-cover', schedule?.title, _year, _month);
+
     // Делегированные события (только в draft — approved режим read-only)
     table.onclick = readOnly ? null : async (e) => {
         const cell      = e.target.closest('.duty-grid__cell');
@@ -550,46 +607,21 @@ function _renderGrid() {
     };
 }
 
-// ─── Переключатель режимов (Н / У / Отпуск) ────────────────────────────────
+// Селектор ограничен #duty-grid-container. Раньше брался первый
+// .duty-grid-toolbar в DOM — а это dept-toolbar (он идёт раньше в index.html),
+// поэтому кнопки режимов уходили в dept и в admin-графике их не было видно.
 function _renderModeSwitcher() {
-    // ВАЖНО: селектор ограничен #duty-grid-container. Раньше брался
-    // первый .duty-grid-toolbar в DOM — а это dept-toolbar (он идёт
-    // раньше в index.html), поэтому кнопки режимов уходили в dept
-    // и в admin-графике их не было видно.
-    const toolbar = document.querySelector('#duty-grid-container .duty-grid-toolbar');
-    if (!toolbar) return;
-    if (toolbar.querySelector('.duty-mode-group')) return;   // уже отрисован
-
-    const group = document.createElement('div');
-    group.className = 'duty-mode-group';
-    group.innerHTML = `
-        <button class="duty-mode-btn ${_currentMode === MARK_DUTY     ? 'active' : ''}" data-mark="N" type="button" title="Наряд">
-            <span class="duty-mode-btn__letter" data-letter="Н"></span>Наряд
-        </button>
-        <button class="duty-mode-btn ${_currentMode === MARK_RESERVE  ? 'active' : ''}" data-mark="R" type="button" title="Резерв">
-            <span class="duty-mode-btn__letter" data-letter="РЗ"></span>Резерв
-        </button>
-        <button class="duty-mode-btn ${_currentMode === MARK_LEAVE    ? 'active' : ''}" data-mark="U" type="button" title="Увольнение">
-            <span class="duty-mode-btn__letter" data-letter="У"></span>Увольнение
-        </button>
-        <button class="duty-mode-btn ${_currentMode === MARK_VACATION ? 'active' : ''}" data-mark="V" type="button" title="Отпуск — кликните по первой дате, затем по последней">
-            <span class="duty-mode-btn__letter" data-letter="О"></span>Отпуск
-        </button>
-    `;
-    group.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-mark]');
-        if (!b) return;
-        _currentMode   = b.dataset.mark;
-        _vacationStart = null;
-        group.querySelectorAll('.duty-mode-btn').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-        if (_currentMode === MARK_VACATION) {
-            window.showSnackbar?.('Режим «Отпуск»: кликните на первую дату диапазона, затем на последнюю', 'info');
-        }
+    renderModeSwitcher({
+        toolbarSelector: '#duty-grid-container .duty-grid-toolbar',
+        currentMode:     _currentMode,
+        onModeChange:    (newMode) => {
+            _currentMode   = newMode;
+            _vacationStart = null;
+            if (newMode === MARK_VACATION) {
+                window.showSnackbar?.('Режим «Отпуск»: кликните на первую дату диапазона, затем на последнюю', 'info');
+            }
+        },
     });
-
-    // Вставляем перед кнопкой "+ Добавить человека" (или в начало)
-    toolbar.insertBefore(group, toolbar.firstChild);
 }
 
 async function _onCellClick(personId, dateStr, cellEl, isShift) {
@@ -664,11 +696,12 @@ async function _toggleMark(personId, dateStr, markType = MARK_DUTY) {
         }
     }
     try {
-        const res = await api.post(`/admin/schedules/${_currentId}/marks`, {
+        const res = await postDutyMark(`/admin/schedules/${_currentId}/marks`, {
             person_id: personId,
             duty_date: dateStr,
             mark_type: markType,
         });
+        if (res === null) return;   // пользователь отказался / strict-запрет
         console.log('[duty] toggleMark result:', res);
 
         // Обновляем локальный _currentMarks на основе ответа
@@ -730,21 +763,15 @@ function _showGridEmpty() {
 // здесь — только добавление выбранного в график.
 
 async function _addPersonToSchedule(personId) {
-    try {
-        await api.post(`/admin/schedules/${_currentId}/persons`, { person_id: personId });
-        const input = document.getElementById('duty-person-search-input');
-        if (input) input.value = '';
-        document.getElementById('duty-person-search-wrap')?.classList.add('hidden');
-        await _loadGrid();
-        window.showSnackbar?.('Человек добавлен в график', 'success');
-    } catch (err) {
-        console.error('[duty] addPersonToSchedule error:', err);
-        if (err?.status === 409) {
-            window.showSnackbar?.('Этот человек уже в графике', 'error');
-        } else {
-            window.showSnackbar?.(`Ошибка: ${err?.message || err?.status}`, 'error');
-        }
-    }
+    return addPersonToSchedule({
+        personId,
+        scheduleId:   _currentId,
+        apiPath:      `/admin/schedules/${_currentId}/persons`,
+        inputId:      'duty-person-search-input',
+        wrapId:       'duty-person-search-wrap',
+        reload:       _loadGrid,
+        keepFormOpen: true,   // multi-add: форма остаётся открытой
+    });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

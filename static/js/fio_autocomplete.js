@@ -94,6 +94,10 @@ export function attach(input, options) {
         debounceMs:      280,
         emptyHint:       null,
         limit:           8,
+        // keepOpenOnSelect:true — после выбора кандидата dropdown НЕ
+        // закрывается, инпут очищается, фокус остаётся. Для multi-add:
+        // выбрал → выбрал → выбрал, без переоткрытия формы.
+        keepOpenOnSelect: false,
     }, options || {});
 
     const container = opts.container || input.parentElement;
@@ -206,7 +210,18 @@ export function attach(input, options) {
         } catch (err) {
             console.error('[fio_autocomplete] onSelect threw:', err);
         }
-        close();
+        if (opts.keepOpenOnSelect) {
+            // Multi-add: чистим инпут, оставляем форму открытой и фокус.
+            // Сам dropdown скрываем (очередной список построится при вводе).
+            input.value = '';
+            box.classList.add('hidden');
+            box.innerHTML = '';
+            items = [];
+            active = -1;
+            input.focus();
+        } else {
+            close();
+        }
     }
 
     function onBoxClick(e) {

@@ -16,6 +16,9 @@ import './slot_history.js';
 import * as notifications from './notifications.js';
 // Редактор списка для админа на дашборде — регистрирует window.openEventEditor
 import './event_editor.js';
+// Глобальный поиск Ctrl+K — слушатель ставится при импорте через initGlobalSearch().
+import { initGlobalSearch } from './global_search.js';
+initGlobalSearch();
 
 window.app = {
     deleteUser:      admin.deleteUser,

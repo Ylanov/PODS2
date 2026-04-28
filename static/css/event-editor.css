@@ -273,13 +273,15 @@ select.evt-edit__input {
 .evt-edit__saved-indicator--ok  { color: var(--md-success); }
 .evt-edit__saved-indicator--err { color: var(--md-error); }
 
-/* FIO suggest-box — переопределяем top/bottom чтобы висел под input'ом */
+/* FIO suggest-box — переопределяем top/bottom чтобы висел под input'ом.
+   max-width: 100vw гарантирует, что на узких экранах dropdown не вылезает
+   за viewport, даже если 320px шире чем сам экран. */
 .evt-edit__table td .fio-suggest-box {
     top: calc(100% + 2px);
     left: 0;
     right: auto;
     width: 320px;
-    max-width: none;
+    max-width: calc(100vw - 32px);
 }
 
 /* ── Mobile ─────────────────────────────────────────────────────────────── */

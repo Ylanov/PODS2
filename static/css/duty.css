@@ -284,6 +284,14 @@
     padding: 12px 16px 0;
 }
 
+/* На узких экранах (телефон/маленький планшет) 31 день уже не влезает
+   с разумной шириной ячеек. Включаем горизонтальный скролл и удерживаем
+   минимум — чтобы дни не схлопывались в нечитаемые полоски. */
+@media (max-width: 700px) {
+    .duty-grid-wrap { overflow-x: auto; }
+    .duty-grid      { min-width: 720px; }
+}
+
 /* ── The actual grid table ───────────────────────────────────── */
 .duty-grid {
     border-collapse: collapse;
@@ -1013,6 +1021,22 @@ tr:hover .duty-grid__remove-person {
     background: rgba(5, 150, 105, 0.05);
 }
 
+/* «Опасные зоны» — пустые ячейки рядом с уже стоящим нарядом одного и
+   того же человека. Намёк перед кликом: на красные ставить нельзя
+   (бэк отдаст 409 strict), на жёлтые — спросит подтверждение. */
+.duty-grid__cell.duty-cell--zone-strict {
+    background: rgba(220, 38, 38, 0.07);
+}
+.duty-grid__cell.duty-cell--zone-strict:hover {
+    background: rgba(220, 38, 38, 0.14);
+}
+.duty-grid__cell.duty-cell--zone-warn {
+    background: rgba(234, 179, 8, 0.10);
+}
+.duty-grid__cell.duty-cell--zone-warn:hover {
+    background: rgba(234, 179, 8, 0.18);
+}
+
 /* ── Счётчики (колонки в конце строки) ────────────────────────────────── */
 .duty-grid .duty-summary-th,
 .duty-grid .duty-summary-td {
@@ -1066,4 +1090,230 @@ tr:hover .duty-grid__remove-person {
 /* ── Лёгкая зебра для читаемости широкой таблицы ───────────────────────── */
 .duty-grid tbody tr:nth-child(even) td:not(.duty-col--weekend):not(.duty-col--holiday):not(.duty-name-td):not(.duty-summary-td) {
     background: #fafbfc;
+}
+
+/* ─── Dropdown «🧹 Очистить…» ──────────────────────────────────────────────
+   Native <details>/<summary> вместо кастомного popover — нулевой JS,
+   доступно с клавиатуры (Tab + Enter), закрывается кликом снаружи.
+   Список появляется абсолютно поверх toolbar. */
+.duty-clear-menu {
+    position: relative;
+    display: inline-block;
+}
+
+.duty-clear-menu > summary {
+    list-style: none;
+    cursor: pointer;
+}
+.duty-clear-menu > summary::-webkit-details-marker { display: none; }
+.duty-clear-menu > summary::marker { content: ''; }
+
+.duty-clear-menu__list {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 180px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    z-index: var(--z-dropdown);
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+}
+
+.duty-clear-menu__list button {
+    text-align: left;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    border-radius: var(--md-radius-sm);
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--md-on-surface);
+    font-family: inherit;
+}
+
+.duty-clear-menu__list button:hover {
+    background: var(--md-primary-light, #eef4f1);
+}
+
+/* ─── Шапка для печати графика нарядов ─────────────────────────────────────
+   Скрыта в обычном UI, видна только в @media print. Воспроизводит шаблон
+   утверждённого штабного графика: «УТВЕРЖДАЮ» в правом верхнем углу,
+   центральный заголовок «Г Р А Ф И К», подзаголовок с типом графика и
+   месяцем/годом. Подвал с подписью отдельным блоком после таблицы.
+   Тексты должностей/имён правятся прямо в index.html. */
+.duty-print-cover,
+.duty-print-cover__footer {
+    display: none;
+}
+
+/* ─── Печать графика нарядов ─────────────────────────────────────────────
+   При Ctrl+P / «Печать» оставляем только заголовок + таблицу + сводку.
+   Скрываем всё лишнее (навигацию, шапку, кнопки действий) и переключаем
+   палитру в чёрно-белую — экономно по тонеру и хорошо читается.
+   ──────────────────────────────────────────────────────────────────────── */
+@media print {
+    /* 1. Скрыть всю обвязку приложения */
+    .top-app-bar,
+    .tab-bar,
+    .notif-header-btn,
+    #conflicts-header-btn,
+    #snackbar,
+    .duty-sidebar,
+    .duty-grid-toolbar,
+    .duty-grid-empty,
+    .duty-grid-hint,
+    .duty-grid__remove-person,
+    .duty-mode-group,
+    .dept-duty-remove-person,
+    .duty-person-search,
+    #duty-create-form,
+    #dept-duty-create-form {
+        display: none !important;
+    }
+
+    /* 2. Светлый фон страницы и чёрный текст — экономично и читаемо */
+    body, .page, .duty-grid-panel, .duty-layout {
+        background: #fff !important;
+        color: #000 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* 3. Таблица: убираем sticky/тени, разворачиваем на всю ширину листа */
+    .duty-grid-wrap { overflow: visible !important; padding: 0 !important; }
+    .duty-grid {
+        width: 100% !important;
+        font-size: 8pt !important;
+        page-break-inside: avoid;
+    }
+    .duty-grid__name-cell,
+    .duty-grid__name-hdr {
+        position: static !important;
+        box-shadow: none !important;
+        border-right: 1px solid #000 !important;
+        background: #fff !important;
+        z-index: auto !important;
+    }
+    .duty-grid__day-hdr,
+    .duty-grid__cell {
+        border: 1px solid #888 !important;
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    /* 4. Marks: однотонные градации серого + чёрная буква.
+          На чёрно-белом принтере цвета всё равно превратятся в серое,
+          лучше задать осмысленные оттенки явно. */
+    .duty-mark {
+        background: #000 !important;
+        color: #fff !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    .duty-mark--U { background: #555 !important; }
+    .duty-mark--R { background: #777 !important; }
+    .duty-mark--V { background: #888 !important; }
+
+    /* 5. Полоса отпуска: серая заливка с рамкой, без градиента */
+    .duty-vacation-bar {
+        background: #ddd !important;
+        border: 1px solid #555 !important;
+        color: #000 !important;
+        text-shadow: none !important;
+    }
+
+    /* 6. Сводка под графиком: chip'ы становятся серыми, разделители тонкие */
+    .duty-grid-summary {
+        background: #fff !important;
+        border: 1px solid #888 !important;
+        page-break-before: auto;
+    }
+    .duty-summary-card {
+        border-bottom: 1px solid #ccc !important;
+        page-break-inside: avoid;
+    }
+    .duty-summary-card__chip,
+    .duty-summary-card__chip--duty,
+    .duty-summary-card__chip--hours,
+    .duty-summary-card__chip--reserve {
+        background: #fff !important;
+        color: #000 !important;
+        border: 1px solid #888 !important;
+    }
+
+    /* 7. Альбомная ориентация по умолчанию — таблица с 31 днём шире
+          чем книжная страница A4. */
+    @page { size: A4 landscape; margin: 12mm 14mm; }
+
+    /* 8. Шапка/подвал документа: показать и стилизовать. */
+    .duty-print-cover,
+    .duty-print-cover__footer {
+        display: block !important;
+        color: #000 !important;
+        font-size: 10pt !important;
+        page-break-inside: avoid;
+    }
+
+    .duty-print-cover {
+        margin-bottom: 6mm;
+        position: relative;
+    }
+
+    .duty-print-cover__approve {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 80mm;
+        text-align: left;
+        font-size: 10pt;
+        line-height: 1.35;
+    }
+    .duty-print-cover__approve-label {
+        font-weight: 700;
+        margin-bottom: 1mm;
+    }
+    .duty-print-cover__approve-pos { font-style: italic; }
+    .duty-print-cover__approve-rank { margin-bottom: 4mm; }
+    .duty-print-cover__approve-name { white-space: nowrap; }
+
+    .duty-print-cover__title {
+        margin: 24mm 0 1mm 0;
+        text-align: center;
+        font-size: 14pt;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+    }
+
+    .duty-print-cover__subtitle {
+        margin: 0 0 4mm 0;
+        text-align: center;
+        font-size: 11pt;
+    }
+
+    .duty-print-cover__footer {
+        margin-top: 8mm;
+        font-size: 10pt;
+        line-height: 1.4;
+    }
+    .duty-print-cover__footer-pos { font-weight: 500; }
+    .duty-print-cover__footer-rank { margin-top: 1mm; }
+    .duty-print-cover__footer-name {
+        margin-top: 3mm;
+        white-space: nowrap;
+    }
+
+    /* 9. Колонка «№ п/п» в таблице — через CSS counter, без правки JS.
+          Префиксует имя в первой td каждой строки tbody. */
+    .duty-grid tbody { counter-reset: print-row-num; }
+    .duty-grid tbody tr { counter-increment: print-row-num; }
+    .duty-grid tbody tr td:first-child::before {
+        content: counter(print-row-num) ". ";
+        font-weight: 600;
+        margin-right: 4px;
+    }
 }

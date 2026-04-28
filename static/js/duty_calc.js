@@ -193,6 +193,41 @@ export function computeSummary(personMarksByDate, holidaysMap) {
     return { duty, overtime, leave, vacation, reserve };
 }
 
+// ─── Зоны рядом с существующими нарядами (подсветка ДО клика) ─────────────
+// Возвращает Map<iso, 'strict' | 'warn'> для пустых дней, соседних с
+// существующими 'N'-нарядами:
+//   • дельта 1 (соседний день)        → 'strict' (нельзя ставить)
+//   • дельта 2 (через сутки)          → 'warn'   (можно с подтверждением)
+// Дни, на которых уже стоит ЛЮБАЯ метка, не помечаются — фронт всё равно
+// рисует там содержимое (наряд/отпуск/...).
+export function computeDutyZones(personMarksByDate, monthDays) {
+    const zones = new Map();
+    if (!personMarksByDate || !monthDays) return zones;
+
+    const dutyTimes = [];
+    for (const [iso, info] of personMarksByDate) {
+        if (info.mark_type === MARK_DUTY) {
+            dutyTimes.push(new Date(iso + 'T00:00:00').getTime());
+        }
+    }
+    if (!dutyTimes.length) return zones;
+
+    const DAY_MS = 86400000;
+    for (const iso of monthDays) {
+        if (personMarksByDate.has(iso)) continue;          // занятая ячейка
+        const t = new Date(iso + 'T00:00:00').getTime();
+        let minDelta = Infinity;
+        for (const dt of dutyTimes) {
+            const delta = Math.abs((t - dt) / DAY_MS);
+            if (delta < minDelta) minDelta = delta;
+        }
+        if (minDelta === 1)      zones.set(iso, 'strict');
+        else if (minDelta === 2) zones.set(iso, 'warn');
+    }
+    return zones;
+}
+
+
 // ─── Непрерывные диапазоны отпуска для одного человека ────────────────────
 // Возвращает массив {start_iso, end_iso, days} для отрисовки "Отпуск" полосой.
 // monthDays: массив iso-строк в порядке возрастания (все дни отображаемого месяца).

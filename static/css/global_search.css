@@ -1,0 +1,144 @@
+/* ============================================================
+   global_search.css — оверлей Ctrl+K (см. js/global_search.js).
+   Используется во всём приложении после логина.
+   ============================================================ */
+
+.gs-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.42);
+    z-index: var(--z-modal);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 12vh 16px 16px;
+    animation: gs-fade 0.12s ease-out;
+}
+
+@keyframes gs-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.gs-dialog {
+    width: 100%;
+    max-width: 640px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.gs-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-container);
+}
+
+.gs-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 1.05rem;
+    color: var(--md-on-surface);
+    outline: none;
+    padding: 4px 0;
+    font-family: var(--md-font-body);
+}
+
+.gs-results {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.gs-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--md-outline-variant);
+    transition: background var(--md-duration-short);
+}
+
+.gs-item:last-child { border-bottom: none; }
+
+.gs-item:hover,
+.gs-item--active {
+    background: var(--md-primary-light, #eef4f1);
+}
+
+.gs-item__main {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gs-item__rank {
+    font-size: 0.72rem;
+    color: var(--md-on-surface-hint);
+    text-transform: lowercase;
+}
+
+.gs-item__name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+
+.gs-item__meta {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-hint);
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.gs-item__muted {
+    font-style: italic;
+}
+
+.gs-empty {
+    padding: 18px 16px;
+    color: var(--md-on-surface-hint);
+    font-size: 0.86rem;
+    text-align: center;
+}
+
+.gs-footer {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 8px 14px;
+    border-top: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-container);
+    font-size: 0.74rem;
+    color: var(--md-on-surface-hint);
+}
+
+.gs-kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 4px;
+    font-family: var(--md-font-mono);
+    font-size: 0.72rem;
+    color: var(--md-on-surface);
+    line-height: 1.4;
+    margin-right: 4px;
+}
+
+/* Узкие экраны */
+@media (max-width: 600px) {
+    .gs-overlay { padding: 8vh 8px 8px; }
+    .gs-dialog  { max-width: 100%; }
+}
+
+/* Печать — оверлей не должен попадать на бумагу */
+@media print {
+    .gs-overlay { display: none !important; }
+}
