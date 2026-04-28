@@ -376,81 +376,86 @@ PRESETS: list[dict] = [
     # ── 6. КОМАНДА-333 (расчёт усиления охраны) ─────────────────────────────
     # При выгрузке: таблица из 5 колонок (Задача / Время выделения /
     # Расчёт / Кто выделяет / ФИО), задача и время merged по строкам группы.
-    # Кастомные колонки task_time и deployment лежат в extra_data слотов.
+    #
+    # Поле «Кто выделяет» = стандартное Slot.department (как Квота). Это
+    # значит, что управления видят свои слоты в разделе «Списки» и сами
+    # заполняют ФИО — точно так же, как в обычных шаблонах. В Word
+    # колонка автоматически дополняется «– N чел.» по числу слотов
+    # каждого управления в группе.
     {
         "id": "team333",
         "name": "КОМАНДА-333 (расчёт усиления)",
         "description": "Расчёт выделения личного состава для усиления охраны "
                        "военного городка по сигналу «КОМАНДА-333». 11 задач, "
-                       "у каждой — своё время выделения и квота.",
+                       "у каждой — своё время выделения. «Кто выделяет» — это "
+                       "квота на управление, заполняется как обычно.",
         "columns": [
             {"key": "task_time",   "label": "Время выделения",          "type": "text",            "order": 0, "width": 120, "visible": True,  "custom": True},
             {"key": "position_id", "label": "Расчёт (по постам)",       "type": "select_position", "order": 1, "width": 200, "visible": True,  "custom": False},
-            {"key": "deployment",  "label": "Кто выделяет (количество)","type": "text",            "order": 2, "width": 200, "visible": True,  "custom": True},
+            {"key": "department",  "label": "Кто выделяет",             "type": "select_dept",     "order": 2, "width": 160, "visible": True,  "custom": False},
             {"key": "full_name",   "label": "Ф.И.О.",                   "type": "text",            "order": 3, "width": 220, "visible": True,  "custom": False},
             {"key": "rank",        "label": "Звание",                   "type": "text",            "order": 4, "width": 120, "visible": False, "custom": False},
             {"key": "doc_number",  "label": "№ документа",              "type": "text",            "order": 5, "width": 130, "visible": False, "custom": False},
             {"key": "callsign",    "label": "Позывной",                 "type": "text",            "order": 6, "width": 100, "visible": False, "custom": False},
-            {"key": "department",  "label": "Квота",                    "type": "select_dept",     "order": 7, "width": 140, "visible": False, "custom": False},
-            {"key": "note",        "label": "Примечание",               "type": "text",            "order": 8, "width": 160, "visible": False, "custom": False},
+            {"key": "note",        "label": "Примечание",               "type": "text",            "order": 7, "width": 160, "visible": False, "custom": False},
         ],
         "groups": [
             {"name": "Усиление пропускного режима в штабе", "slots": [
-                {"position": "ПОД, ПОД по связи", "extra": {"task_time": "«Ч»+0.10", "deployment": "ОДС – 2 чел."}},
-                {"position": "ПОД, ПОД по связи", "extra": {"task_time": "«Ч»+0.10", "deployment": "ОДС – 2 чел."}},
-                {"position": "дежурная смена",    "extra": {"task_time": "«Ч»+0.10", "deployment": "1 упр., по графику, по графику – 3 чел."}},
-                {"position": "дежурная смена",    "extra": {"task_time": "«Ч»+0.10", "deployment": "1 упр., по графику, по графику – 3 чел."}},
-                {"position": "дежурная смена",    "extra": {"task_time": "«Ч»+0.10", "deployment": "1 упр., по графику, по графику – 3 чел."}},
-                {"position": "расчёт РХР",        "extra": {"task_time": "«Ч»+0.10", "deployment": "3 упр. – 2 чел."}},
-                {"position": "расчёт РХР",        "extra": {"task_time": "«Ч»+0.10", "deployment": "3 упр. – 2 чел."}},
+                {"position": "ПОД, ПОД по связи", "department": "ОДС",    "extra": {"task_time": "«Ч»+0.10"}},
+                {"position": "ПОД, ПОД по связи", "department": "ОДС",    "extra": {"task_time": "«Ч»+0.10"}},
+                {"position": "дежурная смена",    "department": "1 упр.", "extra": {"task_time": "«Ч»+0.10"}},
+                {"position": "дежурная смена",    "department": "1 упр.", "extra": {"task_time": "«Ч»+0.10"}},
+                {"position": "дежурная смена",    "department": "1 упр.", "extra": {"task_time": "«Ч»+0.10"}},
+                {"position": "расчёт РХР",        "department": "3 упр.", "extra": {"task_time": "«Ч»+0.10"}},
+                {"position": "расчёт РХР",        "department": "3 упр.", "extra": {"task_time": "«Ч»+0.10"}},
             ]},
             {"name": "Группа оцепления (оцепление территории с целью недопущения посторонних лиц)", "slots": [
-                {"position": "детская площадка",              "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
-                {"position": "с торца общежития №2",          "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
-                {"position": "возле 1 ворот РТК",             "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
-                {"position": "возле запасного входа (выхода) в столовую", "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
+                {"position": "детская площадка",                          "department": "2 упр.", "extra": {"task_time": "«Ч»+0.15"}},
+                {"position": "с торца общежития №2",                     "department": "2 упр.", "extra": {"task_time": "«Ч»+0.15"}},
+                {"position": "возле 1 ворот РТК",                        "department": "2 упр.", "extra": {"task_time": "«Ч»+0.15"}},
+                {"position": "возле запасного входа (выхода) в столовую","department": "2 упр.", "extra": {"task_time": "«Ч»+0.15"}},
             ]},
             {"name": "Дежурное подразделение", "slots": [
                 *[{"position": "Патрулирование служебной территории согласно схеме",
-                   "extra": {"task_time": "«Ч»+0.20", "deployment": "Б(О) – 6 чел."}} for _ in range(6)],
+                   "department": "Б(О)", "extra": {"task_time": "«Ч»+0.20"}} for _ in range(6)],
             ]},
             {"name": "Выставление дополнительных вооружённых постов", "slots": [
-                {"position": "на крыше общежития № 2",            "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 2 чел."}},
-                {"position": "на крыше общежития № 2",            "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 2 чел."}},
-                {"position": "на крыше бокса оперативных машин",  "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 1 чел., 3 упр. – 1 чел."}},
-                {"position": "на крыше бокса оперативных машин",  "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 1 чел., 3 упр. – 1 чел."}},
-                {"position": "на крыше РТК",                      "extra": {"task_time": "«Ч»+01.00", "deployment": "4 упр. – 2 чел."}},
-                {"position": "на крыше РТК",                      "extra": {"task_time": "«Ч»+01.00", "deployment": "4 упр. – 2 чел."}},
-                {"position": "на крыше бойлерной",                "extra": {"task_time": "«Ч»+01.00", "deployment": "5 упр. – 2 чел."}},
-                {"position": "на крыше бойлерной",                "extra": {"task_time": "«Ч»+01.00", "deployment": "5 упр. – 2 чел."}},
+                {"position": "на крыше общежития № 2",            "department": "1 упр.", "extra": {"task_time": "«Ч»+01.00"}},
+                {"position": "на крыше общежития № 2",            "department": "1 упр.", "extra": {"task_time": "«Ч»+01.00"}},
+                {"position": "на крыше бокса оперативных машин",  "department": "1 упр.", "extra": {"task_time": "«Ч»+01.00"}},
+                {"position": "на крыше бокса оперативных машин",  "department": "3 упр.", "extra": {"task_time": "«Ч»+01.00"}},
+                {"position": "на крыше РТК",                      "department": "4 упр.", "extra": {"task_time": "«Ч»+01.00"}},
+                {"position": "на крыше РТК",                      "department": "4 упр.", "extra": {"task_time": "«Ч»+01.00"}},
+                {"position": "на крыше бойлерной",                "department": "5 упр.", "extra": {"task_time": "«Ч»+01.00"}},
+                {"position": "на крыше бойлерной",                "department": "5 упр.", "extra": {"task_time": "«Ч»+01.00"}},
             ]},
             {"name": "Пожарный расчёт (по дополнительному распоряжению)", "slots": [
-                *[{"position": "пожарная команда",
-                   "extra": {"task_time": "«Ч»+0.10", "deployment": "Б(О) – 3 чел."}} for _ in range(3)],
+                *[{"position": "пожарная команда", "department": "Б(О)",
+                   "extra": {"task_time": "«Ч»+0.10"}} for _ in range(3)],
             ]},
             {"name": "Мобильный резерв (по дополнительному распоряжению)", "slots": [
-                *[{"position": "мобильный резерв",
-                   "extra": {"task_time": "«Ч»+0.40", "deployment": "2 упр. – 6 чел."}} for _ in range(6)],
+                *[{"position": "мобильный резерв", "department": "2 упр.",
+                   "extra": {"task_time": "«Ч»+0.40"}} for _ in range(6)],
             ]},
             {"name": "Выставление ПРХН (по дополнительному распоряжению)", "slots": [
-                *[{"position": "возле КПП №2",
-                   "extra": {"task_time": "«Ч»+0.40", "deployment": "3 упр. – 2 чел."}} for _ in range(2)],
+                *[{"position": "возле КПП №2", "department": "3 упр.",
+                   "extra": {"task_time": "«Ч»+0.40"}} for _ in range(2)],
             ]},
             {"name": "Группа спец. работ с применением РТС (по дополнительному распоряжению)", "slots": [
-                *[{"position": "расчёты РТС «TEL-630»",
-                   "extra": {"task_time": "«Ч»+1.00", "deployment": "4 упр. – 4 чел."}} for _ in range(4)],
+                *[{"position": "расчёты РТС «TEL-630»", "department": "4 упр.",
+                   "extra": {"task_time": "«Ч»+1.00"}} for _ in range(4)],
             ]},
             {"name": "Группа пиротехнических и кинологических работ (по дополнительному распоряжению)", "slots": [
-                *[{"position": "пиротехнический расчёт",
-                   "extra": {"task_time": "«Ч»+1.00", "deployment": "5 упр. – 3 чел."}} for _ in range(3)],
+                *[{"position": "пиротехнический расчёт", "department": "5 упр.",
+                   "extra": {"task_time": "«Ч»+1.00"}} for _ in range(3)],
             ]},
             {"name": "МСГ (по дополнительному распоряжению)", "slots": [
-                *[{"position": "медико-спасательная группа",
-                   "extra": {"task_time": "«Ч»+1.00", "deployment": "6 упр. – 2 чел."}} for _ in range(2)],
+                *[{"position": "медико-спасательная группа", "department": "6 упр.",
+                   "extra": {"task_time": "«Ч»+1.00"}} for _ in range(2)],
             ]},
             {"name": "Расчёт беспилотной авиационной системы (по дополнительному распоряжению)", "slots": [
                 {"position": "оператор беспилотного воздушного судна",
-                 "extra": {"task_time": "«Ч»+1.00", "deployment": "8 упр. – 1 чел."}},
+                 "department": "8 упр.", "extra": {"task_time": "«Ч»+1.00"}},
             ]},
         ],
     },

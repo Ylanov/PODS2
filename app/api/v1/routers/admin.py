@@ -531,15 +531,17 @@ async def create_template_from_preset(
             slot = Slot(
                 group_id=group.id,
                 position_id=_get_position_id(position_name) if position_name else None,
-                department="",          # квоту админ проставит сам
+                # Квота — берём из пресета, если задана. Если нет — пусто
+                # (админ проставит вручную).
+                department=preset_slot.get("department", "") or "",
                 rank=None,
                 full_name=None,
                 doc_number=None,
                 callsign=None,
                 note=preset_slot.get("note"),
             )
-            # Доп. поля типа task_time, deployment, subdivision — пишем
-            # в extra_data; диспетчер экспорта (export.py) их прочтёт.
+            # Доп. поля типа task_time, subdivision — пишем в extra_data;
+            # диспетчер экспорта (export.py) их прочтёт.
             extra = preset_slot.get("extra")
             if extra:
                 slot.set_extra(extra)

@@ -118,12 +118,19 @@ def build_team333_docx(db: Session,
         first_row.cells[0].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         first_row.cells[1].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
+        # «Кто выделяет» = department + автоматический подсчёт «– N чел.»
+        # по числу слотов одного управления внутри этой группы. Так
+        # колонка в Word повторяет формат исходного шаблона
+        # («1 упр. – 3 чел.», «Б(О) – 6 чел.», ...).
+        from collections import Counter
+        dept_counts = Counter(s.department or "—" for s in slots)
+
         # Заполняем все строки группы для колонок 2,3,4 (расчёт, кто, ФИО)
         for offset, slot in enumerate(slots):
             r = table.rows[row_idx + offset]
-            extra = slot.get_extra()
             position_name = slot.position.name if slot.position else ""
-            deployment    = extra.get("deployment", "")
+            dept = slot.department or "—"
+            deployment    = f"{dept} – {dept_counts[dept]} чел."
             full_name     = slot.full_name or ""
 
             _cell_text(r.cells[2], position_name, size_pt=10,
