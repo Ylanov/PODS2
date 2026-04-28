@@ -8,19 +8,19 @@
    ───────────────────────────────────────────────────────────── */
 
 /* ── Layout ─────────────────────────────────────────────────── */
+/* Sidebar превращён в горизонтальный toolbar над графиком, чтобы сетка
+   могла занять всю ширину окна и не нужно было прокручивать месяц влево.
+   Поэтому одна колонка: сверху — список графиков + кнопка создания,
+   снизу — сама сетка. */
 .duty-layout {
     display: grid;
-    grid-template-columns: 260px 1fr;
-    gap: 18px;
+    grid-template-columns: 1fr;
+    gap: 14px;
     align-items: start;
     min-height: 400px;
 }
 
-@media (max-width: 700px) {
-    .duty-layout { grid-template-columns: 1fr; }
-}
-
-/* ── Sidebar ─────────────────────────────────────────────────── */
+/* ── Sidebar (теперь горизонтальная панель сверху) ───────────── */
 .duty-sidebar {
     background: var(--md-surface);
     border: 1px solid var(--md-outline-variant);
@@ -32,7 +32,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 16px;
+    padding: 10px 16px;
     background: var(--md-primary);
 }
 
@@ -45,7 +45,45 @@
 }
 
 .duty-sidebar__body {
-    padding: 14px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+}
+
+/* Кнопки toolbar'а — auto-ширина (inline-style width:100% в HTML
+   снят), не растягиваются на всю строку. */
+#dept-duty-add-schedule-btn,
+#duty-add-schedule-btn,
+#duty-history-toggle {
+    flex-shrink: 0;
+}
+
+/* Список графиков — горизонтальная лента: при множестве графиков
+   появляется внутренний горизонтальный скролл, общий layout не ломается. */
+#dept-duty-schedules-list,
+#duty-schedules-list {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+}
+
+#dept-duty-schedules-list .hint,
+#duty-schedules-list .hint {
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* Форма создания графика — отдельной строкой под toolbar'ом. */
+.duty-create-form {
+    flex-basis: 100%;
 }
 
 /* ── Create form ─────────────────────────────────────────────── */
@@ -57,17 +95,18 @@
     margin-bottom: 10px;
 }
 
-/* ── Schedule items ──────────────────────────────────────────── */
+/* ── Schedule items (горизонтальные chips в toolbar'е) ────────── */
 .duty-sched-item {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 9px 10px;
+    padding: 6px 10px;
     border-radius: var(--md-radius-sm);
     cursor: pointer;
     transition: background var(--md-duration-short);
-    border: 1px solid transparent;
-    margin-bottom: 4px;
+    border: 1px solid var(--md-outline-variant);
+    flex-shrink: 0;
+    max-width: 240px;
 }
 
 .duty-sched-item:hover {
