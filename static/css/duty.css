@@ -952,15 +952,14 @@ tr:hover .duty-grid__remove-person {
 }
 
 /* ── ФИО первой колонки ─────────────────────────────────────────────────── */
+/* sticky/z-index/background/box-shadow задаются в .duty-grid__name-cell выше
+   (та же ячейка имеет оба класса). Здесь — только уникальные текстовые стили,
+   чтобы более специфичный селектор не перебивал z-index sticky-колонки и не
+   позволял .duty-vacation-bar (z:2) визуально залезать на колонку ФИО. */
 .duty-grid .duty-name-td {
     font-weight: 500;
     color: var(--md-on-surface, #111);
     white-space: nowrap;
-    position: sticky;
-    left: 0;
-    background: var(--md-surface, #fff);
-    z-index: 1;
-    box-shadow: 2px 0 4px rgba(0,0,0,0.04);
     padding-right: 8px;
 }
 

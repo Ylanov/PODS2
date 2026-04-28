@@ -382,6 +382,21 @@ let _searchTimeout = null;
 let _personsDeptFilter = ''; // активный фильтр по управлению (admin only)
 let _personsIncludeFired = false; // чекбокс «Показать уволенных» (admin only)
 
+// Подписываемся на WS-событие 'person-update' один раз. Когда любое
+// управление меняет department/ФИО/звание человека (или админ редактирует
+// сам), бэк рассылает broadcast — без этого слушателя админская база
+// застревает на кэше и показывает stale данные до закрытия вкладки.
+if (!loadPersons._wsWired) {
+    loadPersons._wsWired = true;
+    document.addEventListener('person-update', () => {
+        // Перезагружаем только если вкладка реально видна — иначе шум.
+        const tbody = document.getElementById('persons-tbody');
+        if (tbody && tbody.offsetParent !== null) {
+            loadPersons();
+        }
+    });
+}
+
 export async function loadPersons(searchQuery = '') {
     const tbody = document.getElementById('persons-tbody');
     const empty = document.getElementById('persons-empty');
