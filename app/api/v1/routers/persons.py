@@ -740,8 +740,20 @@ async def create_person(
 
     existing = db.query(Person).filter(Person.full_name.ilike(person_in.full_name)).first()
     if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Человек с таким ФИО уже есть в базе")
+        # Осиротевшего (никому не принадлежит, не уволен) подхватываем текущему
+        # пользователю — типичный кейс: человек попал в БД через слот/импорт
+        # без department, и теперь управление «забирает» его к себе.
+        if existing.department is None and existing.fired_at is None:
+            existing.department = department
+            db.commit()
+            db.refresh(existing)
+            return existing
+        owner  = existing.department or "—"
+        suffix = " (уволен)" if existing.fired_at else ""
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Человек с таким ФИО уже числится за управлением «{owner}»{suffix}",
+        )
 
     person = Person(
         full_name=      person_in.full_name,

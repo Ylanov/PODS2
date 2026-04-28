@@ -38,6 +38,10 @@ export function initConflictsBadge() {
 }
 
 export async function refreshBadge() {
+    // Defense-in-depth: функция экспортирована, может быть вызвана таймером
+    // от устаревшей версии модуля в кэше браузера. Эндпоинт админский — не-админу
+    // нет смысла слать запрос только чтобы получить 403.
+    if (window.currentUser?.role !== 'admin') return;
     try {
         const res = await api.get('/persons/conflicts/count');
         const dot = document.getElementById('conflicts-header-dot');
