@@ -394,6 +394,29 @@ tbody tr.group-header td {
 }
 
 
+/* ─── Theme toggle button (☀/☾ в шапке) ─────────────────── */
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-left: 8px;
+    padding: 0;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-full);
+    background: transparent;
+    color: var(--md-on-surface);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    transition: background var(--md-duration-short), border-color var(--md-duration-short);
+}
+.theme-toggle:hover {
+    background: var(--md-surface-container);
+    border-color: var(--md-outline);
+}
+
 /* ─── Snackbar ────────────────────────────────────────────── */
 #snackbar {
     position: fixed;

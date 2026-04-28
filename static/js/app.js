@@ -19,6 +19,10 @@ import './event_editor.js';
 // Глобальный поиск Ctrl+K — слушатель ставится при импорте через initGlobalSearch().
 import { initGlobalSearch } from './global_search.js';
 initGlobalSearch();
+// Тема (светлая/тёмная) — модуль сам применяет сохранённую при загрузке;
+// отдельно вешаем кнопку-переключатель когда DOM шапки готов.
+import { initThemeToggleButton } from './theme_toggle.js';
+document.addEventListener('DOMContentLoaded', initThemeToggleButton);
 
 window.app = {
     deleteUser:      admin.deleteUser,

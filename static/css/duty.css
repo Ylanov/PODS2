@@ -290,6 +290,15 @@
 @media (max-width: 700px) {
     .duty-grid-wrap { overflow-x: auto; }
     .duty-grid      { min-width: 720px; }
+
+    /* На мобильном при collapse-таблице 3px-граница name-cell визуально
+       сжимается; усиливаем явной двойной отбивкой: толстая рамка справа +
+       заметная тень. Имена больше не сливаются с первой колонкой дня. */
+    .duty-grid__name-cell,
+    .duty-grid__name-hdr {
+        border-right: 4px solid var(--md-on-surface, #1a1a1a) !important;
+        box-shadow: 6px 0 8px -3px rgba(0, 0, 0, 0.18) !important;
+    }
 }
 
 /* ── The actual grid table ───────────────────────────────────── */

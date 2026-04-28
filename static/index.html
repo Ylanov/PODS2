@@ -819,25 +819,25 @@
                              justify-content:space-between; flex-wrap:wrap; gap:10px;
                              padding:10px 18px; background:var(--md-surface-variant);
                              border-bottom:1px solid var(--md-outline-variant);">
-                            <div style="display:flex; align-items:center; gap:8px; flex:1; max-width:380px;">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                                     style="flex-shrink:0; color:var(--md-on-surface-hint);">
-                                    <circle cx="11" cy="11" r="8"/>
-                                    <path d="M21 21l-4.35-4.35"/>
-                                </svg>
-                                <input type="text" id="editor-search-input"
-                                       placeholder="Быстрый поиск: ФИО, должность, позывной…"
-                                       autocomplete="off"
-                                       style="flex:1; border:1px solid var(--md-outline-variant);
-                                              background:var(--md-surface); padding:5px 8px;
-                                              border-radius:var(--md-radius-sm); font-size:0.82rem;
-                                              outline:none; color:var(--md-on-surface);">
+                            <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+                                <div class="editor-search-box">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                         class="editor-search-box__icon">
+                                        <circle cx="11" cy="11" r="8"/>
+                                        <path d="M21 21l-4.35-4.35"/>
+                                    </svg>
+                                    <input type="text" id="editor-search-input"
+                                           placeholder="Быстрый поиск: ФИО, должность, позывной…"
+                                           autocomplete="off"
+                                           class="editor-search-box__input">
+                                </div>
                                 <select id="editor-filter-dept" title="Фильтр по управлению"
+                                        class="editor-toolbar-select"
                                         style="border:1px solid var(--md-outline-variant);
-                                               background:var(--md-surface); padding:5px 6px;
-                                               border-radius:var(--md-radius-sm); font-size:0.78rem;
-                                               min-width:140px; cursor:pointer;
+                                               background:var(--md-surface); padding:8px 10px;
+                                               border-radius:var(--md-radius-sm); font-size:0.85rem;
+                                               min-width:180px; cursor:pointer;
                                                color:var(--md-on-surface);">
                                     <option value="">Все управления</option>
                                 </select>

@@ -80,6 +80,44 @@
     --z-toast:     1100;  /* snackbar/toast — поверх всего */
 }
 
+/* ─── Тёмная тема ────────────────────────────────────────────────────────────
+   Активируется атрибутом data-theme="dark" на <html>. Переключатель в шапке
+   приложения (см. js/theme_toggle.js) сохраняет выбор в localStorage.
+   Перекрываем только цветовые токены — все компоненты в проекте читают их
+   через var(--md-*), поэтому тема меняется одной правкой здесь.
+   Спец-цвета подсветок ячеек в графике (отпуск/наряд/выходные) намеренно
+   оставлены прежними: их контрастность важнее тематической согласованности.
+   ──────────────────────────────────────────────────────────────────────── */
+:root[data-theme="dark"] {
+    --md-primary:            #6ba89a;
+    --md-primary-dark:       #87bcb0;
+    --md-primary-light:      #1f3530;
+    --md-on-primary:         #0f1a17;
+
+    --md-surface:            #1f2124;
+    --md-surface-variant:    #26282c;
+    --md-surface-container:  #2d3034;
+    --md-background:         #15171a;
+
+    --md-on-surface:         #e8e6e2;
+    --md-on-surface-variant: #b6b3ad;
+    --md-on-surface-hint:    #7c7872;
+
+    --md-success:            #6ba89a;
+    --md-success-light:      #1f3530;
+    --md-error:              #d97870;
+    --md-error-light:        #3a1f1d;
+    --md-warning:            #d4a060;
+    --md-warning-light:      #3a2c18;
+
+    --md-outline:            #3f4348;
+    --md-outline-variant:    #2d3034;
+}
+
+/* Темнее scrollbar в тёмной теме — иначе он почти невидим. */
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb        { background: #3f4348; }
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover  { background: #565a60; }
+
 /* ─── Reset & Base ────────────────────────────────────────── */
 *, *::before, *::after {
     box-sizing: border-box;

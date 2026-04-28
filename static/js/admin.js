@@ -291,7 +291,7 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <span class="group-header__name">${esc(group.name)}</span>
                             <div style="display:flex; gap:6px;">
-                                <button class="btn btn-success btn-xs" data-group-id="${group.id}">+ Строку</button>
+                                <button class="btn btn-success btn-xs group-add-row-btn" data-group-id="${group.id}" title="Добавить пустую строку в группу">+ Строку</button>
                                 <button class="btn btn-outlined btn-xs group-delete-btn" data-group-id="${group.id}" title="Удалить группу">✕ Группу</button>
                             </div>
                         </div>
@@ -1661,7 +1661,27 @@ export function listenForUpdates() {
 
     el('master-tbody')?.addEventListener('click', (e) => {
         const groupDeleteBtn = e.target.closest('.group-delete-btn');
-        if (groupDeleteBtn) deleteGroup(groupDeleteBtn.dataset.groupId);
+        if (groupDeleteBtn) {
+            deleteGroup(groupDeleteBtn.dataset.groupId);
+            return;
+        }
+        // Кнопки «+ Строку» в шапке группы — раньше были без обработчика.
+        // Делегирование переживает rerender таблицы.
+        const addRowBtn = e.target.closest('.group-add-row-btn');
+        if (addRowBtn) {
+            addBlankRow(addRowBtn.dataset.groupId);
+            return;
+        }
+    });
+
+    // Кнопка «+ Добавить группу» внизу редактора — handleAddGroup
+    // экспортируется как обработчик, но раньше нигде не привязывалась.
+    el('editor-add-group-btn')?.addEventListener('click', handleAddGroup);
+    el('editor-new-group-name')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddGroup();
+        }
     });
 }
 

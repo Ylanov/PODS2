@@ -1057,3 +1057,70 @@
     color: var(--md-error);
 }
 
+
+/* ─── Поиск в редакторе шаблонов ────────────────────────────────────────────
+   Раньше input был сжат inline-стилями (max-width:380px на обёртке + flex
+   с select и кнопками справа). Теперь обёртка .editor-search-box растёт
+   до доступной ширины, иконка позиционирована абсолютно, padding слева
+   оставляет ей место. */
+.editor-search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1 1 360px;
+    min-width: 200px;
+    max-width: 560px;
+}
+
+.editor-search-box__icon {
+    position: absolute;
+    left: 10px;
+    color: var(--md-on-surface-hint);
+    pointer-events: none;
+}
+
+.editor-search-box__input {
+    width: 100%;
+    padding: 9px 12px 9px 34px;
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    border-radius: var(--md-radius-sm);
+    font-size: 0.9rem;
+    outline: none;
+    color: var(--md-on-surface);
+    transition: border-color var(--md-duration-short), box-shadow var(--md-duration-short);
+}
+
+.editor-search-box__input:focus {
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 3px var(--md-primary-light);
+}
+
+/* Кнопки в шапке группы (+ Строку / ✕ Группу): чуть крупнее и заметнее.
+   Раньше .btn-xs делал их почти невидимыми; теперь у них фиксированная
+   высота, hover-эффект и понятная кликабельность. */
+.group-header__name {
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+
+tr.group-header .btn.group-add-row-btn,
+tr.group-header .btn.group-delete-btn {
+    padding: 4px 12px;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    min-height: 28px;
+    border-radius: var(--md-radius-sm);
+}
+
+tr.group-header .btn.group-add-row-btn { font-weight: 600; }
+
+tr.group-header .btn.group-delete-btn {
+    color: var(--md-error);
+    border-color: var(--md-outline-variant);
+}
+tr.group-header .btn.group-delete-btn:hover {
+    background: var(--md-error-light);
+    border-color: var(--md-error);
+}
+
