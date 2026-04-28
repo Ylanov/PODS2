@@ -457,7 +457,13 @@ export async function loadPersons(searchQuery = '') {
 
 function _applyPersonsFilters() {
     if (_personsDeptFilter) {
-        _personsFiltered = _personsData.filter(p => (p.department || '') === _personsDeptFilter);
+        // Сравнение нормализованных значений: исторически в БД у разных людей
+        // department мог быть записан с лишними пробелами или в разном регистре,
+        // и точное === оставлял половину людей за бортом фильтра.
+        const want = _personsDeptFilter.trim().toLowerCase();
+        _personsFiltered = _personsData.filter(p =>
+            (p.department || '').trim().toLowerCase() === want
+        );
     } else {
         _personsFiltered = _personsData;
     }

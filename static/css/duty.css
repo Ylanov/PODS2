@@ -277,20 +277,21 @@
 
 /* Grid wrap — horizontal scroll */
 .duty-grid-wrap {
-    overflow-x: auto;
+    /* Скролл отключён: таблица должна полностью помещаться в окне.
+       Ячейки дней узкие (см. .duty-grid__day-hdr) — на типичном экране
+       31 день + ФИО + summary спокойно влезают. */
+    overflow-x: hidden;
     padding: 12px 16px 0;
 }
 
 /* ── The actual grid table ───────────────────────────────────── */
 .duty-grid {
     border-collapse: collapse;
-    font-size: 0.78rem;
-    /* width:100% растягивает таблицу на всю ширину обёртки;
-       min-width:max-content страхует от слишком узкого окна — ячейки
-       не схлопываются ниже своего естественного размера, и при необходимости
-       включается горизонтальный скролл .duty-grid-wrap. */
+    font-size: 0.74rem;
+    /* table-layout:fixed + width:100% — колонки распределяются равномерно
+       по доступной ширине, без горизонтального скролла. */
     width: 100%;
-    min-width: max-content;
+    table-layout: fixed;
 }
 
 /* Column headers (day numbers) */
@@ -318,14 +319,14 @@
 }
 
 .duty-grid__day-hdr {
-    width: 32px;
-    min-width: 28px;
-    max-width: 36px;
+    /* Без жёстких min/max: при table-layout:fixed колонки делятся
+       равномерно, ячейки дней получают одинаковую ширину = свободное
+       место / число дней. */
     text-align: center;
-    padding: 5px 2px;
+    padding: 4px 1px;
     font-weight: 600;
     color: var(--md-on-surface-hint);
-    font-size: 0.72rem;
+    font-size: 0.66rem;
     border-bottom: 2px solid var(--md-outline-variant);
     border-right: 1px solid var(--md-outline-variant);
     user-select: none;
@@ -344,19 +345,20 @@
 
 /* Name cell (sticky left column) */
 .duty-grid__name-cell {
+    /* Sticky оставляем на случай очень узких экранов, но при table-layout:fixed
+       и hidden-overflow горизонтального скролла нет — ФИО просто не уезжает. */
     position: sticky;
     left: 0;
-    /* z-index выше .duty-vacation-bar (z:2): иначе абсолютная полоса
-       отпуска перекрывает имя при горизонтальном скролле. */
     z-index: 5;
     background: var(--md-surface);
-    /* Тот же усиленный разделитель, что у заголовка колонки ФИО. */
     border-right: 3px solid var(--md-outline);
     box-shadow: 4px 0 6px -2px rgba(0, 0, 0, 0.10);
     border-bottom: 1px solid var(--md-outline-variant);
     padding: 0;
-    min-width: 200px;
-    max-width: 240px;
+    /* Фиксированная ширина при table-layout:fixed — колонка ФИО занимает
+       ровно столько, сколько нужно для звания + ФИО, остальное достаётся
+       дням и summary. */
+    width: 200px;
 }
 
 .duty-grid__name-wrap {
@@ -421,9 +423,10 @@ tr:hover .duty-grid__remove-person {
 
 /* Data cells */
 .duty-grid__cell {
-    width: 32px;
-    min-width: 28px;
-    height: 32px;
+    /* Без width/min-width — при table-layout:fixed ячейки делят свободное
+       место равномерно. Высота фиксированная, чтобы маркеры (.duty-mark
+       22×22) не сплющивались. */
+    height: 30px;
     text-align: center;
     vertical-align: middle;
     border-right: 1px solid var(--md-outline-variant);
@@ -431,6 +434,7 @@ tr:hover .duty-grid__remove-person {
     cursor: pointer;
     transition: background var(--md-duration-short);
     user-select: none;
+    overflow: hidden;
 }
 
 .duty-grid__cell:hover {
@@ -928,7 +932,10 @@ tr:hover .duty-grid__remove-person {
     text-align: center;
     font-weight: 600;
     white-space: nowrap;
-    padding: 4px 8px;
+    padding: 4px 4px;
+    /* Фиксированная ширина summary-колонок: при table-layout:fixed
+       они получают эти значения, оставляя дням равные доли остатка. */
+    width: 42px;
 }
 
 .duty-grid .duty-summary-td__num {
