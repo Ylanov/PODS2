@@ -1058,6 +1058,30 @@
 }
 
 
+/* ─── Колонки таблицы #master-table ─────────────────────────────────────────
+   Раньше у select-ов в ячейках не было min-width, и колонки «Должность» /
+   «Управление» сжимались по содержимому пустого select (~80px), обрезая
+   длинные названия типа «начальник связи», «врач (фельдшер)».
+   Теперь у каждого типа поля есть осмысленный минимум, чтобы текст
+   помещался полностью. */
+#master-tbody td select,
+#master-tbody td input {
+    width: 100%;
+}
+
+#master-tbody td select[id^="pos-"]   { min-width: 170px; }   /* Должность */
+#master-tbody td select[id^="dept-"]  { min-width: 150px; }   /* Управление */
+#master-tbody td input[id^="fio-"]    { min-width: 200px; }   /* ФИО */
+#master-tbody td input[id^="rank-"]   { min-width: 130px; }   /* Звание */
+#master-tbody td input[id^="doc-"]    { min-width: 110px; }   /* № документа */
+#master-tbody td input[id^="callsign-"]{ min-width: 110px; }  /* Позывной */
+#master-tbody td input[id^="cx-"]     { min-width: 110px; }   /* Кастомные поля (Квота, Примечание …) */
+
+/* Чтобы option в открытом dropdown был на всю ширину разумного select:
+   ограничиваем максимум — не растягиваться сверх нужного. */
+#master-tbody td select { max-width: 260px; }
+
+
 /* ─── Поиск в редакторе шаблонов ────────────────────────────────────────────
    Раньше input был сжат inline-стилями (max-width:380px на обёртке + flex
    с select и кнопками справа). Теперь обёртка .editor-search-box растёт

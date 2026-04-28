@@ -719,8 +719,18 @@ export function openEventInEditor(eventId) {
 
 export async function deleteSlot(slotId) {
     if (!confirm('Удалить эту строку?')) return;
-    try { await api.delete(`/admin/slots/${slotId}`); notify('Строка удалена'); }
-    catch (e) { console.error('deleteSlot:', e); showError('Ошибка удаления строки'); }
+    try {
+        await api.delete(`/admin/slots/${slotId}`);
+        notify('Строка удалена');
+        // Явный rerender — таблица не ждала WS-события и не обновлялась
+        // до перезагрузки страницы.
+        if (currentEditorEventId) {
+            await renderAdminEditor(currentEditorEventId, true);
+        }
+    } catch (e) {
+        console.error('deleteSlot:', e);
+        showError('Ошибка удаления строки');
+    }
 }
 
 export async function addBlankRow(groupId) {
@@ -743,8 +753,16 @@ export async function addBlankRow(groupId) {
 
 export async function deleteGroup(groupId) {
     if (!confirm('Удалить группу вместе со всеми строками внутри?')) return;
-    try { await api.delete(`/admin/groups/${groupId}`); notify('Группа удалена'); }
-    catch (e) { console.error('deleteGroup:', e); showError('Ошибка удаления группы'); }
+    try {
+        await api.delete(`/admin/groups/${groupId}`);
+        notify('Группа удалена');
+        if (currentEditorEventId) {
+            await renderAdminEditor(currentEditorEventId, true);
+        }
+    } catch (e) {
+        console.error('deleteGroup:', e);
+        showError('Ошибка удаления группы');
+    }
 }
 
 // ─── Редактор столбцов ────────────────────────────────────────────────────────
