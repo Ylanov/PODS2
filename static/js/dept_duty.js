@@ -85,17 +85,7 @@ function _bindUI() {
     document.getElementById('dept-duty-add-person-btn')
         ?.addEventListener('click', _showPersonSearch);
 
-    // Единый автокомплит ФИО: при выборе — добавляем человека в график.
-    const searchInput = document.getElementById('dept-duty-person-search-input');
-    if (searchInput) {
-        attachFio(searchInput, {
-            container: searchInput.parentElement, // .duty-person-search wrap
-            emptyHint: 'Не найдено в базе управления',
-            onSelect: (person) => {
-                _addPerson(person.id);
-            },
-        });
-    }
+    _attachPersonSearch();
 
     document.getElementById('dept-duty-approve-btn')
         ?.addEventListener('click', _approveCurrentMonth);
@@ -348,11 +338,29 @@ async function _loadPersons() {
     }
 }
 
+// Вынесено отдельной функцией: вызываем и при инициализации UI, и каждый
+// раз при показе формы поиска. Если DOM-нода input'а где-то пересоздавалась
+// (например, при перерисовке графика), листенеры теряются вместе со старым
+// элементом — destroy+attach гарантирует, что подсказки будут работать.
+function _attachPersonSearch() {
+    const input = document.getElementById('dept-duty-person-search-input');
+    if (!input) return;
+    input.__fioAc?.destroy();
+    attachFio(input, {
+        container: input.parentElement, // .duty-person-search wrap
+        emptyHint: 'Не найдено в базе управления',
+        onSelect: (person) => {
+            _addPerson(person.id);
+        },
+    });
+}
+
 function _showPersonSearch() {
     const wrap  = document.getElementById('dept-duty-person-search-wrap');
     const input = document.getElementById('dept-duty-person-search-input');
     wrap?.classList.remove('hidden');
     if (input) input.value = '';
+    _attachPersonSearch();
     input?.focus();
 }
 

@@ -57,22 +57,12 @@ export function initDuty() {
             const wrap = document.getElementById('duty-person-search-wrap');
             wrap?.classList.toggle('hidden');
             if (!wrap?.classList.contains('hidden')) {
+                _attachPersonSearch();
                 document.getElementById('duty-person-search-input')?.focus();
             }
         });
 
-    // Единый автокомплит ФИО: при выборе — добавляем человека в график
-    // (admin видит всех в подсказках).
-    const searchInput = document.getElementById('duty-person-search-input');
-    if (searchInput) {
-        attachFio(searchInput, {
-            container: searchInput.parentElement, // .duty-person-search wrap
-            emptyHint: 'Не найдено',
-            onSelect: (person) => {
-                _addPersonToSchedule(person.id);
-            },
-        });
-    }
+    _attachPersonSearch();
 
     document.getElementById('duty-approve-btn')
         ?.addEventListener('click', _approveCurrentMonth);
@@ -725,6 +715,23 @@ function _showGridEmpty() {
 // ─── Person search ────────────────────────────────────────────────────────────
 // Поиск с подсказками делает fio_autocomplete (см. _bindUI),
 // здесь — только добавление выбранного в график.
+
+// Подключаем автокомплит «лениво»: при инициализации и каждый раз при показе
+// формы. destroy+attach защищает от случая, когда DOM-нода input'а
+// пересоздаётся при перерисовке графика — старые listener'ы теряются вместе
+// с прежним элементом.
+function _attachPersonSearch() {
+    const input = document.getElementById('duty-person-search-input');
+    if (!input) return;
+    input.__fioAc?.destroy();
+    attachFio(input, {
+        container: input.parentElement, // .duty-person-search wrap
+        emptyHint: 'Не найдено',
+        onSelect: (person) => {
+            _addPersonToSchedule(person.id);
+        },
+    });
+}
 
 async function _addPersonToSchedule(personId) {
     try {
