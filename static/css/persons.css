@@ -128,7 +128,7 @@
     top: 100%;
     left: 0;
     right: 0;
-    z-index: 1000;
+    z-index: var(--z-dropdown);
     background: var(--md-surface, #fff);
     border: 1px solid var(--md-outline-variant, #ddd);
     border-radius: var(--md-radius-md, 8px);

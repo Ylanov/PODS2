@@ -4,13 +4,17 @@
  */
 
 import { api } from './api.js';
-import { attach as attachFio } from './fio_autocomplete.js';
 import {
     MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate, isWeekendOrHoliday,
     groupMarks, computeSummary, extractVacationRanges,
     sortByRank,
 } from './duty_calc.js';
+import {
+    renderSummaryBlock,
+    attachPersonSearch,
+    clearVacations,
+} from './duty_ui.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -71,27 +75,27 @@ export function initDuty() {
         ?.addEventListener('click', _unapproveCurrentMonth);
 
     document.getElementById('duty-clear-vacations-btn')
-        ?.addEventListener('click', _clearVacations);
+        ?.addEventListener('click', () => clearVacations({
+            scheduleId: _currentId,
+            year:       _year,
+            month:      _month,
+            apiPath:    `/admin/schedules/${_currentId}/marks`,
+            isReadOnly: _isReadOnly,
+            reload:     _loadGrid,
+        }));
 
     document.getElementById('duty-create-position')
         ?.addEventListener('change', () => _suggestTitle());
 }
 
-async function _clearVacations() {
-    if (!_currentId) return;
-    if (_isReadOnly()) {
-        window.showSnackbar?.('Месяц утверждён. Сначала разблокируйте редактирование.', 'error');
-        return;
-    }
-    if (!confirm(`Снять все отпуска за ${_month.toString().padStart(2, '0')}.${_year}?`)) return;
-    try {
-        await api.delete(`/admin/schedules/${_currentId}/marks`
-            + `?mark_type=V&year=${_year}&month=${_month}`);
-        window.showSnackbar?.('Отпуска очищены', 'success');
-        await _loadGrid();
-    } catch (err) {
-        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
-    }
+// Тонкий обёрток над общим duty_ui.attachPersonSearch — только чтобы зафиксировать
+// admin-специфичные параметры (id input'а, hint, callback).
+function _attachPersonSearch() {
+    attachPersonSearch({
+        inputId:   'duty-person-search-input',
+        emptyHint: 'Не найдено',
+        onSelect:  (person) => _addPersonToSchedule(person.id),
+    });
 }
 
 // ─── Create form ──────────────────────────────────────────────────────────────
@@ -481,23 +485,6 @@ function _renderGrid() {
                     </td>`;
         }).join('');
 
-        // Счётчики
-        const sum = computeSummary(personMarks, _holidays);
-        const summaryCells = `
-            <td class="duty-summary-td" title="Нарядов">
-                <span class="duty-summary-td__num duty-summary-td__num--duty">${sum.duty}</span>
-            </td>
-            <td class="duty-summary-td" title="Часов переработки">
-                <span class="duty-summary-td__num duty-summary-td__num--hours">${sum.overtime}</span>
-            </td>
-            <td class="duty-summary-td" title="Увольнений / дней отпуска">
-                <span class="duty-summary-td__num">${sum.leave}/${sum.vacation}</span>
-            </td>
-            <td class="duty-summary-td" title="Резервов">
-                <span class="duty-summary-td__num">${sum.reserve}</span>
-            </td>
-        `;
-
         const rankBadge = p.rank
             ? `<span class="duty-grid__rank">${_esc(p.rank)}</span>`
             : '';
@@ -517,11 +504,10 @@ function _renderGrid() {
                 </div>
             </td>
             ${cells}
-            ${summaryCells}
         </tr>`;
     }).join('');
 
-    const totalCols = days + 4;   // ФИО + days + 3 summary
+    const totalCols = days + 1;   // ФИО + days (summary вынесен под таблицу)
     const emptyRow = _currentPersons.length === 0
         ? `<tr><td colspan="${totalCols}"
                style="text-align:center;padding:24px;color:var(--md-on-surface-hint);font-size:0.85rem;">
@@ -529,23 +515,20 @@ function _renderGrid() {
            </td></tr>`
         : '';
 
+    // colgroup убран сознательно: его inline-width перебивал CSS
+    // (.duty-grid__name-cell width:190px, .duty-grid__day-hdr без width)
+    // и таблица не помещалась в окно.
     table.innerHTML = `
-        <colgroup>
-            <col style="min-width:220px;width:220px;">
-            ${Array.from({ length: days }, () => '<col style="width:32px;min-width:28px;">').join('')}
-            <col style="width:56px;"><col style="width:56px;"><col style="width:60px;">
-        </colgroup>
         <thead>
             <tr>
                 <th class="duty-grid__name-hdr">ФИО</th>
                 ${dayHeaders}
-                <th class="duty-summary-th" title="Кол-во нарядов">Н</th>
-                <th class="duty-summary-th" title="Часы переработки">Часы</th>
-                <th class="duty-summary-th" title="Увольнения / Отпуск">У/О</th>
-                <th class="duty-summary-th" title="Кол-во резервов">Р</th>
             </tr>
         </thead>
         <tbody>${rows || emptyRow}</tbody>`;
+
+    renderSummaryBlock('duty-grid-summary', sortByRank(_currentPersons),
+                       marksByPerson, _holidays);
 
     // Делегированные события (только в draft — approved режим read-only)
     table.onclick = readOnly ? null : async (e) => {
@@ -745,23 +728,6 @@ function _showGridEmpty() {
 // ─── Person search ────────────────────────────────────────────────────────────
 // Поиск с подсказками делает fio_autocomplete (см. _bindUI),
 // здесь — только добавление выбранного в график.
-
-// Подключаем автокомплит «лениво»: при инициализации и каждый раз при показе
-// формы. destroy+attach защищает от случая, когда DOM-нода input'а
-// пересоздаётся при перерисовке графика — старые listener'ы теряются вместе
-// с прежним элементом.
-function _attachPersonSearch() {
-    const input = document.getElementById('duty-person-search-input');
-    if (!input) return;
-    input.__fioAc?.destroy();
-    attachFio(input, {
-        container: input.parentElement, // .duty-person-search wrap
-        emptyHint: 'Не найдено',
-        onSelect: (person) => {
-            _addPersonToSchedule(person.id);
-        },
-    });
-}
 
 async function _addPersonToSchedule(personId) {
     try {

@@ -5,7 +5,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 .evt-edit__backdrop {
-    position: fixed; inset: 0; z-index: 9999;
+    position: fixed; inset: 0; z-index: var(--z-modal);
     background: rgba(0, 0, 0, 0.48);
     display: flex; align-items: center; justify-content: center;
     padding: 18px;

@@ -302,6 +302,11 @@
        полосы отпуска (z:2), которая абсолютно позиционируется в td и иначе
        вылезает на эту колонку при горизонтальном скролле. */
     z-index: 6;
+    /* table-layout:fixed берёт ширины колонок из первой строки таблицы.
+       Если width задать только на .duty-grid__name-cell (это <td>), а на
+       <th>-шапке его нет — браузер сжимает колонку до ширины слова «ФИО»
+       и имена обрезаются до первой буквы. Поэтому ширина задана и здесь. */
+    width: 190px;
     background: var(--md-surface-container);
     text-align: left;
     padding: 6px 12px 6px 8px;
@@ -485,6 +490,92 @@ tr:hover .duty-grid__remove-person {
 
 .duty-grid tbody tr:nth-child(even) .duty-grid__cell--on {
     background: #1a1a1a;
+}
+
+/* ── Сводка по людям под графиком ───────────────────────────────────────── */
+/* Карточки-строки с chip'ами Н/Часы/У/О/Р вместо боковых summary-колонок —
+   так основная сетка занимает всю ширину экрана без скролла. */
+.duty-grid-summary {
+    margin: 14px 16px 0;
+    padding: 10px 14px;
+    background: var(--md-surface-variant);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+}
+
+.duty-grid-summary:empty {
+    display: none;
+}
+
+.duty-grid-summary__title {
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: var(--md-on-surface-hint);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 8px;
+}
+
+.duty-summary-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 4px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    flex-wrap: wrap;
+}
+
+.duty-summary-card:last-child {
+    border-bottom: none;
+}
+
+.duty-summary-card__name {
+    flex: 1 1 220px;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--md-on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.duty-summary-card__rank {
+    font-size: 0.7rem;
+    color: var(--md-on-surface-hint);
+    text-transform: lowercase;
+}
+
+.duty-summary-card__chip {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    white-space: nowrap;
+}
+
+.duty-summary-card__chip--duty {
+    background: #1e293b;
+    border-color: #1e293b;
+    color: #fff;
+}
+
+.duty-summary-card__chip--hours {
+    background: #e0f2fe;
+    border-color: #bae6fd;
+    color: #075985;
+}
+
+.duty-summary-card__chip--reserve {
+    background: #dbeafe;
+    border-color: #bfdbfe;
+    color: #1e3a8a;
 }
 
 /* Hint below grid */

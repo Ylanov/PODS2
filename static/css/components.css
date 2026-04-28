@@ -400,7 +400,7 @@ tbody tr.group-header td {
     bottom: 22px;
     left: 50%;
     transform: translateX(-50%) translateY(80px);
-    z-index: 9999;
+    z-index: var(--z-toast);
     min-width: 260px;
     max-width: 500px;
     background: #2a2825;

@@ -49,10 +49,26 @@
     --md-duration-medium:    220ms;
     --md-duration-long:      360ms;
 
-    /* Typography scale */
-    --md-font-display: 'IBM Plex Sans', 'Roboto', sans-serif;
-    --md-font-body:    'IBM Plex Sans', 'Roboto', sans-serif;
-    --md-font-mono:    'IBM Plex Mono', monospace;
+    /* Typography scale.
+       Системные шрифты — без обращения к Google Fonts: проект работает в
+       локальной сети без интернета, и любой запрос на googleapis.com
+       замораживал рендер на ~5 сек ошибкой ERR_NAME_NOT_RESOLVED.
+       Если на хост-машинах добавят 'IBM Plex Sans' локально — он будет
+       подхвачен первым в стеке, иначе рендер идёт на Segoe UI / system. */
+    --md-font-display: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --md-font-body:    'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --md-font-mono:    'IBM Plex Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+
+    /* Z-index scale.
+       Раньше модальные окна и dropdown'ы хардкодили `z-index: 9999`/`1000`
+       в каждом файле, что давало непредсказуемый порядок при наложении.
+       Шкала ниже задаёт явные уровни — используй переменные вместо чисел. */
+    --z-elevated:  1;     /* приподнятые элементы внутри потока */
+    --z-sticky:    5;     /* sticky-колонки/шапки таблиц */
+    --z-dropdown:  100;   /* выпадающие меню, autocomplete, datalist */
+    --z-overlay:   900;   /* затемняющий фон модалки */
+    --z-modal:     1000;  /* содержимое модального диалога */
+    --z-toast:     1100;  /* snackbar/toast — поверх всего */
 }
 
 /* ─── Reset & Base ────────────────────────────────────────── */

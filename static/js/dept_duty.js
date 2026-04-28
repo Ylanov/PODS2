@@ -6,13 +6,17 @@
  */
 
 import { api }         from './api.js';
-import { attach as attachFio } from './fio_autocomplete.js';
 import {
     MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate,
     groupMarks, computeSummary, extractVacationRanges,
     sortByRank,
 } from './duty_calc.js';
+import {
+    renderSummaryBlock,
+    attachPersonSearch,
+    clearVacations,
+} from './duty_ui.js';
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -94,24 +98,14 @@ function _bindUI() {
         ?.addEventListener('click', _unapproveCurrentMonth);
 
     document.getElementById('dept-duty-clear-vacations-btn')
-        ?.addEventListener('click', _clearVacations);
-}
-
-async function _clearVacations() {
-    if (!_currentId) return;
-    if (_isReadOnly()) {
-        window.showSnackbar?.('График утверждён. Сначала разблокируйте.', 'error');
-        return;
-    }
-    if (!confirm(`Снять все отпуска за ${_viewMonth.toString().padStart(2, '0')}.${_viewYear}?`)) return;
-    try {
-        await api.delete(`/dept/schedules/${_currentId}/marks`
-            + `?mark_type=V&year=${_viewYear}&month=${_viewMonth}`);
-        window.showSnackbar?.('Отпуска очищены', 'success');
-        await _loadMarksAndRender();
-    } catch (err) {
-        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
-    }
+        ?.addEventListener('click', () => clearVacations({
+            scheduleId: _currentId,
+            year:       _viewYear,
+            month:      _viewMonth,
+            apiPath:    `/dept/schedules/${_currentId}/marks`,
+            isReadOnly: _isReadOnly,
+            reload:     _loadMarksAndRender,
+        }));
 }
 
 // ─── Должности (для формы создания) ──────────────────────────────────────────
@@ -359,20 +353,13 @@ async function _loadPersons() {
     }
 }
 
-// Вынесено отдельной функцией: вызываем и при инициализации UI, и каждый
-// раз при показе формы поиска. Если DOM-нода input'а где-то пересоздавалась
-// (например, при перерисовке графика), листенеры теряются вместе со старым
-// элементом — destroy+attach гарантирует, что подсказки будут работать.
+// Тонкий обёрток над общим duty_ui.attachPersonSearch — фиксирует
+// dept-специфичные параметры (id input'а, hint, callback на _addPerson).
 function _attachPersonSearch() {
-    const input = document.getElementById('dept-duty-person-search-input');
-    if (!input) return;
-    input.__fioAc?.destroy();
-    attachFio(input, {
-        container: input.parentElement, // .duty-person-search wrap
+    attachPersonSearch({
+        inputId:   'dept-duty-person-search-input',
         emptyHint: 'Не найдено в базе управления',
-        onSelect: (person) => {
-            _addPerson(person.id);
-        },
+        onSelect:  (person) => _addPerson(person.id),
     });
 }
 
@@ -490,10 +477,6 @@ function _renderGrid() {
                 ${day}<span class="duty-dow">${DAY_ABBR[dow]}</span>
             </th>`;
         }).join('')}
-        <th class="duty-summary-th" title="Кол-во нарядов">Н</th>
-        <th class="duty-summary-th" title="Часы переработки">Часы</th>
-        <th class="duty-summary-th" title="Увольнения/Отпуск">У/О</th>
-        <th class="duty-summary-th" title="Кол-во резервов">Р</th>
         <th style="width:32px;"></th>
     </tr></thead>`;
 
@@ -546,18 +529,12 @@ function _renderGrid() {
             </td>`;
         }).join('');
 
-        const sum = computeSummary(personMarks, _holidays);
-
         return `<tr>
             <td class="duty-name-td" style="font-size:0.82rem; padding:4px 8px; white-space:nowrap;">
                 ${esc(p.full_name)}
                 ${p.rank ? `<span style="color:var(--md-on-surface-hint); font-size:0.7rem;"> ${esc(p.rank)}</span>` : ''}
             </td>
             ${cells}
-            <td class="duty-summary-td"><span class="duty-summary-td__num duty-summary-td__num--duty">${sum.duty}</span></td>
-            <td class="duty-summary-td"><span class="duty-summary-td__num duty-summary-td__num--hours">${sum.overtime}</span></td>
-            <td class="duty-summary-td"><span class="duty-summary-td__num">${sum.leave}/${sum.vacation}</span></td>
-            <td class="duty-summary-td"><span class="duty-summary-td__num">${sum.reserve}</span></td>
             <td style="text-align:center;">
                 ${readOnly ? '' :
                     `<button class="btn btn-danger btn-xs dept-duty-remove-person"
@@ -565,13 +542,16 @@ function _renderGrid() {
             </td>
         </tr>`;
     }).join('')}
-    ${_persons.length === 0 ? `<tr><td colspan="${daysInMonth + 5}" style="padding:24px; text-align:center; color:var(--md-on-surface-hint); font-size:0.85rem;">
+    ${_persons.length === 0 ? `<tr><td colspan="${daysInMonth + 2}" style="padding:24px; text-align:center; color:var(--md-on-surface-hint); font-size:0.85rem;">
         Добавьте сотрудников через кнопку «+ Добавить человека»
     </td></tr>` : ''}
     </tbody>`;
 
     table.innerHTML = thead + tbody;
     table.className = 'duty-grid';
+
+    renderSummaryBlock('dept-duty-grid-summary', sortedPersons,
+                       marksByPerson, _holidays);
 
     if (!readOnly) {
         table.querySelectorAll('.duty-grid__cell').forEach(cell => {

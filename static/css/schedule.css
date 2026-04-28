@@ -312,7 +312,7 @@ tr.editor-row--checked td:first-child {
 
 /* ── Bulk-модалка «Переназначить» ───────────────────────────────────────── */
 .bulk-reassign-modal {
-    position: fixed; inset: 0; z-index: 9999;
+    position: fixed; inset: 0; z-index: var(--z-modal);
     background: rgba(0, 0, 0, 0.45);
     display: flex; align-items: center; justify-content: center;
     padding: 20px;

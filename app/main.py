@@ -7,6 +7,7 @@ from fastapi import FastAPI, WebSocket, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.exc import ProgrammingError, OperationalError
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -90,6 +91,11 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
 
 app.add_middleware(SlowAPIMiddleware)
 
+# GZip для текстовых ответов: HTML/CSS/JS/JSON жмутся в 5-7 раз. Особенно
+# заметно для CSS bundle (328 KB → ~50 KB) и больших JSON-ответов API.
+# minimum_size=500 — мелкие ответы не жмём (overhead больше выигрыша).
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 # ИСПРАВЛЕНО: раньше allow_methods/allow_headers=["*"] — слишком широко.
@@ -160,6 +166,52 @@ app.include_router(training_router.router,   prefix="/api/v1/training",
 
 
 # ─── Статика ──────────────────────────────────────────────────────────────────
+
+# CSS bundle: 21 отдельный <link> в index.html → один HTTP-запрос.
+# В локальной сети без интернета каждый round-trip заметен; склейка
+# делается один раз при старте сервера, дальше отдаётся из памяти.
+# Маршрут объявлен ДО app.mount("/static") — иначе StaticFiles попробует
+# найти bundle.css на диске и вернёт 404.
+from pathlib import Path
+from fastapi import Response
+
+_CSS_BUNDLE_ORDER = [
+    "tokens.css",       "layout.css",         "components.css",
+    "login.css",        "editor.css",         "overview.css",
+    "dashboard.css",    "duty.css",           "schedule.css",
+    "department.css",   "persons.css",        "users.css",
+    "audit.css",        "event-editor.css",   "history-calendar.css",
+    "operations.css",   "comms-report.css",   "procurement.css",
+    "media.css",        "training.css",       "person_conflicts.css",
+]
+
+def _build_css_bundle() -> str:
+    base = Path(__file__).resolve().parent.parent / "static" / "css"
+    parts: list[str] = []
+    for name in _CSS_BUNDLE_ORDER:
+        path = base / name
+        if path.exists():
+            parts.append(f"\n/* ===== {name} ===== */\n")
+            parts.append(path.read_text(encoding="utf-8"))
+    return "".join(parts)
+
+_CSS_BUNDLE = _build_css_bundle()
+
+@app.get("/css-bundle.css", include_in_schema=False)
+async def css_bundle():
+    # Путь вне /static/ — иначе app.mount("/static", StaticFiles(...))
+    # перехватывает запрос и пытается найти файл на диске → 404.
+    # Cache-Control: бандл собирается при старте сервера и не меняется
+    # до перезапуска — браузер может смело кэшировать его на сутки.
+    # При изменении CSS перезапусти бэк, и пользователи получат свежий
+    # файл (URL тот же, но Last-Modified / содержимое отличаются — браузер
+    # перепроверит после max-age).
+    return Response(
+        content=_CSS_BUNDLE,
+        media_type="text/css; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

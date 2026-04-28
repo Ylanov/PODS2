@@ -5,32 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#4a7c6f">
     <title>Штабная Платформа</title>
-    <!-- Foundation -->
-    <link rel="stylesheet" href="/static/css/tokens.css">
-    <link rel="stylesheet" href="/static/css/layout.css">
-    <link rel="stylesheet" href="/static/css/components.css">
-    <!-- Pages / features -->
-    <link rel="stylesheet" href="/static/css/login.css">
-    <link rel="stylesheet" href="/static/css/editor.css">
-    <link rel="stylesheet" href="/static/css/overview.css">
-    <link rel="stylesheet" href="/static/css/dashboard.css">
-    <link rel="stylesheet" href="/static/css/duty.css">
-    <link rel="stylesheet" href="/static/css/schedule.css">
-    <link rel="stylesheet" href="/static/css/department.css">
-    <link rel="stylesheet" href="/static/css/persons.css">
-    <link rel="stylesheet" href="/static/css/users.css">
-    <link rel="stylesheet" href="/static/css/audit.css">
-    <link rel="stylesheet" href="/static/css/event-editor.css">
-    <link rel="stylesheet" href="/static/css/history-calendar.css">
-    <link rel="stylesheet" href="/static/css/operations.css">
-    <link rel="stylesheet" href="/static/css/comms-report.css?v=3">
-    <link rel="stylesheet" href="/static/css/procurement.css">
-    <link rel="stylesheet" href="/static/css/media.css">
-    <link rel="stylesheet" href="/static/css/training.css">
-    <link rel="stylesheet" href="/static/css/person_conflicts.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Все 21 CSS склеены и отдаются одним запросом /static/css/bundle.css.
+         Сборка идёт на бэке при старте (см. app/main.py: _build_css_bundle).
+         Порядок файлов сохранён — cascade/specificity ведут себя так же,
+         как раньше с отдельными <link> тегами. -->
+    <link rel="stylesheet" href="/css-bundle.css">
+    <!-- Google Fonts удалены: проект работает в локальной сети без интернета,
+         и preconnect/CSS-запросы к fonts.googleapis.com приводили к
+         ERR_NAME_NOT_RESOLVED и задержке рендера. Шрифт стек переключён
+         на системные в tokens.css (--md-font-*). -->
 
 </head>
 <body>
@@ -375,6 +358,9 @@
                             <div class="duty-grid-wrap">
                                 <table id="dept-duty-grid-table" class="duty-grid"></table>
                             </div>
+
+                            <!-- Сводка по людям (Н/Часы/У/О/Р) — заполняется JS -->
+                            <div id="dept-duty-grid-summary" class="duty-grid-summary"></div>
 
                             <p class="duty-grid-hint" style="margin-top:12px; font-size:0.8rem; color:var(--md-on-surface-hint);">
                                 Нажмите на клетку чтобы поставить / снять наряд. При постановке —
@@ -1484,6 +1470,9 @@
                             <div class="duty-grid-wrap">
                                 <table id="duty-grid-table" class="duty-grid"></table>
                             </div>
+
+                            <!-- Сводка по людям (Н/Часы/У/О/Р) — заполняется JS -->
+                            <div id="duty-grid-summary" class="duty-grid-summary"></div>
 
                             <p class="duty-grid-hint">
                                 Нажмите на клетку чтобы выставить / снять наряд. При выставлении наряда

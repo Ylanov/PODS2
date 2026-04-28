@@ -706,7 +706,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 9999;
+    z-index: var(--z-modal);
     animation: preset-fade-in 0.18s ease-out;
 }
 @keyframes preset-fade-in { from { opacity: 0; } to { opacity: 1; } }
