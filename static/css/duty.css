@@ -183,6 +183,13 @@
     overflow: hidden;
 }
 
+/* Когда внутри открыт dropdown подсказок ФИО — снимаем clipping, иначе
+   .fio-suggest-box (position:absolute; top:100%) обрезается границей wrap'а
+   и подсказки не видны на экране. */
+.duty-person-search:has(.fio-suggest-box:not(.hidden)) {
+    overflow: visible;
+}
+
 .duty-person-search__input {
     display: block;
     width: 100%;
