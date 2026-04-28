@@ -24,98 +24,8 @@ from app.api.v1.routers.settings import get_setting
 router = APIRouter()
 
 
-# ─── Экспорт ГРОЗА-555 (отдельный шаблон) ─────────────────────────────────────
-# Если у события есть группы с is_supplementary=True — экспортируем по
-# шаблону штаба. Параметры подписи (звание, ФИО, дата) приходят с фронта
-# через query, дефолты подставляет фронт из /settings.
-
+# Локальные алиасы — нужны диспетчеру в /events/{id}/export-word.
 from datetime import date as _date_type
-from fastapi import Query as _Query
-from app.models.event import Event as _Event
-
-
-@router.get("/events/{event_id}/export-groza-docx",
-            summary="Скачать список ГРОЗА-555 в Word")
-def export_groza_word(
-    event_id:   int,
-    duty_rank:  str  = _Query("", description="Звание оперативного дежурного"),
-    duty_name:  str  = _Query("", description="ФИО оперативного дежурного"),
-    target_date: str = _Query(None, description="Дата сверху (YYYY-MM-DD); по умолчанию event.date или сегодня"),
-    db:    Session = Depends(get_db),
-    admin: User    = Depends(get_current_active_admin),
-):
-    from urllib.parse import quote
-    from app.api.v1.routers.groza_export import build_groza_docx
-
-    event = (
-        db.query(_Event)
-        .options(selectinload(_Event.groups))
-        .filter(_Event.id == event_id)
-        .first()
-    )
-    if not event:
-        raise HTTPException(status_code=404, detail="Список не найден")
-
-    parsed_date = None
-    if target_date:
-        try:
-            parsed_date = _date_type.fromisoformat(target_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="target_date: ожидается YYYY-MM-DD")
-
-    buf = build_groza_docx(db, event, duty_rank, duty_name, parsed_date)
-    safe_date = (parsed_date or event.date or _date_type.today()).strftime("%d.%m.%Y")
-    filename = f"GROZA-555_{safe_date}.docx"
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition":
-                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
-        },
-    )
-
-
-@router.get("/events/{event_id}/export-team333-docx",
-            summary="Скачать список КОМАНДА-333 в Word")
-def export_team333_word(
-    event_id:   int,
-    duty_rank:  str  = _Query("", description="Звание оперативного дежурного"),
-    duty_name:  str  = _Query("", description="ФИО оперативного дежурного"),
-    target_date: str = _Query(None, description="Дата сверху (YYYY-MM-DD)"),
-    db:    Session = Depends(get_db),
-    admin: User    = Depends(get_current_active_admin),
-):
-    from urllib.parse import quote
-    from app.api.v1.routers.team333_export import build_team333_docx
-
-    event = (
-        db.query(_Event)
-        .options(selectinload(_Event.groups))
-        .filter(_Event.id == event_id)
-        .first()
-    )
-    if not event:
-        raise HTTPException(status_code=404, detail="Список не найден")
-
-    parsed_date = None
-    if target_date:
-        try:
-            parsed_date = _date_type.fromisoformat(target_date)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="target_date: YYYY-MM-DD")
-
-    buf = build_team333_docx(db, event, duty_rank, duty_name, parsed_date)
-    safe_date = (parsed_date or event.date or _date_type.today()).strftime("%d.%m.%Y")
-    filename = f"TEAM-333_{safe_date}.docx"
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition":
-                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
-        },
-    )
 
 
 # ─── Вспомогательные функции ──────────────────────────────────────────────────
@@ -202,24 +112,66 @@ def _set_col_width(table, col_idx: int, width_cm: float):
 
 # ─── Основной роутер (Обычные списки) ─────────────────────────────────────────
 
+def _detect_export_kind(event: Event) -> str:
+    """Определяет формат выгрузки по структуре события.
+       • 'groza'   — есть хоть одна группа is_supplementary=True
+       • 'team333' — в columns_config есть кастомный ключ 'task_time'
+       • 'default' — обычный штатный список
+    """
+    if any(getattr(g, "is_supplementary", False) for g in event.groups):
+        return "groza"
+    cols = event.get_columns() or []
+    if any(c.get("key") == "task_time" for c in cols):
+        return "team333"
+    return "default"
+
+
 @router.get(
     "/events/{event_id}/export-word",
-    summary="Выгрузить список в Word (.docx)",
+    summary="Выгрузить список в Word (.docx) — формат определяется автоматически",
 )
 def export_event_word(
         event_id: int,
         db: Session = Depends(get_db),
         current_admin: User = Depends(get_current_active_admin),
 ):
-    event = db.query(Event).filter(Event.id == event_id).first()
+    event = (
+        db.query(Event)
+        .options(selectinload(Event.groups))
+        .filter(Event.id == event_id)
+        .first()
+    )
     if not event:
         raise HTTPException(status_code=404, detail="Событие не найдено")
 
-    # Читаем актуальные данные дежурного из БД — они меняются каждый день
-    ORG_NAME = get_setting(db, "org_name")
+    # Дежурный — из настроек (общие на сервер). Меняются админом через
+    # форму «Дежурный (подпись в документе)» в admin tools.
+    ORG_NAME   = get_setting(db, "org_name")
     DUTY_TITLE = get_setting(db, "duty_title")
-    DUTY_RANK = get_setting(db, "duty_rank")
-    DUTY_NAME = get_setting(db, "duty_name")
+    DUTY_RANK  = get_setting(db, "duty_rank")
+    DUTY_NAME  = get_setting(db, "duty_name")
+
+    # ── Диспетчер по типу пресета ──────────────────────────────────────────
+    kind = _detect_export_kind(event)
+    if kind in ("groza", "team333"):
+        from urllib.parse import quote
+        if kind == "groza":
+            from app.api.v1.routers.groza_export import build_groza_docx as _build
+            prefix = "GROZA-555"
+        else:
+            from app.api.v1.routers.team333_export import build_team333_docx as _build
+            prefix = "TEAM-333"
+        buf = _build(db, event, DUTY_RANK, DUTY_NAME, event.date)
+        date_str = (event.date or _date_type.today()).strftime("%d.%m.%Y")
+        filename = f"{prefix}_{date_str}.docx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition":
+                    f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
+            },
+        )
 
     groups = (
         db.query(Group)

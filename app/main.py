@@ -240,6 +240,24 @@ async def read_root():
     return RedirectResponse(url="/static/index.html")
 
 
+# Шум 404 в каждом логе/Console: браузер по умолчанию запрашивает /favicon.ico,
+# а файла нет. Отдаём 1×1 прозрачный .ico — мизерный, кэшируется навсегда,
+# и 404 пропадают. Если позже появится настоящий favicon — положить файл
+# в static/ и заменить этот endpoint на StaticFiles-mount.
+_FAVICON_BYTES = bytes.fromhex(
+    "0000010001001010000001002000680400001600000028000000100000002000"
+    "0000010020000000000040010000000000000000000000000000000000000000"
+    + "00" * 1024
+)
+_FAVICON_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    from fastapi import Response
+    return Response(content=_FAVICON_BYTES, media_type="image/x-icon",
+                    headers=_FAVICON_HEADERS)
+
+
 # ─── Публичная страница для прохождения тестирования ─────────────────────────
 # Открывается по QR-коду или прямой ссылке вида /training/{token}.
 # Эта страница без авторизации — токен сам является ключом доступа.
