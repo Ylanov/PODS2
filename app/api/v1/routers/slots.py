@@ -46,9 +46,15 @@ def get_all_events(
     """
     Возвращает списки для заполнения выпадающих меню.
 
-    - Обычные пользователи (department): только НЕ-шаблоны, только активные, и не в прошлом.
+    - Обычные пользователи (department): только НЕ-шаблоны, только активные,
+      не в прошлом, **И только те, где у управления реально есть слоты**.
+      Раньше показывались все активные списки, и если в них не было ни одной
+      строки с этой квотой — карточка отображалась как «Пусто», но открыть
+      её было нельзя. Теперь такие списки скрываются полностью.
     - Администратор: все списки включая шаблоны (нужны для настройки редактора).
     """
+    from app.models.event import Group   # локальный импорт чтобы не плодить циклов
+
     query = db.query(Event)
 
     if current_user.role != "admin":
@@ -59,6 +65,17 @@ def get_all_events(
             Event.status == "active",
             or_(Event.date == None, Event.date >= today),  # ← скрывает прошлые
         )
+        # Дополнительная фильтрация: оставляем только те events, где есть
+        # хотя бы один Slot.department == current_user.username. Делаем
+        # подзапросом — один раз, без N+1.
+        events_with_slots = (
+            db.query(Group.event_id)
+            .join(Slot, Slot.group_id == Group.id)
+            .filter(Slot.department == current_user.username)
+            .distinct()
+            .subquery()
+        )
+        query = query.filter(Event.id.in_(events_with_slots))
 
     events = query.order_by(Event.date.asc().nullslast(), Event.id.desc()).all()
 
