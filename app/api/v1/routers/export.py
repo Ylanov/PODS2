@@ -76,6 +76,48 @@ def export_groza_word(
     )
 
 
+@router.get("/events/{event_id}/export-team333-docx",
+            summary="Скачать список КОМАНДА-333 в Word")
+def export_team333_word(
+    event_id:   int,
+    duty_rank:  str  = _Query("", description="Звание оперативного дежурного"),
+    duty_name:  str  = _Query("", description="ФИО оперативного дежурного"),
+    target_date: str = _Query(None, description="Дата сверху (YYYY-MM-DD)"),
+    db:    Session = Depends(get_db),
+    admin: User    = Depends(get_current_active_admin),
+):
+    from urllib.parse import quote
+    from app.api.v1.routers.team333_export import build_team333_docx
+
+    event = (
+        db.query(_Event)
+        .options(selectinload(_Event.groups))
+        .filter(_Event.id == event_id)
+        .first()
+    )
+    if not event:
+        raise HTTPException(status_code=404, detail="Список не найден")
+
+    parsed_date = None
+    if target_date:
+        try:
+            parsed_date = _date_type.fromisoformat(target_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="target_date: YYYY-MM-DD")
+
+    buf = build_team333_docx(db, event, duty_rank, duty_name, parsed_date)
+    safe_date = (parsed_date or event.date or _date_type.today()).strftime("%d.%m.%Y")
+    filename = f"TEAM-333_{safe_date}.docx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
+        },
+    )
+
+
 # ─── Вспомогательные функции ──────────────────────────────────────────────────
 
 def _set_cell_border(cell, **kwargs):

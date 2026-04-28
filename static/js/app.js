@@ -263,7 +263,18 @@ function bindEvents() {
             return;
         }
         import('./groza_export_dialog.js')
-            .then(m => m.openGrozaExportDialog(eventId))
+            .then(m => m.openGrozaExportDialog(eventId, 'groza'))
+            .catch(err => console.warn('groza_export_dialog import:', err));
+    });
+    // Экспорт КОМАНДА-333: тот же диалог, другой endpoint и префикс файла.
+    document.getElementById('export-team333-btn')?.addEventListener('click', () => {
+        const eventId = document.getElementById('export-event-id')?.value;
+        if (!eventId) {
+            window.showSnackbar?.('Выберите список для выгрузки', 'error');
+            return;
+        }
+        import('./groza_export_dialog.js')
+            .then(m => m.openGrozaExportDialog(eventId, 'team333'))
             .catch(err => console.warn('groza_export_dialog import:', err));
     });
     document.getElementById('duty-save-btn')?.addEventListener('click', admin.saveDutyOfficer);

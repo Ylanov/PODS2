@@ -1,19 +1,33 @@
 // static/js/groza_export_dialog.js
 //
-// Диалог скачивания ГРОЗА-555 в Word. Спрашивает у админа:
+// Диалог скачивания списка в Word (ГРОЗА-555 / КОМАНДА-333). Спрашивает:
 //   • звание оперативного дежурного (default из /settings.duty_rank)
 //   • ФИО оперативного дежурного    (default из /settings.duty_name)
 //   • дату «на DD.MM.YYYY» в шапке  (default — сегодня)
-// и зовёт endpoint /admin/events/{id}/export-groza-docx.
+// и зовёт endpoint в зависимости от kind.
 
 import { api } from './api.js';
 
+const KIND_CONFIG = {
+    groza: {
+        title:    '⬇ Выгрузка ГРОЗА-555 в Word',
+        endpoint: (id) => `/admin/events/${id}/export-groza-docx`,
+        prefix:   'GROZA-555',
+    },
+    team333: {
+        title:    '⬇ Выгрузка КОМАНДА-333 в Word',
+        endpoint: (id) => `/admin/events/${id}/export-team333-docx`,
+        prefix:   'TEAM-333',
+    },
+};
 
-export async function openGrozaExportDialog(eventId) {
+
+export async function openGrozaExportDialog(eventId, kind = 'groza') {
     if (!eventId) {
         window.showSnackbar?.('Выберите список для выгрузки', 'error');
         return;
     }
+    const cfg = KIND_CONFIG[kind] || KIND_CONFIG.groza;
 
     // Дефолты из настроек — те же значения, что используются в обычной
     // подписи документа. Админ может перезаписать в форме.
@@ -27,9 +41,9 @@ export async function openGrozaExportDialog(eventId) {
     overlay.className = 'gs-overlay';
     overlay.id = 'groza-export-overlay';
     overlay.innerHTML = `
-        <div class="gs-dialog" role="dialog" aria-label="Выгрузка ГРОЗА-555">
+        <div class="gs-dialog" role="dialog" aria-label="${_esc(cfg.title)}">
             <div class="gs-header" style="padding:14px 16px;">
-                <strong style="flex:1; font-size:0.95rem;">⬇ Выгрузка ГРОЗА-555 в Word</strong>
+                <strong style="flex:1; font-size:0.95rem;">${_esc(cfg.title)}</strong>
                 <button type="button" class="btn btn-text btn-sm" id="ge-close">Закрыть</button>
             </div>
             <div style="padding:14px 16px; display:flex; flex-direction:column; gap:10px;">
@@ -78,12 +92,12 @@ export async function openGrozaExportDialog(eventId) {
 
         try {
             const blob = await api.download(
-                `/admin/events/${eventId}/export-groza-docx?${params.toString()}`,
+                `${cfg.endpoint(eventId)}?${params.toString()}`,
             );
             const url = URL.createObjectURL(blob);
             const a   = document.createElement('a');
             a.href = url;
-            a.download = `GROZA-555_${(date || today).split('-').reverse().join('.')}.docx`;
+            a.download = `${cfg.prefix}_${(date || today).split('-').reverse().join('.')}.docx`;
             document.body.appendChild(a);
             a.click();
             a.remove();
