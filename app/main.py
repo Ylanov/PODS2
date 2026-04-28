@@ -27,6 +27,7 @@ from app.api.v1.routers import dashboard
 from app.api.v1.routers import tasks
 from app.api.v1.routers import audit as audit_module
 from app.api.v1.routers import holidays as holidays_module
+from app.api.v1.routers import analytics as analytics_router
 from app.db.init_db import init_db
 from app.core.websockets import manager, handle_websocket_connection
 
@@ -150,6 +151,9 @@ app.include_router(audit_module.notifications_router, prefix="/api/v1/notificati
 app.include_router(holidays_module.public_router, prefix="/api/v1/holidays",       tags=["Праздники"])
 app.include_router(holidays_module.admin_router,  prefix="/api/v1/admin",          tags=["Праздники (admin)"])
 
+# Аналитика — admin-only сводный дашборд по спискам, должностям, нарядам.
+app.include_router(analytics_router.router, prefix="/api/v1/admin/analytics",      tags=["Аналитика (admin)"])
+
 # ─── Боевой расчёт ────────────────────────────────────────────────────────────
 # ИСПРАВЛЕНО: раньше один и тот же роутер подключался дважды с разными prefix,
 # что дублировало все маршруты. Теперь:
@@ -197,7 +201,7 @@ _CSS_BUNDLE_ORDER = [
     "audit.css",        "event-editor.css",   "history-calendar.css",
     "operations.css",   "comms-report.css",   "procurement.css",
     "media.css",        "training.css",       "person_conflicts.css",
-    "global_search.css",
+    "global_search.css", "analytics.css",
 ]
 
 def _build_css_bundle() -> str:

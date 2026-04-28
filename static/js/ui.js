@@ -116,6 +116,7 @@ export function switchAdminTab(tab) {
     const tabDuty        = document.getElementById('tab-duty');
     const tabCombat      = document.getElementById('tab-combat');
     const tabOperations  = document.getElementById('tab-operations');
+    const tabAnalytics   = document.getElementById('tab-analytics');
     const tabBtns        = document.querySelectorAll('.tab-btn');
 
     // Скрываем все вкладки верхнего уровня
@@ -124,6 +125,7 @@ export function switchAdminTab(tab) {
     tabDuty?.classList.add('hidden');
     tabCombat?.classList.add('hidden');
     tabOperations?.classList.add('hidden');
+    tabAnalytics?.classList.add('hidden');
     tabBtns.forEach(btn => {
         btn.classList.remove('active');
         btn.setAttribute('aria-selected', 'false');
@@ -162,6 +164,11 @@ export function switchAdminTab(tab) {
         activate(4);
         // Внутренние секции подгружаются лениво при раскрытии карточки —
         // логика в app.js:consolidateOperations. Здесь просто показываем хост.
+
+    } else if (tab === 'analytics') {
+        tabAnalytics?.classList.remove('hidden');
+        activate(5);
+        // Данные грузит app.js при клике (ленивый импорт ./analytics.js).
     }
 }
 

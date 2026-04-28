@@ -212,10 +212,21 @@ function bindEvents() {
     // Остальные разделы (история, пользователи, база людей, календарь, история
     // утверждений) живут в аккордеоне tab-operations / внутри tab-duty.
     const tabMap = [
-        'dashboard', 'editor', 'duty', 'combat', 'operations',
+        'dashboard', 'editor', 'duty', 'combat', 'operations', 'analytics',
     ];
     document.querySelectorAll('.tab-btn').forEach((btn, index) => {
-        btn.addEventListener('click', () => ui.switchAdminTab(tabMap[index] ?? 'dashboard'));
+        const tabKey = tabMap[index] ?? 'dashboard';
+        btn.addEventListener('click', () => {
+            ui.switchAdminTab(tabKey);
+            // Аналитика — lazy: грузим модуль и данные только при первом
+            // клике на вкладку, чтобы не дёргать /admin/analytics у админов
+            // которые ни разу её не открывают.
+            if (tabKey === 'analytics') {
+                import('./analytics.js')
+                    .then(m => m.loadAnalytics())
+                    .catch(err => console.warn('analytics import:', err));
+            }
+        });
     });
 
     // Собираем аккордеон «Операции» и переключатель истории утверждений

@@ -514,7 +514,20 @@
                         role="tab" aria-selected="false" aria-controls="tab-operations" type="button">
                     Операции
                 </button>
+                <button class="tab-btn"
+                        role="tab" aria-selected="false" aria-controls="tab-analytics" type="button">
+                    📊 Аналитика
+                </button>
             </nav>
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Аналитика (admin) — заполняется analytics.js при открытии
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-analytics" class="hidden" role="tabpanel">
+                <div id="analytics-root" class="analytics-root">
+                    <div class="analytics-loading">Загрузка…</div>
+                </div>
+            </div>
 
             <!-- ══════════════════════════════════════════════════════════════
                  Tab: Дашборд
