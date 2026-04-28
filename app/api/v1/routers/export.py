@@ -24,6 +24,58 @@ from app.api.v1.routers.settings import get_setting
 router = APIRouter()
 
 
+# ─── Экспорт ГРОЗА-555 (отдельный шаблон) ─────────────────────────────────────
+# Если у события есть группы с is_supplementary=True — экспортируем по
+# шаблону штаба. Параметры подписи (звание, ФИО, дата) приходят с фронта
+# через query, дефолты подставляет фронт из /settings.
+
+from datetime import date as _date_type
+from fastapi import Query as _Query
+from app.models.event import Event as _Event
+
+
+@router.get("/events/{event_id}/export-groza-docx",
+            summary="Скачать список ГРОЗА-555 в Word")
+def export_groza_word(
+    event_id:   int,
+    duty_rank:  str  = _Query("", description="Звание оперативного дежурного"),
+    duty_name:  str  = _Query("", description="ФИО оперативного дежурного"),
+    target_date: str = _Query(None, description="Дата сверху (YYYY-MM-DD); по умолчанию event.date или сегодня"),
+    db:    Session = Depends(get_db),
+    admin: User    = Depends(get_current_active_admin),
+):
+    from urllib.parse import quote
+    from app.api.v1.routers.groza_export import build_groza_docx
+
+    event = (
+        db.query(_Event)
+        .options(selectinload(_Event.groups))
+        .filter(_Event.id == event_id)
+        .first()
+    )
+    if not event:
+        raise HTTPException(status_code=404, detail="Список не найден")
+
+    parsed_date = None
+    if target_date:
+        try:
+            parsed_date = _date_type.fromisoformat(target_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="target_date: ожидается YYYY-MM-DD")
+
+    buf = build_groza_docx(db, event, duty_rank, duty_name, parsed_date)
+    safe_date = (parsed_date or event.date or _date_type.today()).strftime("%d.%m.%Y")
+    filename = f"GROZA-555_{safe_date}.docx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
+        },
+    )
+
+
 # ─── Вспомогательные функции ──────────────────────────────────────────────────
 
 def _set_cell_border(cell, **kwargs):

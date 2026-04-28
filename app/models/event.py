@@ -83,6 +83,9 @@ class Group(Base):
     name      = Column(String, nullable=False)
     order_num = Column(Integer, default=0, index=True)   # ← index=True (ORDER BY)
     version   = Column(Integer, server_default="1", default=1, nullable=False)
+    # Группа-«дополнительный список»: рендерится отдельной таблицей под
+    # основной (например, водители в ГРОЗА-555). По умолчанию False.
+    is_supplementary = Column(Boolean, default=False, nullable=False, server_default="0")
 
     event = relationship("Event", back_populates="groups")
     slots = relationship("Slot",  back_populates="group", cascade="all, delete-orphan")
