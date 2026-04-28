@@ -9,6 +9,7 @@ import {
     MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate, isWeekendOrHoliday,
     groupMarks, computeSummary, extractVacationRanges,
+    sortByRank,
 } from './duty_calc.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -391,8 +392,10 @@ function _renderGrid() {
                 </th>`;
     }).join('');
 
-    // Строки с людьми
-    const rows = _currentPersons.map(p => {
+    // Строки с людьми. Сортируем по званию (от высшего к низшему), при
+    // равных — по ФИО. Серверный order_num не используем: пользователь
+    // хочет автосортировку, а не ручной порядок.
+    const rows = sortByRank(_currentPersons).map(p => {
         const personMarks = marksByPerson.get(p.person_id) || new Map();
         const vacRanges   = extractVacationRanges(personMarks, monthDays);
 

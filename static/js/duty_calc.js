@@ -29,6 +29,51 @@ export const MARK_DUTY     = 'N';
 export const MARK_LEAVE    = 'U';
 export const MARK_VACATION = 'V';
 
+// ─── Иерархия воинских званий ─────────────────────────────────────────────
+// От высшего к низшему. Используется для автосортировки в графиках наряда:
+// генералы сверху, рядовые внизу. Звание, которого нет в списке (нестандартное
+// или пустое поле), уходит в конец таблицы.
+export const RANK_ORDER = [
+    'Генерал армии',
+    'Генерал-полковник',
+    'Генерал-лейтенант',
+    'Генерал-майор',
+    'Полковник',
+    'Подполковник',
+    'Майор',
+    'Капитан',
+    'Старший лейтенант',
+    'Лейтенант',
+    'Младший лейтенант',
+    'Старший прапорщик',
+    'Прапорщик',
+    'Старшина',
+    'Старший сержант',
+    'Сержант',
+    'Младший сержант',
+    'Ефрейтор',
+    'Рядовой',
+];
+
+const _rankLookup = new Map(RANK_ORDER.map((r, i) => [r.toLowerCase(), i]));
+
+export function rankIndex(rank) {
+    if (!rank) return RANK_ORDER.length + 1;
+    const idx = _rankLookup.get(String(rank).trim().toLowerCase());
+    return idx === undefined ? RANK_ORDER.length : idx;
+}
+
+// При равных званиях сортируем по ФИО (русская локаль) — даёт стабильный
+// порядок и читается естественно.
+export function sortByRank(persons) {
+    return [...persons].sort((a, b) => {
+        const ra = rankIndex(a.rank);
+        const rb = rankIndex(b.rank);
+        if (ra !== rb) return ra - rb;
+        return String(a.full_name || '').localeCompare(String(b.full_name || ''), 'ru');
+    });
+}
+
 // ─── Кеш праздников ───────────────────────────────────────────────────────
 // Ключ — ISO-строка "YYYY-MM-DD". Значение — объект {title, is_last_day}.
 // Грузим по годам и кешируем, чтобы не дёргать API на каждый ререндер.
