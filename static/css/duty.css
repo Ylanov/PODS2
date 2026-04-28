@@ -345,8 +345,6 @@
 
 /* Name cell (sticky left column) */
 .duty-grid__name-cell {
-    /* Sticky оставляем на случай очень узких экранов, но при table-layout:fixed
-       и hidden-overflow горизонтального скролла нет — ФИО просто не уезжает. */
     position: sticky;
     left: 0;
     z-index: 5;
@@ -358,7 +356,7 @@
     /* Фиксированная ширина при table-layout:fixed — колонка ФИО занимает
        ровно столько, сколько нужно для звания + ФИО, остальное достаётся
        дням и summary. */
-    width: 200px;
+    width: 190px;
 }
 
 .duty-grid__name-wrap {
@@ -932,10 +930,10 @@ tr:hover .duty-grid__remove-person {
     text-align: center;
     font-weight: 600;
     white-space: nowrap;
-    padding: 4px 4px;
-    /* Фиксированная ширина summary-колонок: при table-layout:fixed
-       они получают эти значения, оставляя дням равные доли остатка. */
-    width: 42px;
+    padding: 4px 2px;
+    /* Фиксированная ширина summary-колонок при table-layout:fixed.
+       54px — достаточно для «Часы», «У/О» и трёхзначных чисел вроде «120». */
+    width: 54px;
 }
 
 .duty-grid .duty-summary-td__num {
