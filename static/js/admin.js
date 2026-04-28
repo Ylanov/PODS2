@@ -725,8 +725,20 @@ export async function deleteSlot(slotId) {
 
 export async function addBlankRow(groupId) {
     const defaultDept = availableDepartments[0] ?? 'department';
-    try { await api.post(`/admin/groups/${groupId}/slots`, { department: defaultDept, position_id: null }); }
-    catch (e) { console.error('addBlankRow:', e); showError('Ошибка добавления строки'); }
+    try {
+        await api.post(`/admin/groups/${groupId}/slots`,
+                       { department: defaultDept, position_id: null });
+        notify('Строка добавлена');
+        // Явный rerender — раньше не вызывался, и пользователь думал, что
+        // кнопка не работает: API срабатывал, но UI ничего не показывал
+        // до прихода WS-события (которое могло опаздывать или не дойти).
+        if (currentEditorEventId) {
+            await renderAdminEditor(currentEditorEventId, true);
+        }
+    } catch (e) {
+        console.error('addBlankRow:', e);
+        showError('Ошибка добавления строки');
+    }
 }
 
 export async function deleteGroup(groupId) {

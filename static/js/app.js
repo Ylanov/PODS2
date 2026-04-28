@@ -258,10 +258,14 @@ function bindEvents() {
         if (slotId) admin.updateAdminSlot(slotId);
     });
     masterTbody?.addEventListener('click', (e) => {
+        // Удаление слота — кнопки в строках слотов с data-delete-id.
         const deleteId = e.target.dataset.deleteId;
-        const groupId  = e.target.dataset.groupId;
         if (deleteId) admin.deleteSlot(deleteId);
-        if (groupId)  admin.addBlankRow(groupId);
+        // Кнопки группы (+ Строку / ✕ Группу) обрабатываются в
+        // admin.listenForUpdates() через классы .group-add-row-btn /
+        // .group-delete-btn — раньше тут был дублирующий handler по
+        // data-group-id, который ловил ОБЕ кнопки и при клике на удаление
+        // ошибочно добавлял строку.
     });
 
     // ── Действия управления (Department) ─────────────────────────────────────
