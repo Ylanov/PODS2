@@ -424,9 +424,47 @@ function _bindBulkEditor() {
             _updateBulkBar();
         });
         document.getElementById('editor-bulk-reassign')?.addEventListener('click', _openBulkReassignModal);
+        document.getElementById('editor-bulk-delete')?.addEventListener('click', _bulkDeleteSelected);
     }
 
     _updateBulkBar();
+}
+
+
+// Удалить все выделенные строки одним подтверждением. На бэке нет
+// специального bulk-endpoint'а, поэтому шлём DELETE параллельно через
+// Promise.all — это всё равно один RTT.
+async function _bulkDeleteSelected() {
+    const ids = _getCheckedSlotIds();
+    if (ids.length === 0) return;
+    if (!confirm(`Удалить ${ids.length} ${_pluralRu(ids.length, 'строку', 'строки', 'строк')}?\nДействие нельзя отменить.`)) {
+        return;
+    }
+    try {
+        const results = await Promise.allSettled(
+            ids.map(id => api.delete(`/admin/slots/${id}`)),
+        );
+        const ok   = results.filter(r => r.status === 'fulfilled').length;
+        const fail = results.length - ok;
+        if (fail) {
+            showError(`Удалено ${ok}, не удалось — ${fail}`);
+        } else {
+            notify(`Удалено ${ok} ${_pluralRu(ok, 'строка', 'строки', 'строк')}`);
+        }
+        if (currentEditorEventId) {
+            await renderAdminEditor(currentEditorEventId, true);
+        }
+    } catch (e) {
+        console.error('bulk delete:', e);
+        showError('Ошибка массового удаления');
+    }
+}
+
+function _pluralRu(n, one, few, many) {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+    return many;
 }
 
 function _openBulkReassignModal() {
