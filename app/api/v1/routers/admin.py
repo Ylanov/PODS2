@@ -803,7 +803,13 @@ def get_full_event_table(
             }
             for s in sorted(g.slots, key=lambda s: s.id)
         ]
-        result.append({"id": g.id, "name": g.name, "order_num": g.order_num, "slots": slots_data})
+        result.append({
+            "id":               g.id,
+            "name":             g.name,
+            "order_num":        g.order_num,
+            "is_supplementary": bool(getattr(g, "is_supplementary", False)),
+            "slots":            slots_data,
+        })
 
     return {
         "event": {
