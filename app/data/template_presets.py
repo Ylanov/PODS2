@@ -392,7 +392,7 @@ PRESETS: list[dict] = [
         "columns": [
             {"key": "task_time",   "label": "Время выделения",          "type": "text",            "order": 0, "width": 120, "visible": True,  "custom": True},
             {"key": "position_id", "label": "Расчёт (по постам)",       "type": "select_position", "order": 1, "width": 200, "visible": True,  "custom": False},
-            {"key": "department",  "label": "Кто выделяет",             "type": "select_dept",     "order": 2, "width": 160, "visible": True,  "custom": False},
+            {"key": "department",  "label": "Квота",                    "type": "select_dept",     "order": 2, "width": 160, "visible": True,  "custom": False},
             {"key": "full_name",   "label": "Ф.И.О.",                   "type": "text",            "order": 3, "width": 220, "visible": True,  "custom": False},
             {"key": "rank",        "label": "Звание",                   "type": "text",            "order": 4, "width": 120, "visible": False, "custom": False},
             {"key": "doc_number",  "label": "№ документа",              "type": "text",            "order": 5, "width": 130, "visible": False, "custom": False},
