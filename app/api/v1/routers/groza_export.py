@@ -144,7 +144,14 @@ def build_groza_docx(db: Session,
                      event: Event,
                      duty_rank: str,
                      duty_name: str,
-                     target_date: Optional[date_type] = None) -> io.BytesIO:
+                     target_date: Optional[date_type] = None,
+                     header_lines: Optional[list[str]] = None) -> io.BytesIO:
+    """
+    Универсальный multi-table builder. Используется для любых шаблонов,
+    у которых есть основной + вспомогательный список (groza555, pyro5, ...).
+    header_lines — строки центральной шапки. Если None — шапка ГРОЗА-555
+    (для обратной совместимости с прежним поведением).
+    """
     """
     Собирает .docx документ ГРОЗА-555 для конкретного развернутого списка.
     target_date — дата сверху (на DD.MM.YYYY). Если не передана, берём event.date,
@@ -176,10 +183,20 @@ def build_groza_docx(db: Session,
     section.top_margin    = Cm(1.2)
     section.bottom_margin = Cm(1.2)
 
-    # Шапка
-    _doc_para(doc, f"Состав сил и средств {org_name}", size=12)
-    _doc_para(doc, "по сигналу «ГРОЗА-555»",            size=12, bold=True)
-    _doc_para(doc, f"на {date_str}",                    size=12, space_after=10)
+    # Шапка — либо переданная, либо дефолт ГРОЗА-555
+    if header_lines is None:
+        header_lines = [
+            (f"Состав сил и средств {org_name}", False),
+            ("по сигналу «ГРОЗА-555»",            True),
+        ]
+    for entry in header_lines:
+        # Поддерживаем строку, либо (text, bold) tuple.
+        if isinstance(entry, str):
+            text, is_bold = entry, False
+        else:
+            text, is_bold = entry
+        _doc_para(doc, text, size=12, bold=is_bold)
+    _doc_para(doc, f"на {date_str}", size=12, space_after=10)
 
     # Основная таблица
     _build_table(doc, main_groups)

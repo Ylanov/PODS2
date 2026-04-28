@@ -114,14 +114,22 @@ def _set_col_width(table, col_idx: int, width_cm: float):
 
 def _detect_export_kind(event: Event) -> str:
     """Определяет формат выгрузки по структуре события.
-       • 'groza'   — есть хоть одна группа is_supplementary=True
+       • 'groza'   — есть supplementary-группа И колонка 'subdivision'
+       • 'pyro5'   — есть supplementary-группа БЕЗ колонки 'subdivision'
+                     (пиротехнические расчёты + кинологические по отд. команде)
        • 'team333' — в columns_config есть кастомный ключ 'task_time'
        • 'default' — обычный штатный список
     """
-    if any(getattr(g, "is_supplementary", False) for g in event.groups):
-        return "groza"
     cols = event.get_columns() or []
-    if any(c.get("key") == "task_time" for c in cols):
+    has_supp = any(getattr(g, "is_supplementary", False) for g in event.groups)
+    has_subdivision = any(c.get("key") == "subdivision" for c in cols)
+    has_task_time   = any(c.get("key") == "task_time"   for c in cols)
+
+    if has_supp and has_subdivision:
+        return "groza"
+    if has_supp:
+        return "pyro5"
+    if has_task_time:
         return "team333"
     return "default"
 
@@ -153,15 +161,26 @@ def export_event_word(
 
     # ── Диспетчер по типу пресета ──────────────────────────────────────────
     kind = _detect_export_kind(event)
-    if kind in ("groza", "team333"):
+    if kind in ("groza", "pyro5", "team333"):
         from urllib.parse import quote
-        if kind == "groza":
-            from app.api.v1.routers.groza_export import build_groza_docx as _build
-            prefix = "GROZA-555"
-        else:
-            from app.api.v1.routers.team333_export import build_team333_docx as _build
+        if kind == "team333":
+            from app.api.v1.routers.team333_export import build_team333_docx
+            buf = build_team333_docx(db, event, DUTY_RANK, DUTY_NAME, event.date)
             prefix = "TEAM-333"
-        buf = _build(db, event, DUTY_RANK, DUTY_NAME, event.date)
+        else:
+            from app.api.v1.routers.groza_export import build_groza_docx
+            if kind == "pyro5":
+                header_lines = [
+                    ("Список", False),
+                    ("пиротехнических расчётов 5 управления, находящихся в постоянной", False),
+                    ("готовности к применению при ЧС с применением (или угрозой) взрывчатых веществ", False),
+                ]
+                prefix = "PYRO-5"
+            else:  # groza
+                header_lines = None  # дефолт ГРОЗА-555 в самом builder
+                prefix = "GROZA-555"
+            buf = build_groza_docx(db, event, DUTY_RANK, DUTY_NAME, event.date,
+                                   header_lines=header_lines)
         date_str = (event.date or _date_type.today()).strftime("%d.%m.%Y")
         filename = f"{prefix}_{date_str}.docx"
         return StreamingResponse(
