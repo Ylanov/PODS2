@@ -427,6 +427,41 @@ async def toggle_mark(
     }
 
 
+@router.delete("/schedules/{schedule_id}/marks", status_code=204)
+def clear_marks_by_type(
+    schedule_id: int,
+    mark_type:   str = Query(..., min_length=1, max_length=2),
+    year:        int = Query(..., ge=2000, le=2100),
+    month:       int = Query(..., ge=1, le=12),
+    db:    Session = Depends(get_db),
+    admin: User    = Depends(get_current_active_admin),
+):
+    """
+    Массовое снятие отметок одного типа (например, V — отпуск) за месяц.
+    Используется кнопкой «Очистить отпуска» в UI: один SQL DELETE вместо
+    множества toggle-запросов по каждой дате.
+    """
+    from app.models.duty import ALL_MARK_TYPES
+    from calendar import monthrange
+
+    schedule = db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="График не найден")
+
+    mt = mark_type.upper()
+    if mt not in ALL_MARK_TYPES:
+        raise HTTPException(status_code=400, detail=f"Недопустимый тип отметки: {mt}")
+
+    last = monthrange(year, month)[1]
+    db.query(DutyMark).filter(
+        DutyMark.schedule_id == schedule_id,
+        DutyMark.mark_type   == mt,
+        DutyMark.duty_date   >= date_type(year, month, 1),
+        DutyMark.duty_date   <= date_type(year, month, last),
+    ).delete(synchronize_session=False)
+    db.commit()
+
+
 # ─── Диагностика ──────────────────────────────────────────────────────────────
 
 @router.get("/schedules/{schedule_id}/diagnose")

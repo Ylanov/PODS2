@@ -28,6 +28,7 @@ import { api } from './api.js';
 export const MARK_DUTY     = 'N';
 export const MARK_LEAVE    = 'U';
 export const MARK_VACATION = 'V';
+export const MARK_RESERVE  = 'R';   // UI: «РЗ», отдельный счётчик, без переработки
 
 // ─── Иерархия воинских званий ─────────────────────────────────────────────
 // От высшего к низшему. Используется для автосортировки в графиках наряда:
@@ -173,9 +174,9 @@ export function groupMarks(marks) {
 // personMarksByDate: Map<iso, {mark_type}> (из groupMarks())
 // holidaysMap: Map<iso, {title, is_last_day}>
 export function computeSummary(personMarksByDate, holidaysMap) {
-    let duty = 0, overtime = 0, leave = 0, vacation = 0;
+    let duty = 0, overtime = 0, leave = 0, vacation = 0, reserve = 0;
     if (!personMarksByDate) {
-        return { duty, overtime, leave, vacation };
+        return { duty, overtime, leave, vacation, reserve };
     }
     for (const [iso, info] of personMarksByDate) {
         if (info.mark_type === MARK_DUTY) {
@@ -185,9 +186,11 @@ export function computeSummary(personMarksByDate, holidaysMap) {
             leave += 1;
         } else if (info.mark_type === MARK_VACATION) {
             vacation += 1;
+        } else if (info.mark_type === MARK_RESERVE) {
+            reserve += 1;
         }
     }
-    return { duty, overtime, leave, vacation };
+    return { duty, overtime, leave, vacation, reserve };
 }
 
 // ─── Непрерывные диапазоны отпуска для одного человека ────────────────────
@@ -228,10 +231,12 @@ export const MARK_LETTER = {
     [MARK_DUTY]:     'Н',
     [MARK_LEAVE]:    'У',
     [MARK_VACATION]: 'О',   // используется только для одиночных дней; полоса "Отпуск" рендерится отдельно
+    [MARK_RESERVE]:  'РЗ',  // две буквы — стилизация в .duty-mark--R снижает font-size
 };
 
 export const MARK_LABEL = {
     [MARK_DUTY]:     'Наряд',
     [MARK_LEAVE]:    'Увольнение',
     [MARK_VACATION]: 'Отпуск',
+    [MARK_RESERVE]:  'Резерв',
 };

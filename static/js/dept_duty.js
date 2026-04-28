@@ -8,7 +8,7 @@
 import { api }         from './api.js';
 import { attach as attachFio } from './fio_autocomplete.js';
 import {
-    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_LETTER, MARK_LABEL,
+    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate,
     groupMarks, computeSummary, extractVacationRanges,
     sortByRank,
@@ -92,6 +92,26 @@ function _bindUI() {
         ?.addEventListener('click', _approveCurrentMonth);
     document.getElementById('dept-duty-unapprove-btn')
         ?.addEventListener('click', _unapproveCurrentMonth);
+
+    document.getElementById('dept-duty-clear-vacations-btn')
+        ?.addEventListener('click', _clearVacations);
+}
+
+async function _clearVacations() {
+    if (!_currentId) return;
+    if (_isReadOnly()) {
+        window.showSnackbar?.('График утверждён. Сначала разблокируйте.', 'error');
+        return;
+    }
+    if (!confirm(`Снять все отпуска за ${_viewMonth.toString().padStart(2, '0')}.${_viewYear}?`)) return;
+    try {
+        await api.delete(`/dept/schedules/${_currentId}/marks`
+            + `?mark_type=V&year=${_viewYear}&month=${_viewMonth}`);
+        window.showSnackbar?.('Отпуска очищены', 'success');
+        await _loadMarksAndRender();
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
+    }
 }
 
 // ─── Должности (для формы создания) ──────────────────────────────────────────
@@ -473,6 +493,7 @@ function _renderGrid() {
         <th class="duty-summary-th" title="Кол-во нарядов">Н</th>
         <th class="duty-summary-th" title="Часы переработки">Часы</th>
         <th class="duty-summary-th" title="Увольнения/Отпуск">У/О</th>
+        <th class="duty-summary-th" title="Кол-во резервов">Р</th>
         <th style="width:32px;"></th>
     </tr></thead>`;
 
@@ -536,6 +557,7 @@ function _renderGrid() {
             <td class="duty-summary-td"><span class="duty-summary-td__num duty-summary-td__num--duty">${sum.duty}</span></td>
             <td class="duty-summary-td"><span class="duty-summary-td__num duty-summary-td__num--hours">${sum.overtime}</span></td>
             <td class="duty-summary-td"><span class="duty-summary-td__num">${sum.leave}/${sum.vacation}</span></td>
+            <td class="duty-summary-td"><span class="duty-summary-td__num">${sum.reserve}</span></td>
             <td style="text-align:center;">
                 ${readOnly ? '' :
                     `<button class="btn btn-danger btn-xs dept-duty-remove-person"
@@ -572,6 +594,9 @@ function _renderModeSwitcher() {
     group.innerHTML = `
         <button class="duty-mode-btn ${_currentMode === MARK_DUTY     ? 'active' : ''}" data-mark="N" type="button">
             <span class="duty-mode-btn__letter" data-letter="Н"></span>Наряд
+        </button>
+        <button class="duty-mode-btn ${_currentMode === MARK_RESERVE  ? 'active' : ''}" data-mark="R" type="button">
+            <span class="duty-mode-btn__letter" data-letter="РЗ"></span>Резерв
         </button>
         <button class="duty-mode-btn ${_currentMode === MARK_LEAVE    ? 'active' : ''}" data-mark="U" type="button">
             <span class="duty-mode-btn__letter" data-letter="У"></span>Увольнение

@@ -29,7 +29,8 @@ from app.db.database import Base
 MARK_DUTY     = "N"   # Наряд
 MARK_LEAVE    = "U"   # Увольнение
 MARK_VACATION = "V"   # Отпуск (один день)
-ALL_MARK_TYPES = (MARK_DUTY, MARK_LEAVE, MARK_VACATION)
+MARK_RESERVE  = "R"   # Резерв (UI: «РЗ», свой счётчик, без переработки)
+ALL_MARK_TYPES = (MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE)
 
 
 class DutySchedule(Base):

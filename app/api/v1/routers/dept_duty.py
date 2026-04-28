@@ -438,6 +438,38 @@ async def toggle_my_mark(
     }
 
 
+@router.delete("/schedules/{schedule_id}/marks", status_code=204)
+def clear_my_marks_by_type(
+    schedule_id: int,
+    mark_type:   str = Query(..., min_length=1, max_length=2),
+    year:        int = Query(..., ge=2000, le=2100),
+    month:       int = Query(..., ge=1, le=12),
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user),
+):
+    """
+    Массовое снятие отметок одного типа за месяц у графика управления.
+    Используется кнопкой «Очистить отпуска» в UI.
+    """
+    from app.models.duty import ALL_MARK_TYPES
+    from calendar import monthrange
+
+    _check_owner(db, schedule_id, user.username)
+
+    mt = mark_type.upper()
+    if mt not in ALL_MARK_TYPES:
+        raise HTTPException(status_code=400, detail=f"Недопустимый тип отметки: {mt}")
+
+    last = monthrange(year, month)[1]
+    db.query(DutyMark).filter(
+        DutyMark.schedule_id == schedule_id,
+        DutyMark.mark_type   == mt,
+        DutyMark.duty_date   >= date_type(year, month, 1),
+        DutyMark.duty_date   <= date_type(year, month, last),
+    ).delete(synchronize_session=False)
+    db.commit()
+
+
 # ─── Вспомогательная функция ──────────────────────────────────────────────────
 
 def _check_owner(db: Session, schedule_id: int, username: str) -> DutySchedule:

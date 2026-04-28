@@ -6,7 +6,7 @@
 import { api } from './api.js';
 import { attach as attachFio } from './fio_autocomplete.js';
 import {
-    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_LETTER, MARK_LABEL,
+    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate, isWeekendOrHoliday,
     groupMarks, computeSummary, extractVacationRanges,
     sortByRank,
@@ -70,8 +70,28 @@ export function initDuty() {
     document.getElementById('duty-unapprove-btn')
         ?.addEventListener('click', _unapproveCurrentMonth);
 
+    document.getElementById('duty-clear-vacations-btn')
+        ?.addEventListener('click', _clearVacations);
+
     document.getElementById('duty-create-position')
         ?.addEventListener('change', () => _suggestTitle());
+}
+
+async function _clearVacations() {
+    if (!_currentId) return;
+    if (_isReadOnly()) {
+        window.showSnackbar?.('Месяц утверждён. Сначала разблокируйте редактирование.', 'error');
+        return;
+    }
+    if (!confirm(`Снять все отпуска за ${_month.toString().padStart(2, '0')}.${_year}?`)) return;
+    try {
+        await api.delete(`/admin/schedules/${_currentId}/marks`
+            + `?mark_type=V&year=${_year}&month=${_month}`);
+        window.showSnackbar?.('Отпуска очищены', 'success');
+        await _loadGrid();
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
+    }
 }
 
 // ─── Create form ──────────────────────────────────────────────────────────────
@@ -473,6 +493,9 @@ function _renderGrid() {
             <td class="duty-summary-td" title="Увольнений / дней отпуска">
                 <span class="duty-summary-td__num">${sum.leave}/${sum.vacation}</span>
             </td>
+            <td class="duty-summary-td" title="Резервов">
+                <span class="duty-summary-td__num">${sum.reserve}</span>
+            </td>
         `;
 
         const rankBadge = p.rank
@@ -519,6 +542,7 @@ function _renderGrid() {
                 <th class="duty-summary-th" title="Кол-во нарядов">Н</th>
                 <th class="duty-summary-th" title="Часы переработки">Часы</th>
                 <th class="duty-summary-th" title="Увольнения / Отпуск">У/О</th>
+                <th class="duty-summary-th" title="Кол-во резервов">Р</th>
             </tr>
         </thead>
         <tbody>${rows || emptyRow}</tbody>`;
@@ -558,6 +582,9 @@ function _renderModeSwitcher() {
     group.innerHTML = `
         <button class="duty-mode-btn ${_currentMode === MARK_DUTY     ? 'active' : ''}" data-mark="N" type="button" title="Наряд">
             <span class="duty-mode-btn__letter" data-letter="Н"></span>Наряд
+        </button>
+        <button class="duty-mode-btn ${_currentMode === MARK_RESERVE  ? 'active' : ''}" data-mark="R" type="button" title="Резерв">
+            <span class="duty-mode-btn__letter" data-letter="РЗ"></span>Резерв
         </button>
         <button class="duty-mode-btn ${_currentMode === MARK_LEAVE    ? 'active' : ''}" data-mark="U" type="button" title="Увольнение">
             <span class="duty-mode-btn__letter" data-letter="У"></span>Увольнение

@@ -297,7 +297,10 @@
 .duty-grid__name-hdr {
     position: sticky;
     left: 0;
-    z-index: 3;
+    /* Высокий z-index: должен лежать поверх и заголовков дней (z:1), и
+       полосы отпуска (z:2), которая абсолютно позиционируется в td и иначе
+       вылезает на эту колонку при горизонтальном скролле. */
+    z-index: 6;
     background: var(--md-surface-container);
     text-align: left;
     padding: 6px 12px 6px 8px;
@@ -343,7 +346,9 @@
 .duty-grid__name-cell {
     position: sticky;
     left: 0;
-    z-index: 2;
+    /* z-index выше .duty-vacation-bar (z:2): иначе абсолютная полоса
+       отпуска перекрывает имя при горизонтальном скролле. */
+    z-index: 5;
     background: var(--md-surface);
     /* Тот же усиленный разделитель, что у заголовка колонки ФИО. */
     border-right: 3px solid var(--md-outline);
@@ -846,6 +851,11 @@ tr:hover .duty-grid__remove-person {
 .duty-mark--N { background: #1e293b; }   /* чёрный/графит — Наряд */
 .duty-mark--U { background: #d97706; }   /* янтарный — Увольнение */
 .duty-mark--V { background: #059669; }   /* изумрудный — Отпуск (одиночный) */
+.duty-mark--R {                          /* синий — Резерв (РЗ, две буквы) */
+    background: #3b82f6;
+    font-size: 0.62rem;
+    letter-spacing: -0.05em;
+}
 
 /* Hover на ячейку — показываем что клик сработает */
 .duty-grid tbody td {
@@ -896,8 +906,14 @@ tr:hover .duty-grid__remove-person {
 }
 
 /* Чтобы vacation-bar мог перекрыть соседние td (width: calc(N*100%+...))
-   td которая содержит полосу должна позволять overflow visible. */
-.duty-grid tbody td.duty-cell--in-vacation { overflow: visible; }
+   td которая содержит полосу должна позволять overflow visible. И
+   position:relative — чтобы абсолютное позиционирование .duty-vacation-bar
+   считалось от своей td, а не от какого-нибудь tr/table выше; иначе
+   полоса вытягивается на ширину строки и заезжает на колонку ФИО. */
+.duty-grid tbody td.duty-cell--in-vacation {
+    overflow: visible;
+    position: relative;
+}
 
 /* Подсветка фона ячеек в диапазоне отпуска */
 .duty-cell--in-vacation {
