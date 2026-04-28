@@ -299,43 +299,158 @@ PRESETS: list[dict] = [
         ],
     },
 
-    # ── 5. ГРОЗА (сигнал тревоги) ─────────────────────────────────────────────
+    # ── 5. ГРОЗА-555 (сигнал, 30 человек + водители) ─────────────────────────
+    # При выгрузке через «⬇ Скачать .docx» автоматически выходит формат
+    # штабного шаблона: шапка с датой, основная таблица, отдельная
+    # вспомогательная таблица «Состав сил обеспечения доставки» (водители
+    # из supplementary-группы), подпись оперативного дежурного.
     {
-        "id": "groza",
-        "name": "ГРОЗА (сигнал)",
-        "description": "Состав сил по сигналу «ГРОЗА» (террористическая угроза "
-                       "со взрывоопасным предметом). Командование + РХБ + "
-                       "минимизация последствий + ликвидация взрыва.",
-        "columns": COLS_STANDARD,
+        "id": "groza555",
+        "name": "ГРОЗА-555 (30 человек + водители)",
+        "description": "Состав сил по сигналу «ГРОЗА-555» — 30 человек в пяти "
+                       "основных группах и доп. список из 4 водителей. "
+                       "Колонка «Подразделение» как текстовая метка (1ЗНЦ, НОО, "
+                       "НУ-1…, 5 упр. и т.п.).",
+        "columns": [
+            {"key": "full_name",   "label": "Фамилия Имя Отчество", "type": "text",            "order": 0, "width": 220, "visible": True,  "custom": False},
+            {"key": "rank",        "label": "Воинское звание",      "type": "text",            "order": 1, "width": 130, "visible": True,  "custom": False},
+            {"key": "doc_number",  "label": "№ документа",          "type": "text",            "order": 2, "width": 140, "visible": True,  "custom": False},
+            {"key": "position_id", "label": "Должность, техника",   "type": "select_position", "order": 3, "width": 200, "visible": True,  "custom": False},
+            {"key": "subdivision", "label": "Подразделение",        "type": "text",            "order": 4, "width": 130, "visible": True,  "custom": True},
+            {"key": "callsign",    "label": "Позывной",             "type": "text",            "order": 5, "width": 100, "visible": False, "custom": False},
+            {"key": "department",  "label": "Квота",                "type": "select_dept",     "order": 6, "width": 140, "visible": False, "custom": False},
+            {"key": "note",        "label": "Примечание",           "type": "text",            "order": 7, "width": 160, "visible": False, "custom": False},
+        ],
         "groups": [
             {"name": "Группа командования", "slots": [
-                {"position": "старший"},
-                {"position": "начальник штаба"},
-                {"position": "оператор"},
-                {"position": "начальник связи"},
+                {"position": "командир отряда",     "extra": {"subdivision": "1ЗНЦ"}},
+                {"position": "начальник штаба",    "extra": {"subdivision": "НОО"}},
+                {"position": "начальник связи",    "extra": {"subdivision": "НОС"}},
+                {"position": "врач",               "extra": {"subdivision": "НУ-6"}},
+                {"position": "оператор БАС",       "extra": {"subdivision": "8 упр."}},
+                {"position": "старший группы тыла","extra": {"subdivision": "НПС"}},
+                {"position": "повар",              "extra": {"subdivision": "Б(О)"}},
             ]},
             {"name": "Группа РХБ защиты", "slots": [
-                {"position": "старший группы"},
-                {"position": "химик-дозиметрист"},
-                {"position": "химик-дозиметрист"},
+                {"position": "старший группы",         "extra": {"subdivision": "НУ-3 (ЗНУ-3)"}},
+                {"position": "газоспасатель",          "extra": {"subdivision": "3 упр."}},
+                {"position": "газоспасатель-водитель", "extra": {"subdivision": "3 упр."}},
             ]},
             {"name": "Группа минимизации последствий № 1", "slots": [
-                {"position": "старший группы"},
-                {"position": "спасатель"},
-                {"position": "спасатель"},
-                {"position": "спасатель"},
+                {"position": "старший группы", "extra": {"subdivision": "НУ-1 (ЗНУ-1)"}},
+                {"position": "спасатель",      "extra": {"subdivision": "1 упр."}},
+                {"position": "спасатель",      "extra": {"subdivision": "1 упр."}},
+                {"position": "спасатель",      "extra": {"subdivision": "1 упр."}},
+                {"position": "спасатель",      "extra": {"subdivision": "1 упр."}},
+                {"position": "спасатель",      "extra": {"subdivision": "4 упр."}},
+                {"position": "спасатель",      "extra": {"subdivision": "4 упр."}},
+                {"position": "спасатель",      "extra": {"subdivision": "5 упр."}},
             ]},
             {"name": "Группа минимизации последствий № 2", "slots": [
-                {"position": "старший группы"},
-                {"position": "спасатель"},
-                {"position": "спасатель"},
-                {"position": "спасатель"},
+                {"position": "старший группы",     "extra": {"subdivision": "НУ-2 (ЗНУ-2)"}},
+                {"position": "спасатель",          "extra": {"subdivision": "2 упр."}},
+                {"position": "спасатель",          "extra": {"subdivision": "2 упр."}},
+                {"position": "спасатель",          "extra": {"subdivision": "2 упр."}},
+                {"position": "спасатель",          "extra": {"subdivision": "2 упр."}},
+                {"position": "спасатель-водитель", "extra": {"subdivision": "4 упр."}},
+                {"position": "спасатель-водитель", "extra": {"subdivision": "4 упр."}},
             ]},
             {"name": "Группа ликвидации угрозы взрыва", "slots": [
-                {"position": "старший пиротехнической группы"},
-                {"position": "пиротехник"},
-                {"position": "пиротехник"},
-                {"position": "кинолог"},
+                {"position": "старший группы",        "extra": {"subdivision": "НУ-5 (ЗНУ-5)"}},
+                {"position": "пиротехник-спасатель",  "extra": {"subdivision": "5 упр."}},
+                {"position": "пиротехник-спасатель",  "extra": {"subdivision": "5 упр."}},
+                {"position": "пиротехник-спасатель",  "extra": {"subdivision": "5 упр."}},
+                {"position": "кинолог",               "extra": {"subdivision": "5 упр."}},
+            ]},
+            # Доп. список — водители обеспечения. is_supplementary=True
+            # запускает отдельную таблицу в Word при выгрузке.
+            {"name": "Обеспечение доставки", "is_supplementary": True, "slots": [
+                {"position": "водитель", "extra": {"subdivision": "ООБДД ВАИ"}},
+                {"position": "водитель", "extra": {"subdivision": "Б(О)"}},
+                {"position": "водитель", "extra": {"subdivision": "5 упр."}},
+                {"position": "водитель", "extra": {"subdivision": "Б(О)"}},
+            ]},
+        ],
+    },
+
+    # ── 6. КОМАНДА-333 (расчёт усиления охраны) ─────────────────────────────
+    # При выгрузке: таблица из 5 колонок (Задача / Время выделения /
+    # Расчёт / Кто выделяет / ФИО), задача и время merged по строкам группы.
+    # Кастомные колонки task_time и deployment лежат в extra_data слотов.
+    {
+        "id": "team333",
+        "name": "КОМАНДА-333 (расчёт усиления)",
+        "description": "Расчёт выделения личного состава для усиления охраны "
+                       "военного городка по сигналу «КОМАНДА-333». 11 задач, "
+                       "у каждой — своё время выделения и квота.",
+        "columns": [
+            {"key": "task_time",   "label": "Время выделения",          "type": "text",            "order": 0, "width": 120, "visible": True,  "custom": True},
+            {"key": "position_id", "label": "Расчёт (по постам)",       "type": "select_position", "order": 1, "width": 200, "visible": True,  "custom": False},
+            {"key": "deployment",  "label": "Кто выделяет (количество)","type": "text",            "order": 2, "width": 200, "visible": True,  "custom": True},
+            {"key": "full_name",   "label": "Ф.И.О.",                   "type": "text",            "order": 3, "width": 220, "visible": True,  "custom": False},
+            {"key": "rank",        "label": "Звание",                   "type": "text",            "order": 4, "width": 120, "visible": False, "custom": False},
+            {"key": "doc_number",  "label": "№ документа",              "type": "text",            "order": 5, "width": 130, "visible": False, "custom": False},
+            {"key": "callsign",    "label": "Позывной",                 "type": "text",            "order": 6, "width": 100, "visible": False, "custom": False},
+            {"key": "department",  "label": "Квота",                    "type": "select_dept",     "order": 7, "width": 140, "visible": False, "custom": False},
+            {"key": "note",        "label": "Примечание",               "type": "text",            "order": 8, "width": 160, "visible": False, "custom": False},
+        ],
+        "groups": [
+            {"name": "Усиление пропускного режима в штабе", "slots": [
+                {"position": "ПОД, ПОД по связи", "extra": {"task_time": "«Ч»+0.10", "deployment": "ОДС – 2 чел."}},
+                {"position": "ПОД, ПОД по связи", "extra": {"task_time": "«Ч»+0.10", "deployment": "ОДС – 2 чел."}},
+                {"position": "дежурная смена",    "extra": {"task_time": "«Ч»+0.10", "deployment": "1 упр., по графику, по графику – 3 чел."}},
+                {"position": "дежурная смена",    "extra": {"task_time": "«Ч»+0.10", "deployment": "1 упр., по графику, по графику – 3 чел."}},
+                {"position": "дежурная смена",    "extra": {"task_time": "«Ч»+0.10", "deployment": "1 упр., по графику, по графику – 3 чел."}},
+                {"position": "расчёт РХР",        "extra": {"task_time": "«Ч»+0.10", "deployment": "3 упр. – 2 чел."}},
+                {"position": "расчёт РХР",        "extra": {"task_time": "«Ч»+0.10", "deployment": "3 упр. – 2 чел."}},
+            ]},
+            {"name": "Группа оцепления (оцепление территории с целью недопущения посторонних лиц)", "slots": [
+                {"position": "детская площадка",              "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
+                {"position": "с торца общежития №2",          "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
+                {"position": "возле 1 ворот РТК",             "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
+                {"position": "возле запасного входа (выхода) в столовую", "extra": {"task_time": "«Ч»+0.15", "deployment": "2 упр. – 4 чел."}},
+            ]},
+            {"name": "Дежурное подразделение", "slots": [
+                *[{"position": "Патрулирование служебной территории согласно схеме",
+                   "extra": {"task_time": "«Ч»+0.20", "deployment": "Б(О) – 6 чел."}} for _ in range(6)],
+            ]},
+            {"name": "Выставление дополнительных вооружённых постов", "slots": [
+                {"position": "на крыше общежития № 2",            "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 2 чел."}},
+                {"position": "на крыше общежития № 2",            "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 2 чел."}},
+                {"position": "на крыше бокса оперативных машин",  "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 1 чел., 3 упр. – 1 чел."}},
+                {"position": "на крыше бокса оперативных машин",  "extra": {"task_time": "«Ч»+01.00", "deployment": "1 упр. – 1 чел., 3 упр. – 1 чел."}},
+                {"position": "на крыше РТК",                      "extra": {"task_time": "«Ч»+01.00", "deployment": "4 упр. – 2 чел."}},
+                {"position": "на крыше РТК",                      "extra": {"task_time": "«Ч»+01.00", "deployment": "4 упр. – 2 чел."}},
+                {"position": "на крыше бойлерной",                "extra": {"task_time": "«Ч»+01.00", "deployment": "5 упр. – 2 чел."}},
+                {"position": "на крыше бойлерной",                "extra": {"task_time": "«Ч»+01.00", "deployment": "5 упр. – 2 чел."}},
+            ]},
+            {"name": "Пожарный расчёт (по дополнительному распоряжению)", "slots": [
+                *[{"position": "пожарная команда",
+                   "extra": {"task_time": "«Ч»+0.10", "deployment": "Б(О) – 3 чел."}} for _ in range(3)],
+            ]},
+            {"name": "Мобильный резерв (по дополнительному распоряжению)", "slots": [
+                *[{"position": "мобильный резерв",
+                   "extra": {"task_time": "«Ч»+0.40", "deployment": "2 упр. – 6 чел."}} for _ in range(6)],
+            ]},
+            {"name": "Выставление ПРХН (по дополнительному распоряжению)", "slots": [
+                *[{"position": "возле КПП №2",
+                   "extra": {"task_time": "«Ч»+0.40", "deployment": "3 упр. – 2 чел."}} for _ in range(2)],
+            ]},
+            {"name": "Группа спец. работ с применением РТС (по дополнительному распоряжению)", "slots": [
+                *[{"position": "расчёты РТС «TEL-630»",
+                   "extra": {"task_time": "«Ч»+1.00", "deployment": "4 упр. – 4 чел."}} for _ in range(4)],
+            ]},
+            {"name": "Группа пиротехнических и кинологических работ (по дополнительному распоряжению)", "slots": [
+                *[{"position": "пиротехнический расчёт",
+                   "extra": {"task_time": "«Ч»+1.00", "deployment": "5 упр. – 3 чел."}} for _ in range(3)],
+            ]},
+            {"name": "МСГ (по дополнительному распоряжению)", "slots": [
+                *[{"position": "медико-спасательная группа",
+                   "extra": {"task_time": "«Ч»+1.00", "deployment": "6 упр. – 2 чел."}} for _ in range(2)],
+            ]},
+            {"name": "Расчёт беспилотной авиационной системы (по дополнительному распоряжению)", "slots": [
+                {"position": "оператор беспилотного воздушного судна",
+                 "extra": {"task_time": "«Ч»+1.00", "deployment": "8 упр. – 1 чел."}},
             ]},
         ],
     },

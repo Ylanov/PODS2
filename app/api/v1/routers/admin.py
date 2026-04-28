@@ -519,6 +519,9 @@ async def create_template_from_preset(
             event_id=new_event.id,
             name=preset_group["name"],
             order_num=order_num,
+            # Доп. список (отдельная таблица в Word) — например, водители
+            # в ГРОЗА-555. По умолчанию обычная группа.
+            is_supplementary=bool(preset_group.get("is_supplementary", False)),
         )
         db.add(group)
         db.flush()
@@ -535,6 +538,11 @@ async def create_template_from_preset(
                 callsign=None,
                 note=preset_slot.get("note"),
             )
+            # Доп. поля типа task_time, deployment, subdivision — пишем
+            # в extra_data; диспетчер экспорта (export.py) их прочтёт.
+            extra = preset_slot.get("extra")
+            if extra:
+                slot.set_extra(extra)
             db.add(slot)
 
     db.commit()
