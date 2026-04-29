@@ -254,6 +254,14 @@ function bindEvents() {
     // Единая кнопка «⬇ Скачать .docx» — бэк сам определяет формат
     // (ГРОЗА-555, КОМАНДА-333, стандартный) по структуре события.
     document.getElementById('export-btn')?.addEventListener('click', admin.exportWord);
+
+    // «📥 Импорт квот из Word» в базе людей админа — модальный диалог
+    // с парсингом docx и сопоставлением меток подразделений с управлениями.
+    document.getElementById('persons-import-docx-btn')?.addEventListener('click', () => {
+        import('./dept_import_dialog.js')
+            .then(m => m.openDeptImportDialog())
+            .catch(err => console.warn('dept_import_dialog import:', err));
+    });
     document.getElementById('duty-save-btn')?.addEventListener('click', admin.saveDutyOfficer);
 
     // Должности

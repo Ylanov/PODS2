@@ -123,6 +123,72 @@
 
 /* ─── Подсказки поиска ФИО из общей базы (persons/suggest) ──────────────── */
 
+/* ─── Диалог импорта квот из Word ────────────────────────────────────────── */
+.di-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: var(--md-surface-variant);
+    border-radius: var(--md-radius-sm);
+}
+.di-stat { font-size: 0.84rem; color: var(--md-on-surface-variant); }
+.di-stat b { color: var(--md-on-surface); font-weight: 700; }
+.di-stat--changed b { color: var(--md-primary-dark); }
+.di-stat--warn b    { color: var(--md-warning); }
+
+.di-h {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--md-on-surface);
+    margin: 14px 0 4px;
+}
+.di-sub {
+    font-size: 0.78rem;
+    color: var(--md-on-surface-hint);
+    margin: 0 0 8px;
+    line-height: 1.4;
+}
+
+.di-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
+.di-table thead th {
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.di-table tbody td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    color: var(--md-on-surface);
+}
+.di-table code {
+    background: var(--md-surface-variant);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--md-font-mono);
+    font-size: 0.85em;
+}
+.di-alias-select { width: 100%; padding: 4px 6px; }
+.di-old { color: var(--md-on-surface-hint); }
+
+.di-ulist {
+    margin: 4px 0 8px;
+    padding-left: 22px;
+    font-size: 0.84rem;
+    color: var(--md-on-surface);
+}
+
 .fio-suggest-box {
     position: absolute;
     top: 100%;

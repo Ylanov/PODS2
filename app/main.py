@@ -28,6 +28,7 @@ from app.api.v1.routers import tasks
 from app.api.v1.routers import audit as audit_module
 from app.api.v1.routers import holidays as holidays_module
 from app.api.v1.routers import analytics as analytics_router
+from app.api.v1.routers import dept_import as dept_import_router
 from app.db.init_db import init_db
 from app.core.websockets import manager, handle_websocket_connection
 
@@ -153,6 +154,10 @@ app.include_router(holidays_module.admin_router,  prefix="/api/v1/admin",       
 
 # Аналитика — admin-only сводный дашборд по спискам, должностям, нарядам.
 app.include_router(analytics_router.router, prefix="/api/v1/admin/analytics",      tags=["Аналитика (admin)"])
+
+# Импорт квот людей из Word (админ загружает .docx, система сопоставляет
+# метки подразделений с реальными управлениями, запоминает алиасы).
+app.include_router(dept_import_router.router, prefix="/api/v1/admin",              tags=["Импорт квот (admin)"])
 
 # ─── Боевой расчёт ────────────────────────────────────────────────────────────
 # ИСПРАВЛЕНО: раньше один и тот же роутер подключался дважды с разными prefix,
