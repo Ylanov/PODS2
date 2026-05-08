@@ -19,10 +19,11 @@ Endpoint'ы:
 """
 import io
 import re
-from typing import Optional
+from typing import Optional, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -100,6 +101,62 @@ def _extract_pairs_from_docx(file_bytes: bytes) -> list[dict]:
     return out
 
 
+# ─── Поиск кандидатов в Person для неизвестных ФИО ────────────────────────────
+
+# Зеркало логики /persons/suggest, но в админ-режиме (без visibility-фильтра).
+# Используется для подбора похожих кандидатов, когда импорт не нашёл точного
+# совпадения по ФИО.
+_FIND_CANDIDATES_SQL = text("""
+    SELECT
+        id, full_name, rank, doc_number, department,
+        GREATEST(
+            LEAST(
+                GREATEST(
+                    ROUND(similarity(lower(full_name), lower(:q)) * 100)::int,
+                    CASE
+                        WHEN lower(full_name) LIKE lower(:q) || '%'
+                          OR lower(full_name) LIKE '% ' || lower(:q) || '%'
+                          THEN 75
+                        WHEN lower(full_name) LIKE '%' || lower(:q) || '%'
+                          THEN 60
+                        ELSE 0
+                    END
+                ),
+                100
+            ),
+            0
+        ) AS score
+    FROM persons
+    WHERE
+        fired_at IS NULL
+        AND (
+            similarity(lower(full_name), lower(:q)) > 0.20
+            OR lower(full_name) LIKE '%' || lower(:q) || '%'
+        )
+    ORDER BY score DESC, full_name ASC
+    LIMIT :lim
+""")
+
+
+def _find_candidates(db: Session, q: str, limit: int = 3) -> list[dict]:
+    """Топ-N похожих Person по ФИО (для админ-импорта). Слабые (<35) отсекаем."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    rows = db.execute(_FIND_CANDIDATES_SQL, {"q": q, "lim": limit}).mappings().all()
+    return [
+        {
+            "id":         r["id"],
+            "full_name":  r["full_name"],
+            "rank":       r["rank"],
+            "doc_number": r["doc_number"],
+            "department": r["department"] or "",
+            "score":      int(r["score"]),
+        }
+        for r in rows if r["score"] >= 35
+    ]
+
+
 # ─── Pydantic-схемы ───────────────────────────────────────────────────────────
 
 class ImportChange(BaseModel):
@@ -107,11 +164,29 @@ class ImportChange(BaseModel):
     department: str
 
 
+class ImportUnknownDecision(BaseModel):
+    """
+    Решение админа по ФИО, которого нет в Person:
+      action='merge'  — слить с существующим Person (нужен person_id),
+      action='create' — создать нового Person с этим ФИО,
+      action='skip'   — пропустить (не импортировать).
+    Для всех — нужна department (резолвлено из alias на стороне фронта).
+    """
+    full_name:   str
+    department:  str
+    action:      Literal["merge", "create", "skip"]
+    person_id:   Optional[int] = None
+    rank:        Optional[str] = None
+    doc_number:  Optional[str] = None
+
+
 class ImportApplyPayload(BaseModel):
     changes:     list[ImportChange]
     # Новые сопоставления, которые админ задал в диалоге unknown_aliases.
     # Сохраняем в БД на будущее.
     new_aliases: dict[str, str] = {}
+    # Решения по неизвестным ФИО (см. ImportUnknownDecision).
+    unknown_decisions: list[ImportUnknownDecision] = []
 
 
 # ─── Preview ─────────────────────────────────────────────────────────────────
@@ -156,9 +231,14 @@ async def preview_import(
         for p in db.query(Person).filter(Person.fired_at.is_(None)).all()
     }
 
-    matched: list[dict]          = []
-    unknown_aliases: set[str]    = set()
-    unknown_persons: list[str]   = []
+    matched: list[dict]               = []
+    unknown_aliases: set[str]         = set()
+    # unknown_persons теперь — список объектов: исходное ФИО, разрешённое
+    # управление и кандидаты-похожие из Person для подтверждения админом.
+    # Дедуплицируем по (нормализованное ФИО + dept), чтобы один и тот же
+    # неизвестный человек не светился по два раза, если в Word его дважды.
+    unknown_persons: list[dict]       = []
+    seen_unknown: set[tuple]          = set()
 
     for pair in pairs:
         fio   = pair["full_name"]
@@ -177,7 +257,15 @@ async def preview_import(
         # Находим человека в Person
         p = persons_by_name.get(_normalize(fio).lower())
         if not p:
-            unknown_persons.append(fio)
+            key = (_normalize(fio).lower(), dept)
+            if key not in seen_unknown:
+                seen_unknown.add(key)
+                unknown_persons.append({
+                    "full_name":  fio,
+                    "alias":      alias,
+                    "department": dept,
+                    "candidates": _find_candidates(db, fio, limit=3),
+                })
             continue
 
         matched.append({
@@ -231,14 +319,67 @@ async def apply_import(
             p.department = change.department
             updated += 1
 
+    # 3. Решения по неизвестным ФИО
+    merged_count   = 0    # action='merge' — слили с существующим
+    created_count  = 0    # action='create' — создали нового Person
+    skipped_count  = 0    # action='skip' — намеренно пропустили
+    for d in (payload.unknown_decisions or []):
+        if d.action == "skip":
+            skipped_count += 1
+            continue
+
+        if d.action == "merge":
+            if not d.person_id:
+                continue
+            p = db.query(Person).filter(Person.id == d.person_id).first()
+            if not p:
+                continue
+            if (p.department or "") != d.department:
+                p.department = d.department
+                merged_count += 1
+            continue
+
+        if d.action == "create":
+            new_name = _normalize(d.full_name)
+            if not new_name:
+                continue
+            # Защита от гонки: full_name unique. Если запись уже появилась
+            # (например, второй пользователь импортирует параллельно) —
+            # просто обновляем department вместо вставки.
+            existing = (
+                db.query(Person)
+                .filter(Person.full_name.ilike(new_name))
+                .first()
+            )
+            if existing:
+                if (existing.department or "") != d.department:
+                    existing.department = d.department
+                    merged_count += 1
+                continue
+            db.add(Person(
+                full_name  = new_name,
+                rank       = (d.rank or None),
+                doc_number = (d.doc_number or None),
+                department = d.department,
+            ))
+            created_count += 1
+
     db.commit()
 
     # WebSocket: обновляем UI базы людей у админа.
-    if updated:
+    if updated or merged_count or created_count:
         await manager.broadcast({"action": "person_update", "source": "import"})
 
     return {
         "updated_persons":     updated,
+        "merged_persons":      merged_count,
+        "created_persons":     created_count,
+        "skipped_persons":     skipped_count,
         "saved_aliases":       saved_aliases,
-        "message":             f"Применено: {updated} людей, новых алиасов: {saved_aliases}.",
+        "message":             (
+            f"Применено: {updated} обновлено, "
+            f"{created_count} создано, "
+            f"{merged_count} слито с базой, "
+            f"новых алиасов: {saved_aliases}."
+        ),
     }

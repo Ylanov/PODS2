@@ -103,9 +103,16 @@ function _renderPreview(overlay, data) {
     // Сохраняем state в DOM dataset — чтобы apply мог собрать всё разом.
     overlay._matched         = data.matched || [];
     overlay._unknownAliases  = data.unknown_aliases || [];
-    overlay._unknownPersons  = data.unknown_persons || [];
+    // unknown_persons — массив объектов с candidates[]; нормализуем формат
+    // на случай если бэк (старый) ещё отдаёт массив строк.
+    overlay._unknownPersons  = (data.unknown_persons || []).map(u =>
+        (typeof u === 'string')
+            ? { full_name: u, alias: '', department: '', candidates: [] }
+            : u
+    );
 
     const changedCount = (data.matched || []).filter(m => m.changed).length;
+    const unknownPersonsCount = overlay._unknownPersons.length;
 
     body.innerHTML = `
         <div class="di-summary">
@@ -113,7 +120,7 @@ function _renderPreview(overlay, data) {
             <div class="di-stat"><b>${data.matched.length}</b> сопоставлено</div>
             <div class="di-stat di-stat--changed"><b>${changedCount}</b> с изменениями</div>
             ${data.unknown_aliases.length ? `<div class="di-stat di-stat--warn"><b>${data.unknown_aliases.length}</b> неизвестных меток</div>` : ''}
-            ${data.unknown_persons.length ? `<div class="di-stat di-stat--warn"><b>${data.unknown_persons.length}</b> ФИО не в базе</div>` : ''}
+            ${unknownPersonsCount ? `<div class="di-stat di-stat--warn"><b>${unknownPersonsCount}</b> ФИО не в базе</div>` : ''}
         </div>
 
         ${data.unknown_aliases.length ? `
@@ -137,11 +144,12 @@ function _renderPreview(overlay, data) {
             </table>
         ` : ''}
 
-        ${data.unknown_persons.length ? `
-            <h4 class="di-h">ФИО не найдены в базе людей</h4>
-            <p class="di-sub">Эти строки будут пропущены. Чтобы их применить — сначала добавь людей в базу или поправь ФИО в исходном Word.</p>
-            <ul class="di-ulist">${data.unknown_persons.slice(0, 50).map(n => `<li>${_esc(n)}</li>`).join('')}</ul>
-            ${data.unknown_persons.length > 50 ? `<p class="di-sub">…и ещё ${data.unknown_persons.length - 50}.</p>` : ''}
+        ${unknownPersonsCount ? `
+            <h4 class="di-h">ФИО не найдены в базе людей (${unknownPersonsCount})</h4>
+            <p class="di-sub">Для каждого человека выберите: совпадает с кем-то из базы (тогда обновим у него управление), или это новый человек (создадим запись), или пропустить эту строку.</p>
+            <div class="di-unk-list">
+                ${overlay._unknownPersons.map((u, idx) => _renderUnknownRow(u, idx)).join('')}
+            </div>
         ` : ''}
 
         ${changedCount === 0 && !data.unknown_aliases.length && !data.unknown_persons.length ? `
@@ -170,16 +178,147 @@ function _renderPreview(overlay, data) {
     // Заменяем кнопку «Распознать» на «Применить»
     const previewBtn = overlay.querySelector('#di-preview');
     previewBtn.disabled    = false;
-    previewBtn.textContent = changedCount || data.unknown_aliases.length
-        ? '✓ Применить'
-        : 'Закрыть';
+    const hasWork = changedCount || data.unknown_aliases.length || unknownPersonsCount;
+    previewBtn.textContent = hasWork ? '✓ Применить' : 'Закрыть';
     previewBtn.onclick = async () => {
-        if (changedCount === 0 && !data.unknown_aliases.length) {
+        if (!hasWork) {
             overlay.remove();
             return;
         }
         await _applyChanges(overlay);
     };
+
+    // Привязываем интерактив на строки unknown_persons (radio + поиск).
+    _bindUnknownRows(overlay);
+}
+
+
+// ─── Секция «ФИО не найдены»: рендер строки + bind событий ──────────────────
+
+function _renderUnknownRow(u, idx) {
+    const cands = u.candidates || [];
+    const top   = cands[0];
+    // Если есть сильный кандидат (≥70) — по умолчанию выбираем его, иначе
+    // «Создать нового» (это безопасный путь — админ всегда может изменить).
+    const defaultMerge = top && top.score >= 70;
+    const fioEsc  = _esc(u.full_name);
+    const deptEsc = _esc(u.department || '');
+
+    const candItems = cands.map((c, ci) => `
+        <label class="di-unk-opt">
+            <input type="radio" name="u${idx}"
+                   value="merge:${c.id}"
+                   ${defaultMerge && ci === 0 ? 'checked' : ''}>
+            <span class="di-unk-opt__main">
+                Это <b>${_esc(c.full_name)}</b>
+                ${c.rank ? `· <span class="di-unk-meta">${_esc(c.rank)}</span>` : ''}
+                ${c.department ? `· <span class="di-unk-meta">${_esc(c.department)}</span>` : ''}
+            </span>
+            <span class="di-unk-score" title="Похожесть по trigram-индексу">${c.score}%</span>
+        </label>
+    `).join('');
+
+    return `
+        <div class="di-unk-row" data-unknown-idx="${idx}">
+            <div class="di-unk-row__head">
+                <div class="di-unk-row__fio">
+                    <span class="di-unk-row__name">${fioEsc}</span>
+                    ${deptEsc ? `<span class="di-unk-row__dept">→ ${deptEsc}</span>` : ''}
+                </div>
+                ${cands.length === 0
+                    ? '<span class="di-unk-row__hint">похожих в базе нет</span>'
+                    : ''}
+            </div>
+            <div class="di-unk-row__opts">
+                ${candItems}
+                <label class="di-unk-opt">
+                    <input type="radio" name="u${idx}" value="create"
+                           ${!defaultMerge ? 'checked' : ''}>
+                    <span class="di-unk-opt__main">Создать нового в базе людей</span>
+                </label>
+                <label class="di-unk-opt">
+                    <input type="radio" name="u${idx}" value="search">
+                    <span class="di-unk-opt__main">Найти в базе вручную…</span>
+                </label>
+                <label class="di-unk-opt">
+                    <input type="radio" name="u${idx}" value="skip">
+                    <span class="di-unk-opt__main">Пропустить эту строку</span>
+                </label>
+            </div>
+            <div class="di-unk-search hidden">
+                <input type="text" class="di-unk-search__input"
+                       placeholder="Введите фамилию для поиска по базе людей…"
+                       autocomplete="off">
+                <div class="di-unk-search__results"></div>
+                <div class="di-unk-search__chosen hidden"></div>
+            </div>
+        </div>
+    `;
+}
+
+function _bindUnknownRows(overlay) {
+    overlay.querySelectorAll('.di-unk-row').forEach(row => {
+        // Показ/скрытие inline-поиска при выборе радио «search».
+        row.querySelectorAll('input[type=radio]').forEach(r => {
+            r.addEventListener('change', () => {
+                const showSearch = r.value === 'search' && r.checked;
+                row.querySelector('.di-unk-search').classList.toggle('hidden', !showSearch);
+                if (!showSearch) {
+                    // Сбросили выбор поиска — очищаем привязку
+                    delete row.dataset.searchPersonId;
+                    const chosen = row.querySelector('.di-unk-search__chosen');
+                    chosen.classList.add('hidden');
+                    chosen.innerHTML = '';
+                }
+            });
+        });
+
+        // Поиск в базе людей через /persons/suggest (с debounce).
+        const input    = row.querySelector('.di-unk-search__input');
+        const results  = row.querySelector('.di-unk-search__results');
+        const chosen   = row.querySelector('.di-unk-search__chosen');
+        let timer = null;
+        input?.addEventListener('input', () => {
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (q.length < 2) {
+                results.innerHTML = '';
+                return;
+            }
+            timer = setTimeout(async () => {
+                try {
+                    const r = await api.get(`/persons/suggest?full_name=${encodeURIComponent(q)}&limit=8`);
+                    if (!r || r.length === 0) {
+                        results.innerHTML = '<div class="di-unk-search__empty">Никто не найден</div>';
+                        return;
+                    }
+                    results.innerHTML = r.map(p => `
+                        <div class="di-unk-search__item" data-person-id="${p.id}">
+                            <span><b>${_esc(p.full_name)}</b>
+                                ${p.rank ? `· ${_esc(p.rank)}` : ''}
+                                ${p.department ? `· ${_esc(p.department)}` : ''}
+                            </span>
+                            <span class="di-unk-score">${p.match_score}%</span>
+                        </div>
+                    `).join('');
+                } catch (err) {
+                    results.innerHTML = '<div class="di-unk-search__empty">Ошибка поиска</div>';
+                }
+            }, 250);
+        });
+
+        // Клик по найденному — фиксируем выбор для apply.
+        results?.addEventListener('click', (e) => {
+            const item = e.target.closest('.di-unk-search__item');
+            if (!item) return;
+            const pid = item.dataset.personId;
+            row.dataset.searchPersonId = pid;
+            chosen.classList.remove('hidden');
+            chosen.innerHTML = `Выбрано: ${item.querySelector('span').innerHTML}`;
+            results.innerHTML = '';
+            input.value = '';
+        });
+    });
 }
 
 
@@ -225,7 +364,38 @@ async function _applyChanges(overlay) {
         person_id:  m.person_id,
         department: m.department,
     }));
-    if (!changes.length) {
+
+    // Решения по неизвестным ФИО (radio + поиск).
+    const unknownDecisions = [];
+    overlay.querySelectorAll('.di-unk-row').forEach(row => {
+        const idx = parseInt(row.dataset.unknownIdx, 10);
+        const u   = overlay._unknownPersons[idx];
+        if (!u) return;
+        const checked = row.querySelector('input[type=radio]:checked');
+        if (!checked) return;
+
+        const v = checked.value;
+        const base = { full_name: u.full_name, department: u.department };
+
+        if (v === 'skip') {
+            unknownDecisions.push({ ...base, action: 'skip' });
+        } else if (v === 'create') {
+            unknownDecisions.push({ ...base, action: 'create' });
+        } else if (v.startsWith('merge:')) {
+            const personId = parseInt(v.slice(6), 10);
+            unknownDecisions.push({ ...base, action: 'merge', person_id: personId });
+        } else if (v === 'search') {
+            const pid = parseInt(row.dataset.searchPersonId || '', 10);
+            if (pid) {
+                unknownDecisions.push({ ...base, action: 'merge', person_id: pid });
+            } else {
+                // Радио «найти» выбрано, но никого не выбрали — пропускаем.
+                unknownDecisions.push({ ...base, action: 'skip' });
+            }
+        }
+    });
+
+    if (!changes.length && !unknownDecisions.length) {
         overlay.remove();
         return;
     }
@@ -236,7 +406,9 @@ async function _applyChanges(overlay) {
 
     try {
         const r = await api.post('/admin/persons/import-departments/apply', {
-            changes, new_aliases: {},
+            changes,
+            new_aliases: {},
+            unknown_decisions: unknownDecisions,
         });
         window.showSnackbar?.(r.message || `Применено: ${r.updated_persons}`, 'success');
         overlay.remove();
