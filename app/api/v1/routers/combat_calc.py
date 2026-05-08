@@ -79,10 +79,13 @@ class InstanceResponse(BaseModel):
 
 
 class SlotFill(BaseModel):
-    version:   int
-    full_name: Optional[str] = Field(default=None, max_length=300)
-    rank:      Optional[str] = Field(default=None, max_length=100)
-    note:      Optional[str] = Field(default=None, max_length=500)
+    version:    int
+    full_name:  Optional[str] = Field(default=None, max_length=300)
+    rank:       Optional[str] = Field(default=None, max_length=100)
+    note:       Optional[str] = Field(default=None, max_length=500)
+    # Квота — какое управление выделяет этот слот. Может менять только
+    # админ; для department-роли поле игнорируется (см. fill_slot).
+    department: Optional[str] = Field(default=None, max_length=100)
 
 
 # ─── Вспомогательная функция: синхронизация слотов ───────────────────────────
@@ -425,8 +428,17 @@ async def fill_slot(
     slot.note      = payload.note      or None
     slot.version  += 1
 
-    # Если не задан department — ставим текущего пользователя
-    if not slot.department:
+    # Квоту меняет только админ (явно переданный department в payload).
+    # Department-пользователю поле игнорируем — иначе он мог бы
+    # переписать слот на чужое управление и обойти изоляцию.
+    if payload.department is not None and current_user.role == "admin":
+        new_dept = payload.department.strip() or None
+        slot.department = new_dept
+
+    # Если так и осталось пусто — ставим текущего пользователя
+    # (исторический fallback, чтобы при первом заполнении ФИО квота не
+    # терялась). Админу не подставляем — он сам выбирает в UI.
+    if not slot.department and current_user.role != "admin":
         slot.department = current_user.username
 
     db.commit()
@@ -437,9 +449,10 @@ async def fill_slot(
     })
 
     return {
-        "id":        slot.id,
-        "full_name": slot.full_name,
-        "rank":      slot.rank,
-        "note":      slot.note,
-        "version":   slot.version,
+        "id":         slot.id,
+        "full_name":  slot.full_name,
+        "rank":       slot.rank,
+        "note":       slot.note,
+        "department": slot.department,
+        "version":    slot.version,
     }

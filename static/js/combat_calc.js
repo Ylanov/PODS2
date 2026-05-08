@@ -9,6 +9,7 @@
 
 import { api } from './api.js';
 import { attach as attachFio } from './fio_autocomplete.js';
+import { formatRole } from './ui.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,10 @@ let _templates      = [];     // Шаблоны для выпадающего с
 let _currentInst    = null;   // {instance, structure, slots_map, my_department}
 let _saveTimeout    = null;   // дебаунс автосохранения
 let _isAdmin        = false;
+// Список username'ов управлений для dropdown «Кто выделяет». Загружается
+// один раз при первом отображении инстанса (только для админа — обычный
+// пользователь видит квоту в read-only режиме).
+let _departments    = [];
 
 // Состояние календаря
 let _currentWeekStart = _getMonday(new Date());
@@ -345,7 +350,7 @@ async function _openInstance(id) {
     }
 
     _renderInstanceList();  // обновить активную карточку
-    _renderCalcView();
+    await _renderCalcView();
 }
 
 async function _reloadCurrentSilent() {
@@ -374,6 +379,13 @@ function _applyFreshSlots(slotsMap) {
             if (rankInput && document.activeElement !== rankInput && !rankInput.value) {
                 rankInput.value = slotData.rank || '';
             }
+            // Подтягиваем квоту из ответа: если другой админ переключил
+            // department у этого слота — отразим без перерисовки таблицы.
+            const deptInput = document.getElementById(`cc-dept-${slotData.id}`);
+            if (deptInput && document.activeElement !== deptInput) {
+                const newVal = slotData.department || '';
+                if (deptInput.value !== newVal) deptInput.value = newVal;
+            }
             // Обновляем data-version
             const row = document.querySelector(`[data-slot-id="${slotData.id}"]`);
             if (row) row.dataset.version = slotData.version;
@@ -381,13 +393,51 @@ function _applyFreshSlots(slotsMap) {
     });
 }
 
-function _renderCalcView() {
+async function _ensureDepartmentsLoaded() {
+    if (!_isAdmin || _departments.length > 0) return;
+    try {
+        const users = await api.get('/admin/users');
+        _departments = (users || [])
+            .filter(u => u.is_active !== false
+                      && (u.role === 'department' || u.role === 'admin' || u.role === 'unit'))
+            .map(u => u.username)
+            .sort();
+    } catch (err) {
+        console.warn('[combat_calc] departments load failed:', err);
+        _departments = [];
+    }
+}
+
+function _renderWhoCell(slotData, slotId, disabled) {
+    const cur = slotData.department || '';
+    if (!_isAdmin) {
+        // Не-админу показываем текущую квоту как read-only текст; «—» если
+        // пусто. Менять может только админ — иначе любой dept мог бы
+        // переписать слот на чужое управление.
+        return cur
+            ? `<span class="cc-dept-static">${_esc(formatRole(cur))}</span>`
+            : '<span class="cc-dept-static cc-dept-static--empty">—</span>';
+    }
+    const opts = ['<option value="">— квота —</option>']
+        .concat(_departments.map(u =>
+            `<option value="${_esc(u)}" ${u === cur ? 'selected' : ''}>${_esc(formatRole(u))}</option>`
+        )).join('');
+    return `<select class="cc-slot-input cc-dept-select"
+                    id="cc-dept-${slotId}"
+                    data-slot-id="${slotId}"
+                    data-field="department"
+                    ${disabled}>${opts}</select>`;
+}
+
+async function _renderCalcView() {
     const panel = _getEl('cc-view-panel');
     const empty = _getEl('cc-view-empty');
     if (!panel) return;
 
     empty?.classList.add('hidden');
     panel.classList.remove('hidden');
+
+    await _ensureDepartmentsLoaded();
 
     const { instance, structure, slots_map } = _currentInst;
     const isClosed  = instance.status === 'closed';
@@ -447,13 +497,23 @@ function _renderCalcView() {
 
                 const filledClass = fname ? ' cc-slot--filled' : '';
 
+                // Метка времени и название мероприятия идут с rowspan
+                // (одинаковы для всех слотов row). «Кто выделяет» —
+                // per-slot dropdown, разные слоты могут идти от разных
+                // управлений (как в редакторе списков).
                 if (si === 0) {
                     const rowspan = slotList.length > 1 ? ` rowspan="${slotList.length}"` : '';
+                    const hint = row.who_provides
+                        ? `<div class="cc-row__hint" title="${_esc(row.who_provides)}">${_esc(row.who_provides)}</div>`
+                        : '';
                     html += `
                     <tr data-slot-id="${slotId}" data-version="${version}" class="cc-row${filledClass}">
-                        <td class="cc-td cc-td--label"${rowspan}>${_esc(row.label)}</td>
+                        <td class="cc-td cc-td--label"${rowspan}>
+                            ${_esc(row.label)}
+                            ${hint}
+                        </td>
                         <td class="cc-td cc-td--time"${rowspan}>${_esc(row.time)}</td>
-                        <td class="cc-td cc-td--who"${rowspan}>${_esc(row.who_provides)}</td>
+                        <td class="cc-td cc-td--who">${_renderWhoCell(slotData, slotId, disabled)}</td>
                         <td class="cc-td cc-td--loc">${_esc(slotDef.location)}</td>
                         <td class="cc-td cc-td--person">
                             ${_renderPersonCell(slotId, rank, fname, disabled)}
@@ -462,6 +522,7 @@ function _renderCalcView() {
                 } else {
                     html += `
                     <tr data-slot-id="${slotId}" data-version="${version}" class="cc-row${filledClass}">
+                        <td class="cc-td cc-td--who">${_renderWhoCell(slotData, slotId, disabled)}</td>
                         <td class="cc-td cc-td--loc">${_esc(slotDef.location)}</td>
                         <td class="cc-td cc-td--person">
                             ${_renderPersonCell(slotId, rank, fname, disabled)}
@@ -555,20 +616,36 @@ async function _saveSlotNow(input) {
 
     const nameInput = document.getElementById(`cc-name-${slotId}`);
     const rankInput = document.getElementById(`cc-rank-${slotId}`);
+    const deptInput = document.getElementById(`cc-dept-${slotId}`);
     const version   = parseInt(row.dataset.version || 1);
 
+    const payload = {
+        version,
+        full_name: nameInput?.value.trim() || null,
+        rank:      rankInput?.value.trim() || null,
+    };
+    // Department отправляем только если на странице есть select (т.е.
+    // только для админа). Бэкенд игнорирует поле у не-админа на всякий
+    // случай, но и фронту лишний раз слать незачем.
+    if (deptInput) {
+        payload.department = deptInput.value || '';
+    }
+
     try {
-        const result = await api.put(`/combat/slots/${slotId}`, {
-            version,
-            full_name: nameInput?.value.trim() || null,
-            rank:      rankInput?.value.trim() || null,
-        });
+        const result = await api.put(`/combat/slots/${slotId}`, payload);
 
         row.dataset.version = result.version;
         row.classList.remove('cc-row--dirty');
 
         const isFilled = !!result.full_name;
         row.classList.toggle('cc-slot--filled', isFilled);
+
+        // Подтягиваем dept из ответа, чтобы select точно отражал то,
+        // что записалось в БД (на случай нормализации пробелов).
+        if (deptInput && typeof result.department !== 'undefined') {
+            const newVal = result.department || '';
+            if (deptInput.value !== newVal) deptInput.value = newVal;
+        }
 
     } catch (err) {
         if (err?.status === 409) {
