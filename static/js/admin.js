@@ -2037,28 +2037,19 @@ function fmtIso(d) {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// Чипсы выбранных шаблонов в одной ячейке дня. Нажатие на ✕ — мгновенное
-// удаление и автосохранение в localStorage. Уже сгенерированные на эту дату
-// шаблоны (по source_template_id) помечаются галкой и не имеют кнопки ✕,
-// потому что снять их можно только удалив сам сгенерированный список.
-function _renderDayChips(dayKey, assignedIds, generatedTplIds, tplById) {
-    if (!assignedIds || assignedIds.length === 0) {
-        return '<div class="sched-day__empty">Шаблоны не выбраны</div>';
-    }
-    const chips = assignedIds.map(id => {
-        const t          = tplById.get(String(id));
-        const name       = t ? t.title : `#${id}`;
-        const alreadyGen = generatedTplIds.has(parseInt(id, 10));
-        const cls        = alreadyGen ? 'sched-chip sched-chip--done' : 'sched-chip';
-        const tip        = alreadyGen ? 'Уже создан на эту дату' : 'Будет создан при «Создать списки»';
-        const close      = alreadyGen
-            ? ''
-            : `<button class="sched-chip-x"
-                       data-day-key="${dayKey}" data-tpl-id="${id}"
-                       title="Убрать из плана этого дня" type="button">×</button>`;
-        return `<span class="${cls}" title="${tip}">
+// Чипсы запланированных, но ещё не созданных шаблонов. Уже созданные
+// на эту дату показываются отдельным блоком sched-generated-list выше —
+// сюда они не попадают, чтобы не дублироваться.
+function _renderDayChips(dayKey, pendingIds, tplById) {
+    if (!pendingIds || pendingIds.length === 0) return '';
+    const chips = pendingIds.map(id => {
+        const t    = tplById.get(String(id));
+        const name = t ? t.title : `#${id}`;
+        return `<span class="sched-chip" title="Будет создан при «Создать списки»">
                     <span class="sched-chip__name">${esc(name)}</span>
-                    ${close}
+                    <button class="sched-chip-x"
+                            data-day-key="${dayKey}" data-tpl-id="${id}"
+                            title="Убрать из плана этого дня" type="button">×</button>
                 </span>`;
     }).join('');
     return `<div class="sched-day__chips">${chips}</div>`;
@@ -2107,22 +2098,26 @@ export function renderScheduleGrid() {
             ? `<span class="sched-count-badge">${generated.length}</span>`
             : '';
 
-        // Расширяем план дня сгенерированными — чтобы они отображались
-        // как «✓ уже создан» даже если их не было в schedule до этого
-        // (например, если кто-то развернул шаблон вручную из «Создать список»).
+        // План дня = что лежит в localStorage. Уже созданные на эту дату
+        // фильтруем — они и так видны в зелёном блоке sched-generated-list
+        // выше, повторно показывать как «pending»-чип не нужно (это вводило
+        // в заблуждение: одно и то же отображалось дважды).
         const assignedRaw = (schedule[dayKey] ?? []).map(String);
-        const assigned    = Array.from(new Set([
-            ...assignedRaw,
-            ...[...generatedTplIds].map(String),
-        ]));
+        const assignedPending = assignedRaw.filter(
+            id => !generatedTplIds.has(parseInt(id, 10))
+        );
+        const hasAnything = generated.length > 0 || assignedPending.length > 0;
 
-        const chipsHtml = _renderDayChips(dayKey, assigned, generatedTplIds, tplById);
+        const chipsHtml = _renderDayChips(dayKey, assignedPending, tplById);
+        const emptyHtml = hasAnything
+            ? ''
+            : '<div class="sched-day__empty">Шаблоны не выбраны</div>';
         const pickBtn = `
             <button class="sched-pick-tpl btn btn-outlined btn-xs"
                     data-day-key="${dayKey}" data-iso="${isoDate}"
                     style="margin-top:6px;width:100%;font-size:0.74rem;"
                     type="button">
-                ${assigned.length ? '⚙ Изменить шаблоны' : '+ Выбрать шаблоны'}
+                ${assignedPending.length ? '⚙ Изменить шаблоны' : '+ Выбрать шаблоны'}
             </button>`;
 
         return `
@@ -2135,6 +2130,7 @@ export function renderScheduleGrid() {
                     ${countBadge}
                 </div>
                 ${generatedHtml}
+                ${emptyHtml}
                 ${chipsHtml}
                 ${pickBtn}
             </div>`;
