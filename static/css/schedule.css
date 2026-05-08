@@ -36,16 +36,17 @@
     flex-wrap: wrap;
 }
 
-/* Сетка — 7 карточек */
+/* Сетка — 7 карточек, авто-перенос вниз когда не хватает ширины.
+   minmax(180px, 1fr): минимум 180px на колонку, иначе перенос на новую
+   строку. На широком экране все 7 в один ряд (180×7 + gaps ≈ 1300px).
+   На узком — переносит сначала Сб/Вс, потом дальше; «Воскресенье уезжает
+   за край» больше не происходит. */
 .sched-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 8px;
     margin-bottom: 12px;
 }
-
-@media (max-width: 900px) { .sched-grid { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 560px) { .sched-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* Карточка дня */
 .sched-day {
