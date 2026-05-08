@@ -369,9 +369,17 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
             const isTomorrow = (group.duty_day_offset || 0) === 1;
             const dayLabel   = isTomorrow ? 'Завтра' : 'Сегодня';
             const dayTitle   = isTomorrow
-                ? 'Слоты группы заполняются нарядом следующего дня. Нажмите для переключения.'
-                : 'Слоты группы заполняются нарядом текущего дня. Нажмите для переключения.';
+                ? 'Слоты группы заполняются нарядом следующего дня (метка фиксируется как «Ч+3.00»). Нажмите чтобы переключить на сегодня.'
+                : 'Слоты группы заполняются нарядом текущего дня. Нажмите чтобы переключить на завтра — метка станет «Ч+3.00».';
             const dayCls     = isTomorrow ? 'btn-outlined' : 'btn-text';
+            // При «Завтра» метка времени фиксируется = «Ч+3.00» (input залочен),
+            // т.к. логически «завтрашний наряд» — это про 3-часовую готовность.
+            // При «Сегодня» метка свободная — для разных мини-офсетов
+            // (Ч+0.10, Ч+0.15, Ч+0.40, Ч+1.00 и т.д.).
+            const offsetReadonly = isTomorrow ? 'readonly' : '';
+            const offsetTitle = isTomorrow
+                ? 'Метка фиксирована при «Завтра» — переключите на «Сегодня» чтобы изменить.'
+                : 'Метка времени готовности (свободная). Группы с одинаковой меткой получают одинаковый цвет.';
 
             return `
                 <tr class="group-header${tierCls}" data-group-id="${group.id}">
@@ -383,10 +391,13 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
                                        data-group-id="${group.id}"
                                        value="${esc(group.time_offset || '')}"
                                        placeholder="Ч+1.00"
-                                       title="Метка времени готовности (свободная строка). Группы с одинаковой меткой получают одинаковый цвет."
+                                       title="${offsetTitle}"
+                                       ${offsetReadonly}
                                        style="width:90px; padding:2px 6px; font-size:0.78rem;
                                               border:1px solid var(--md-outline-variant);
-                                              border-radius:4px; background:transparent;
+                                              border-radius:4px;
+                                              background:${isTomorrow ? 'var(--md-surface-container, rgba(0,0,0,0.04))' : 'transparent'};
+                                              color:${isTomorrow ? 'var(--md-on-surface-hint)' : 'inherit'};
                                               font-family:var(--md-font-mono);">
                                 <button class="btn btn-xs ${dayCls} group-day-toggle-btn"
                                         data-group-id="${group.id}"
@@ -1879,10 +1890,23 @@ export function listenForUpdates() {
             return;
         }
         // Toggle duty_day_offset: переключаем между «сегодня» (0) и «завтра» (1).
+        // Связка: «Завтра» жёстко фиксирует time_offset = «Ч+3.00»; обратное
+        // переключение возвращает «Ч+1.00», но только если сейчас «Ч+3.00» —
+        // если админ вручную поставил «Ч+0.40»/etc, оно остаётся.
         const dayBtn = e.target.closest('.group-day-toggle-btn');
         if (dayBtn) {
             const next = dayBtn.dataset.dayOffset === '1' ? 0 : 1;
-            _patchGroupOffset(dayBtn.dataset.groupId, { duty_day_offset: next });
+            const payload = { duty_day_offset: next };
+            if (next === 1) {
+                payload.time_offset = 'Ч+3.00';
+            } else {
+                const row = dayBtn.closest('tr.group-header');
+                const inp = row?.querySelector('.group-time-offset-input');
+                if (inp && inp.value.trim() === 'Ч+3.00') {
+                    payload.time_offset = 'Ч+1.00';
+                }
+            }
+            _patchGroupOffset(dayBtn.dataset.groupId, payload);
             return;
         }
     });
