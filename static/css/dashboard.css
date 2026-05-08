@@ -836,3 +836,106 @@
     text-align: center;
     padding: 14px;
 }
+
+/* ── Палитра групп по time_offset (метка готовности «Ч+...») ──────────────── */
+/* Семь приглушённых пастельных оттенков из единой холодноватой гаммы:
+   слегка отличаются по тону, но одинаково мягкие по светлоте/насыщенности —
+   чтобы группы не «прыгали» в глаза, а только помогали глазу различать
+   временные рамки. Заголовок группы — чуть насыщеннее, строки — почти
+   белые с лёгким оттенком. Совместимо со светлой темой; в тёмной теме
+   оттенки переопределяются ниже. */
+
+.g-tier-0 { --tier-bg: #eff5f1; --tier-bg-row: #f7faf8; --tier-edge: #b8d4c4; }
+.g-tier-1 { --tier-bg: #eef3f8; --tier-bg-row: #f6f9fc; --tier-edge: #b8cee0; }
+.g-tier-2 { --tier-bg: #f0eff7; --tier-bg-row: #f7f6fb; --tier-edge: #c5c0db; }
+.g-tier-3 { --tier-bg: #f6f1ee; --tier-bg-row: #fbf7f5; --tier-edge: #d9c4b8; }
+.g-tier-4 { --tier-bg: #f3f4ec; --tier-bg-row: #f9faf3; --tier-edge: #cccea5; }
+.g-tier-5 { --tier-bg: #f4eef0; --tier-bg-row: #faf6f7; --tier-edge: #d6bdc4; }
+.g-tier-6 { --tier-bg: #ecf3f4; --tier-bg-row: #f5fafa; --tier-edge: #b3cdcf; }
+
+tr.group-header.g-tier-0,
+tr.group-header.g-tier-1,
+tr.group-header.g-tier-2,
+tr.group-header.g-tier-3,
+tr.group-header.g-tier-4,
+tr.group-header.g-tier-5,
+tr.group-header.g-tier-6 {
+    background: var(--tier-bg) !important;
+    box-shadow: inset 3px 0 0 var(--tier-edge);
+}
+
+tr.g-slot-row.g-tier-0,
+tr.g-slot-row.g-tier-1,
+tr.g-slot-row.g-tier-2,
+tr.g-slot-row.g-tier-3,
+tr.g-slot-row.g-tier-4,
+tr.g-slot-row.g-tier-5,
+tr.g-slot-row.g-tier-6 {
+    background: var(--tier-bg-row);
+}
+
+tr.g-slot-row.g-tier-0 > td:first-child,
+tr.g-slot-row.g-tier-1 > td:first-child,
+tr.g-slot-row.g-tier-2 > td:first-child,
+tr.g-slot-row.g-tier-3 > td:first-child,
+tr.g-slot-row.g-tier-4 > td:first-child,
+tr.g-slot-row.g-tier-5 > td:first-child,
+tr.g-slot-row.g-tier-6 > td:first-child {
+    box-shadow: inset 3px 0 0 var(--tier-edge);
+}
+
+/* Тёмная тема — те же оттенки, но из приглушённого тёмного спектра */
+@media (prefers-color-scheme: dark) {
+    .g-tier-0 { --tier-bg: #21302a; --tier-bg-row: #1c2622; --tier-edge: #466b58; }
+    .g-tier-1 { --tier-bg: #1f2a36; --tier-bg-row: #1b232c; --tier-edge: #466177; }
+    .g-tier-2 { --tier-bg: #25243a; --tier-bg-row: #1f1e30; --tier-edge: #545278; }
+    .g-tier-3 { --tier-bg: #322823; --tier-bg-row: #28201d; --tier-edge: #6f5446; }
+    .g-tier-4 { --tier-bg: #2c2f1f; --tier-bg-row: #25281a; --tier-edge: #686b3f; }
+    .g-tier-5 { --tier-bg: #322327; --tier-bg-row: #281d20; --tier-edge: #714a55; }
+    .g-tier-6 { --tier-bg: #1f3030; --tier-bg-row: #1a2727; --tier-edge: #466465; }
+}
+
+/* ── Подсветка дубликатов в списке ────────────────────────────────────────── */
+/* Применяется на slot-row через JS, когда одно и то же ФИО встречается
+   в этом списке более одного раза. Цвет — деликатный розовый, не кричащий. */
+
+tr.g-slot-row.is-duplicate {
+    background: rgba(226, 75, 74, 0.10) !important;
+    box-shadow: inset 3px 0 0 rgba(226, 75, 74, 0.6) !important;
+}
+tr.g-slot-row.is-duplicate input,
+tr.g-slot-row.is-duplicate select {
+    border-color: rgba(226, 75, 74, 0.5);
+}
+
+.dup-banner {
+    background: rgba(226, 75, 74, 0.08);
+    border: 1px solid rgba(226, 75, 74, 0.3);
+    color: var(--md-error, #B23B3A);
+    border-radius: var(--md-radius-md);
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.dup-banner__title {
+    font-weight: 600;
+}
+.dup-banner__list {
+    color: var(--md-on-surface);
+    opacity: 0.85;
+}
+
+/* Метка времени готовности рядом с названием группы в evt-edit-модалке */
+.evt-edit__group-tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-family: var(--md-font-mono);
+    color: var(--md-on-surface-variant);
+    background: var(--md-surface-container, rgba(0,0,0,0.04));
+}

@@ -2,6 +2,7 @@
 
 import { api } from './api.js';
 import { showError, showSuccess, formatRole, loadEventsDropdowns, getCachedEvents } from './ui.js';
+import { applyDuplicateHighlight, renderDuplicatesBanner } from './duplicates.js';
 
 // ─── Локальный кэш ────────────────────────────────────────────────────────────
 let availablePositions   = [];
@@ -212,6 +213,51 @@ function buildCell(col, slot) {
     }
 }
 
+// Стабильный маппинг time_offset → индекс палитры (0..6). Пустая метка
+// возвращает '' (без выделения). Сортировка по убыванию длительности —
+// пытаемся распарсить «Ч+H.MM», fallback по строковому сравнению — чтобы
+// раскраска сохраняла порядок чтения снизу вверх и была одинаковой для
+// шаблонов с одинаковым набором меток.
+function _parseOffsetMinutes(s) {
+    const m = String(s || '').match(/(\d+)\.?(\d{0,2})/);
+    if (!m) return -1;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2] || '0', 10);
+}
+
+function _computeTierMap(groups) {
+    const map = new Map();
+    const seen = new Set();
+    for (const g of groups) {
+        const key = (g.time_offset || '').trim();
+        if (key && !seen.has(key)) {
+            seen.add(key);
+        }
+    }
+    const ordered = Array.from(seen).sort((a, b) => {
+        const ma = _parseOffsetMinutes(a);
+        const mb = _parseOffsetMinutes(b);
+        if (ma !== mb && ma >= 0 && mb >= 0) return ma - mb;
+        return a.localeCompare(b);
+    });
+    ordered.forEach((key, idx) => {
+        map.set(key, idx % 7);   // 7 пастельных тонов в палитре
+    });
+    map.set('', '');             // пустая метка → без класса
+    return map;
+}
+
+async function _patchGroupOffset(groupId, payload) {
+    try {
+        await api.patch(`/admin/groups/${groupId}`, payload);
+        if (currentEditorEventId) {
+            await renderAdminEditor(currentEditorEventId, true);
+        }
+    } catch (e) {
+        console.error('_patchGroupOffset:', e);
+        showError('Не удалось сохранить параметры группы');
+    }
+}
+
 async function renderAdminEditor(eventId, isSilentUpdate = false) {
     const focusId    = isSilentUpdate ? document.activeElement?.id    : null;
     const focusValue = isSilentUpdate ? document.activeElement?.value : null;
@@ -280,10 +326,17 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
         let globalIndex = 1;
         const colspan   = visibleCols.length + 3; // чекбокс + № + столбцы + действия
 
+        // Палитра-маппинг по time_offset: одинаковые метки → одинаковый
+        // пастельный фон. Подробности в _computeTierMap / CSS .g-tier-N.
+        const tierMap = _computeTierMap(data.groups || []);
+
         const renderGroup = (group) => {
             const isSupp = !!group.is_supplementary;
+            const tier   = tierMap.get(group.time_offset || '') ?? '';
+            const tierCls = tier === '' ? '' : ` g-tier-${tier}`;
+
             const slotRows = group.slots.map(slot => `
-                <tr data-slot-id="${slot.id}" data-version="${slot.version || 1}">
+                <tr class="g-slot-row${tierCls}" data-slot-id="${slot.id}" data-group-id="${group.id}" data-version="${slot.version || 1}">
                     <td style="text-align:center;">
                         <input type="checkbox" class="editor-row-check" data-slot-check="${slot.id}">
                     </td>
@@ -313,11 +366,36 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
                 ? 'Перенести группу в основной список'
                 : 'Перенести группу в дополнительный список (отдельная таблица в Word)';
 
+            const isTomorrow = (group.duty_day_offset || 0) === 1;
+            const dayLabel   = isTomorrow ? 'Завтра' : 'Сегодня';
+            const dayTitle   = isTomorrow
+                ? 'Слоты группы заполняются нарядом следующего дня. Нажмите для переключения.'
+                : 'Слоты группы заполняются нарядом текущего дня. Нажмите для переключения.';
+            const dayCls     = isTomorrow ? 'btn-outlined' : 'btn-text';
+
             return `
-                <tr class="group-header">
+                <tr class="group-header${tierCls}" data-group-id="${group.id}">
                     <td colspan="${colspan}">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span class="group-header__name">${esc(group.name)}</span>
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
+                                <span class="group-header__name">${esc(group.name)}</span>
+                                <input type="text" class="group-time-offset-input"
+                                       data-group-id="${group.id}"
+                                       value="${esc(group.time_offset || '')}"
+                                       placeholder="Ч+1.00"
+                                       title="Метка времени готовности (свободная строка). Группы с одинаковой меткой получают одинаковый цвет."
+                                       style="width:90px; padding:2px 6px; font-size:0.78rem;
+                                              border:1px solid var(--md-outline-variant);
+                                              border-radius:4px; background:transparent;
+                                              font-family:var(--md-font-mono);">
+                                <button class="btn btn-xs ${dayCls} group-day-toggle-btn"
+                                        data-group-id="${group.id}"
+                                        data-day-offset="${isTomorrow ? 1 : 0}"
+                                        title="${dayTitle}"
+                                        type="button">
+                                    Наряд: ${dayLabel}
+                                </button>
+                            </div>
                             <div style="display:flex; gap:6px;">
                                 <button class="btn btn-success btn-xs group-add-row-btn" data-group-id="${group.id}" title="Добавить пустую строку в группу">+ Строку</button>
                                 <button class="btn btn-outlined btn-xs group-toggle-supp-btn" data-group-id="${group.id}" data-make-supp="${isSupp ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
@@ -350,6 +428,10 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
         }
 
         el('master-tbody').innerHTML = tableHtml;
+
+        // Подсветка дубликатов: одно ФИО в нескольких слотах одного списка.
+        const dupReport = applyDuplicateHighlight(el('master-tbody'), data.groups || []);
+        renderDuplicatesBanner(el('editor-duplicates-banner'), dupReport);
 
         _bindBulkEditor();
 
@@ -1795,6 +1877,31 @@ export function listenForUpdates() {
             const makeSupp = toggleSuppBtn.dataset.makeSupp === '1';
             toggleGroupSupplementary(toggleSuppBtn.dataset.groupId, makeSupp);
             return;
+        }
+        // Toggle duty_day_offset: переключаем между «сегодня» (0) и «завтра» (1).
+        const dayBtn = e.target.closest('.group-day-toggle-btn');
+        if (dayBtn) {
+            const next = dayBtn.dataset.dayOffset === '1' ? 0 : 1;
+            _patchGroupOffset(dayBtn.dataset.groupId, { duty_day_offset: next });
+            return;
+        }
+    });
+
+    // Сохранение time_offset при потере фокуса/Enter — без рендер-каскада.
+    el('master-tbody')?.addEventListener('change', (e) => {
+        const offsetInput = e.target.closest('.group-time-offset-input');
+        if (offsetInput) {
+            _patchGroupOffset(offsetInput.dataset.groupId, {
+                time_offset: offsetInput.value.trim(),
+            });
+        }
+    });
+    el('master-tbody')?.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        const offsetInput = e.target.closest('.group-time-offset-input');
+        if (offsetInput) {
+            e.preventDefault();
+            offsetInput.blur();
         }
     });
 

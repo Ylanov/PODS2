@@ -15,6 +15,11 @@ class GroupBase(BaseModel):
     # is_supplementary=True — группа выводится отдельной таблицей под
     # основным списком (например, водители в ГРОЗА-555). Дефолт False.
     is_supplementary: bool = False
+    # Метка времени готовности (отображается рядом с названием, влияет
+    # на цвет группы). Свободная строка вида «Ч+0.10», «Ч+1.00».
+    time_offset:     str  = ""
+    # Какой день наряда подставлять (0 = сегодня, 1 = завтра).
+    duty_day_offset: int  = 0
 
 
 class GroupCreate(GroupBase):
@@ -27,6 +32,8 @@ class GroupUpdate(BaseModel):
     name:             Optional[str]  = None
     order_num:        Optional[int]  = None
     is_supplementary: Optional[bool] = None
+    time_offset:      Optional[str]  = None
+    duty_day_offset:  Optional[int]  = None
 
 
 class GroupResponse(GroupBase):

@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -657,8 +657,16 @@ async def instantiate_template(
 
         weekday_str = WEEKDAYS[target_date.weekday()]
 
-        # Ищем кто в наряде на эту дату — заполняем слоты сразу при создании
-        duty_map = _get_duty_map_for_date(db, target_date)
+        # Карты «кто в наряде» по дням наряда — лениво кэшируем для каждого
+        # уникального duty_day_offset, чтобы не делать запрос на каждую группу.
+        duty_maps: dict[int, dict] = {}
+
+        def _duty_map(offset: int) -> dict:
+            if offset not in duty_maps:
+                duty_maps[offset] = _get_duty_map_for_date(
+                    db, target_date + timedelta(days=offset),
+                )
+            return duty_maps[offset]
 
         new_event = Event(
             title=f"{template.title} ({target_date.strftime('%d.%m.%Y')}, {weekday_str})",
@@ -676,9 +684,14 @@ async def instantiate_template(
                 event_id=new_event.id,
                 name=group.name,
                 order_num=group.order_num,
+                is_supplementary=getattr(group, "is_supplementary", False),
+                time_offset=getattr(group, "time_offset", "") or "",
+                duty_day_offset=int(getattr(group, "duty_day_offset", 0) or 0),
             )
             db.add(new_group)
             db.flush()
+
+            duty_map = _duty_map(new_group.duty_day_offset)
 
             for slot in group.slots:
                 person_on_duty = duty_map.get(slot.position_id) if slot.position_id else None
@@ -735,6 +748,8 @@ async def create_group_in_event(
         name=group_in.name,
         order_num=group_in.order_num,
         is_supplementary=group_in.is_supplementary,
+        time_offset=group_in.time_offset,
+        duty_day_offset=group_in.duty_day_offset,
     )
     db.add(new_group)
     db.commit()
@@ -821,6 +836,8 @@ def get_full_event_table(
             "name":             g.name,
             "order_num":        g.order_num,
             "is_supplementary": bool(getattr(g, "is_supplementary", False)),
+            "time_offset":      getattr(g, "time_offset", "") or "",
+            "duty_day_offset":  int(getattr(g, "duty_day_offset", 0) or 0),
             "slots":            slots_data,
         })
 
@@ -851,11 +868,15 @@ async def add_slot_to_group(
         raise HTTPException(status_code=404, detail="Группа не найдена")
 
     # При добавлении новой строки — проверяем наряд на дату списка
+    # Со сдвигом по duty_day_offset группы: для групп с большим временем
+    # готовности подставляем уже завтрашний наряд (event.date + 1).
     person_on_duty = None
     if slot_in.position_id:
         event = db.query(Event).filter(Event.id == group.event_id).first()
         if event and event.date:
-            duty_map = _get_duty_map_for_date(db, event.date)
+            offset = int(getattr(group, "duty_day_offset", 0) or 0)
+            target = event.date + timedelta(days=offset)
+            duty_map = _get_duty_map_for_date(db, target)
             person_on_duty = duty_map.get(slot_in.position_id)
 
     new_slot = Slot(
@@ -1096,13 +1117,16 @@ async def update_slot(
     ):
         event = slot.group.event
         if event and event.date:
-            duty_map = _get_duty_map_for_date(db, event.date)
+            offset = int(getattr(slot.group, "duty_day_offset", 0) or 0)
+            target = event.date + timedelta(days=offset)
+            duty_map = _get_duty_map_for_date(db, target)
             person_on_duty = duty_map.get(new_position_id)
             if person_on_duty:
                 slot.full_name = person_on_duty.full_name
                 slot.rank      = person_on_duty.rank or slot.rank
                 print(f"[duty→update_slot] slot_id={slot_id} "
                       f"pos {old_position_id}→{new_position_id} "
+                      f"day_offset={offset} "
                       f"→ '{person_on_duty.full_name}'")
 
     slot.version += 1

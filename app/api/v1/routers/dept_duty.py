@@ -16,7 +16,7 @@
   POST   /schedules/{id}/marks                   – поставить/снять + автозаполнение
 """
 
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
@@ -405,19 +405,31 @@ async def toggle_my_mark(
     affected_event_ids = set()
 
     if schedule.position_id:
-        events_on_date = (
+        # Группа с duty_day_offset=N берёт наряд на event.date + N. Чтобы
+        # отметка наряда на дату D попала в правильные слоты, ищем события
+        # как на дату D (offset=0), так и на дату D-1 (offset=1).
+        candidate_event_dates = [
+            payload.duty_date,
+            payload.duty_date - timedelta(days=1),
+        ]
+        events_in_window = (
             db.query(Event)
             .filter(
-                Event.date        == payload.duty_date,
+                Event.date.in_(candidate_event_dates),
                 Event.is_template == False,
                 Event.status      == "active",
             )
             .all()
         )
 
-        for event in events_on_date:
+        for event in events_in_window:
             groups = db.query(Group).filter(Group.event_id == event.id).all()
             for group in groups:
+                offset = int(getattr(group, "duty_day_offset", 0) or 0)
+                # Подставляем только в группы, чей сдвиг указывает на эту дату наряда.
+                if event.date + timedelta(days=offset) != payload.duty_date:
+                    continue
+
                 slots = (
                     db.query(Slot)
                     .filter(

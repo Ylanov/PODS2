@@ -17,6 +17,7 @@
 import { api } from './api.js';
 import { formatRole } from './ui.js';
 import { attach as attachFio } from './fio_autocomplete.js';
+import { applyDuplicateHighlight, renderDuplicatesBanner } from './duplicates.js';
 
 const WEEKDAYS_FULL = [
     'Воскресенье', 'Понедельник', 'Вторник', 'Среда',
@@ -219,16 +220,23 @@ function _renderContent() {
     _setStatus('ok');
 
     let globalIdx = 1;
+    const tierMap = _computeTierMap(_state.groups || []);
+
     const groupsHtml = _state.groups.map(group => {
+        const tier   = tierMap.get(group.time_offset || '') ?? '';
+        const tierCls = tier === '' ? '' : ` g-tier-${tier}`;
+        const offsetLabel = (group.time_offset || '').trim();
+        const dayLabel = (group.duty_day_offset || 0) === 1 ? ' · завтрашний наряд' : '';
+
         const slotRows = (group.slots || []).map(slot => {
-            const row = _renderSlotRow(slot, globalIdx++);
-            return row;
+            return _renderSlotRow(slot, globalIdx++, tierCls);
         }).join('');
 
         return `
-            <tr class="evt-edit__group-row">
+            <tr class="evt-edit__group-row group-header${tierCls}" data-group-id="${group.id}">
                 <td colspan="${_state.columns.length + 2}">
                     <span class="evt-edit__group-name">${_esc(group.name)}</span>
+                    ${offsetLabel ? `<span class="evt-edit__group-tag">${_esc(offsetLabel)}${dayLabel}</span>` : ''}
                 </td>
             </tr>
             ${slotRows}
@@ -236,6 +244,7 @@ function _renderContent() {
     }).join('');
 
     body.innerHTML = `
+        <div id="evt-edit-duplicates-banner" class="hidden"></div>
         <div class="evt-edit__table-wrap">
             <table class="evt-edit__table">
                 <thead>
@@ -254,6 +263,40 @@ function _renderContent() {
 
     _attachFioSuggest();
     _attachAutoSave();
+
+    const dupReport = applyDuplicateHighlight(
+        document.getElementById('evt-edit-tbody'),
+        _state.groups || [],
+    );
+    renderDuplicatesBanner(
+        document.getElementById('evt-edit-duplicates-banner'),
+        dupReport,
+    );
+}
+
+// Зеркало admin.js _computeTierMap — стабильный маппинг time_offset → 0..6.
+function _parseOffsetMinutes(s) {
+    const m = String(s || '').match(/(\d+)\.?(\d{0,2})/);
+    if (!m) return -1;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2] || '0', 10);
+}
+
+function _computeTierMap(groups) {
+    const seen = new Set();
+    for (const g of groups) {
+        const k = (g.time_offset || '').trim();
+        if (k) seen.add(k);
+    }
+    const ordered = Array.from(seen).sort((a, b) => {
+        const ma = _parseOffsetMinutes(a);
+        const mb = _parseOffsetMinutes(b);
+        if (ma !== mb && ma >= 0 && mb >= 0) return ma - mb;
+        return a.localeCompare(b);
+    });
+    const map = new Map();
+    ordered.forEach((k, i) => map.set(k, i % 7));
+    map.set('', '');
+    return map;
 }
 
 function _colMinWidth(c) {
@@ -267,10 +310,10 @@ function _colMinWidth(c) {
 }
 
 // ─── Одна строка-слот ──────────────────────────────────────────────────────
-function _renderSlotRow(slot, idx) {
+function _renderSlotRow(slot, idx, tierCls = '') {
     const cells = _state.columns.map(c => _renderCell(c, slot)).join('');
     return `
-        <tr data-slot-id="${slot.id}" data-version="${slot.version || 1}">
+        <tr class="g-slot-row${tierCls}" data-slot-id="${slot.id}" data-version="${slot.version || 1}">
             <td style="text-align:center; color:var(--md-on-surface-hint); font-size:0.74rem; font-family:var(--md-font-mono);">${idx}</td>
             ${cells}
             <td style="text-align:center;">

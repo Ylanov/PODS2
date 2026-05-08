@@ -87,6 +87,18 @@ class Group(Base):
     # основной (например, водители в ГРОЗА-555). По умолчанию False.
     is_supplementary = Column(Boolean, default=False, nullable=False, server_default="0")
 
+    # Метка времени готовности группы — отображается рядом с названием и
+    # используется для подбора цвета в UI (одинаковые метки → одинаковый
+    # пастельный фон). Свободная строка вида «Ч+0.10», «Ч+1.00», «Ч+3.00».
+    time_offset = Column(String, nullable=False, default="", server_default="")
+
+    # Какой день наряда подставлять в слоты этой группы при автозаполнении:
+    #   0 — сегодняшний наряд (на event.date),
+    #   1 — завтрашний (event.date + 1 день).
+    # «Завтрашний» нужен для групп с большим временем готовности, где к
+    # моменту реакции уже сменится суточный наряд.
+    duty_day_offset = Column(Integer, nullable=False, default=0, server_default="0")
+
     event = relationship("Event", back_populates="groups")
     slots = relationship("Slot",  back_populates="group", cascade="all, delete-orphan")
 
