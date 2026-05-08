@@ -200,5 +200,10 @@ export function logout() {
         .then(m => m.stopDashboard?.())
         .catch(() => { /* игнорируем */ });
 
+    // Останавливаем баннер «Окно подачи» на странице графиков управления
+    import('./dept_duty.js')
+        .then(m => m.stopDeptDutyWindowBanner?.())
+        .catch(() => { /* игнорируем */ });
+
     showView('login-view');
 }

@@ -21,6 +21,9 @@ import {
     updatePrintCover,
     postDutyMark,
 } from './duty_ui.js';
+import { mountDutyWindow } from './duty_window.js';
+
+let _windowBanner = null;
 
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -58,8 +61,23 @@ export function bindDeptDutyEvents() {
     _bindUI();
 }
 
+// Монтаж виджета «Окно подачи». Вызывается из app.js после авторизации.
+export function mountDeptDutyWindowBanner() {
+    if (_windowBanner) _windowBanner.stop();
+    _windowBanner = mountDutyWindow(
+        document.getElementById('dept-duty-window-banner'),
+        { variant: 'banner' },
+    );
+}
+
+// Остановка таймеров баннера — для logout / смены пользователя.
+export function stopDeptDutyWindowBanner() {
+    if (_windowBanner) { _windowBanner.stop(); _windowBanner = null; }
+}
+
 // Загрузка данных — только после авторизации
 export async function loadDeptDutyData() {
+    mountDeptDutyWindowBanner();
     await _loadPositions();
     await loadDeptSchedules();
 }

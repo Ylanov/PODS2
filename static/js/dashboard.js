@@ -7,6 +7,7 @@
 
 import { api } from './api.js';
 import { formatRole } from './ui.js';
+import { mountDutyWindow } from './duty_window.js';
 
 // ─── Состояние ────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ let _calYear      = new Date().getFullYear();
 let _calMonth     = new Date().getMonth() + 1;
 let _calDots      = {};          // {"YYYY-MM-DD": count}
 let _refreshTimer = null;
+let _windowWidget = null;        // handle от mountDutyWindow для stop()
 
 // ─── Публичный API ────────────────────────────────────────────────────────────
 
@@ -23,6 +25,14 @@ export function initDashboard() {
     _renderCalendar();
     loadDashboard();
     _startAutoRefresh();
+
+    // Виджет «Окно подачи графиков». Монтируем один раз — он сам тикает
+    // и обновляется. При logout остановится через stopDashboard().
+    if (_windowWidget) _windowWidget.stop();
+    _windowWidget = mountDutyWindow(
+        document.getElementById('db-window-widget'),
+        { variant: 'card' },
+    );
 }
 
 export async function loadDashboard() {
@@ -78,6 +88,7 @@ function _startAutoRefresh() {
 export function stopDashboard() {
     clearInterval(_refreshTimer);
     _refreshTimer = null;
+    if (_windowWidget) { _windowWidget.stop(); _windowWidget = null; }
 }
 
 // Вызывать из websockets.js при событии update

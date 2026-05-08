@@ -36,6 +36,7 @@ from app.core.duty_approvals import (
     unapprove_month as _unapprove_month,
     get_approval    as _get_approval,
 )
+from app.core.duty_window import is_window_open, WINDOW_START, WINDOW_END
 
 # Весь роутер графиков наряда управлений требует permission "duty".
 # Admin пропускается автоматически (см. require_permission).
@@ -49,6 +50,27 @@ def get_current_department_user(current_user: User = Depends(get_current_user)) 
     if current_user.role not in DEPT_SCOPE_ROLES:
         raise HTTPException(status_code=403, detail="Доступ запрещён")
     return current_user
+
+
+def get_current_department_user_in_window(
+    user: User = Depends(get_current_department_user),
+) -> User:
+    """
+    Как get_current_department_user, но дополнительно проверяет окно подачи
+    09:00–16:00 МСК. Админ — без ограничений (звонки после 16:00 «замените ФИО»).
+    """
+    if user.role == "admin":
+        return user
+    if is_window_open():
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            f"Окно подачи закрыто. Редактирование доступно с "
+            f"{WINDOW_START.strftime('%H:%M')} до "
+            f"{WINDOW_END.strftime('%H:%M')} (МСК)."
+        ),
+    )
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -136,7 +158,7 @@ def list_my_schedules(
 async def create_my_schedule(
     payload: DeptScheduleCreate,
     db:      Session = Depends(get_db),
-    user:    User    = Depends(get_current_department_user),
+    user:    User    = Depends(get_current_department_user_in_window),
 ):
     """Создать график. owner автоматически = текущий пользователь."""
     from app.models.event import Position
@@ -166,7 +188,7 @@ async def create_my_schedule(
 async def delete_my_schedule(
     schedule_id: int,
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user_in_window),
 ):
     s = db.query(DutySchedule).filter(
         DutySchedule.id    == schedule_id,
@@ -212,7 +234,7 @@ async def add_person_to_my_schedule(
     schedule_id: int,
     payload: DeptAddPersonPayload,
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user_in_window),
 ):
     _check_owner(db, schedule_id, user.username)
 
@@ -250,7 +272,7 @@ async def remove_person_from_my_schedule(
     schedule_id: int,
     person_id:   int,
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user_in_window),
 ):
     _check_owner(db, schedule_id, user.username)
     sp = db.query(DutySchedulePerson).filter(
@@ -304,7 +326,7 @@ async def toggle_my_mark(
     schedule_id: int,
     payload:     DeptMarkPayload,
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user_in_window),
 ):
     """
     Поставить или снять отметку наряда.
@@ -457,7 +479,7 @@ def clear_my_marks_by_type(
     year:        int = Query(..., ge=2000, le=2100),
     month:       int = Query(..., ge=1, le=12),
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user_in_window),
 ):
     """
     Массовое снятие отметок одного типа за месяц у графика управления.
@@ -571,7 +593,7 @@ async def approve_schedule_month(
     year:  int = Query(...),
     month: int = Query(...),
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user_in_window),
 ):
     """
     Утвердить месяц — снимает «режим редактирования».
@@ -622,7 +644,7 @@ def unapprove_schedule_month(
     year:  int = Query(...),
     month: int = Query(...),
     db:   Session = Depends(get_db),
-    user: User    = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user_in_window),
 ):
     """
     Вернуть месяц в режим редактирования. Удаляет snapshot (cascade

@@ -718,3 +718,121 @@
     color: var(--md-on-surface-variant);
     padding: 3px 0;
 }
+
+/* ── Виджет «Окно подачи графиков» ────────────────────────────────────────── */
+/* Используется и как карточка в сайдбаре дашборда, и как горизонтальный
+   баннер на странице «Графики наряда» у управлений. */
+
+.duty-window {
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+    background: var(--md-surface);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    transition: border-color 200ms;
+}
+
+.duty-window--card {
+    padding: 12px 14px;
+}
+
+.duty-window--banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    margin-bottom: 12px;
+}
+
+.duty-window__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.duty-window__title {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    flex: 1;
+    letter-spacing: 0.01em;
+}
+
+.duty-window__dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--md-on-surface-hint);
+    flex-shrink: 0;
+}
+
+.duty-window__state {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.duty-window__win {
+    font-size: 0.74rem;
+    color: var(--md-on-surface-variant);
+}
+
+.duty-window__sep {
+    color: var(--md-on-surface-hint);
+    opacity: 0.5;
+}
+
+.duty-window__cd {
+    margin-top: 4px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.duty-window__cd-num {
+    font-family: var(--md-font-mono);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    font-variant-numeric: tabular-nums;
+}
+
+.duty-window__cd-lbl {
+    font-size: 0.7rem;
+    color: var(--md-on-surface-hint);
+}
+
+.duty-window--banner .duty-window__cd {
+    margin-top: 0;
+    margin-left: auto;
+    font-family: var(--md-font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+/* Состояния */
+.duty-window--open {
+    border-color: rgba(29, 158, 117, 0.4);
+    background: rgba(29, 158, 117, 0.06);
+}
+.duty-window--open .duty-window__dot  { background: var(--md-success, #1D9E75); }
+.duty-window--open .duty-window__state { color:    var(--md-success, #1D9E75); }
+
+.duty-window--closed {
+    border-color: rgba(226, 75, 74, 0.4);
+    background: rgba(226, 75, 74, 0.06);
+}
+.duty-window--closed .duty-window__dot  { background: var(--md-error, #E24B4A); }
+.duty-window--closed .duty-window__state { color:    var(--md-error, #E24B4A); }
+
+.duty-window--skel,
+.duty-window--err {
+    color: var(--md-on-surface-hint);
+    font-size: 0.74rem;
+    text-align: center;
+    padding: 14px;
+}
