@@ -59,6 +59,16 @@ async def lifespan(app: FastAPI):
             except Exception as error:
                 print(f"🔥 Unexpected init_db error: {error}")
                 break
+
+        # Автозакрытие просроченных списков (date <= today - 2 дня).
+        # Idempotent — если ничего не нашлось, тихо завершится.
+        try:
+            from app.core.event_lifecycle import expire_past_active_events
+            closed = expire_past_active_events(db)
+            if closed:
+                print(f"📦 Auto-closed {closed} past active event(s)")
+        except Exception as error:
+            print(f"⚠️  expire_past_active_events: {error}")
     finally:
         db.close()
 

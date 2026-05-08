@@ -24,6 +24,7 @@ from app.db.database import get_db
 from app.models.user import User
 from app.models.event import Event, Group, Slot
 from app.api.dependencies import get_current_active_admin
+from app.core.event_lifecycle import expire_past_active_events
 
 router = APIRouter()
 
@@ -36,6 +37,11 @@ def get_dashboard(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_active_admin),
 ):
+    # Перед выдачей дашборда лениво закрываем списки старше grace-периода.
+    # Один UPDATE с фильтром по индексу (is_template, date, status); если
+    # просроченных нет — zero rows affected, стоит ~миллисекунды.
+    expire_past_active_events(db)
+
     """
     Возвращает сводку готовности всех списков за указанную дату.
     Если дата не передана — берёт сегодня.

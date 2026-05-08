@@ -27,7 +27,7 @@
 """
 
 import logging
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -36,23 +36,32 @@ from app.models.event import Event
 
 logger = logging.getLogger(__name__)
 
+# По умолчанию даём 2 дня запаса после даты события, прежде чем перевести
+# в draft. То есть событие на 5 мая закроется только 7 мая (на 2-й день
+# после) — за это время управления успевают доделать заполнение.
+DEFAULT_GRACE_DAYS = 2
 
-def expire_past_active_events(db: Session) -> int:
-    """
-    Переводит все не-шаблонные active-списки с датой < сегодня в draft.
-    Возвращает количество затронутых строк.
 
-    Идемпотентен. Безопасно вызывать при каждом чтении списков —
-    при актуальных данных ничего не меняет.
+def expire_past_active_events(db: Session, grace_days: int = DEFAULT_GRACE_DAYS) -> int:
     """
-    today = date_type.today()
+    Переводит не-шаблонные active-списки в draft, когда с момента даты
+    события прошло >= grace_days дней.
+
+    Условие: today - event.date >= grace_days  ⇔  event.date <= today - grace_days.
+
+    Возвращает количество затронутых строк. Идемпотентен — безопасно
+    вызывать при каждом чтении списков; при актуальных данных ничего
+    не меняет.
+    """
+    today  = date_type.today()
+    cutoff = today - timedelta(days=grace_days)
 
     stmt = (
         update(Event)
         .where(
             Event.is_template == False,   # noqa: E712
             Event.status      == "active",
-            Event.date        < today,
+            Event.date        <= cutoff,
             Event.date.isnot(None),
         )
         .values(status="draft")
@@ -64,7 +73,7 @@ def expire_past_active_events(db: Session) -> int:
     if affected > 0:
         db.commit()
         logger.info(
-            "Auto-deactivated %d past active event(s) (date < %s)",
-            affected, today.isoformat(),
+            "Auto-deactivated %d past active event(s) (date <= %s, grace=%dd)",
+            affected, cutoff.isoformat(), grace_days,
         )
     return affected
