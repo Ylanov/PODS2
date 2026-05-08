@@ -2112,12 +2112,14 @@ export function renderScheduleGrid() {
         const emptyHtml = hasAnything
             ? ''
             : '<div class="sched-day__empty">Шаблоны не выбраны</div>';
+        // Кнопка «Изменить» — когда что-то уже есть (план или созданные списки).
+        // «Выбрать шаблоны» — только когда день полностью пустой.
         const pickBtn = `
             <button class="sched-pick-tpl btn btn-outlined btn-xs"
                     data-day-key="${dayKey}" data-iso="${isoDate}"
                     style="margin-top:6px;width:100%;font-size:0.74rem;"
                     type="button">
-                ${assignedPending.length ? '⚙ Изменить шаблоны' : '+ Выбрать шаблоны'}
+                ${hasAnything ? '⚙ Изменить шаблоны' : '+ Выбрать шаблоны'}
             </button>`;
 
         return `
@@ -2351,6 +2353,20 @@ export function initSchedule() {
             const names = skippedByTpl.map(x => `«${x.name}» (${x.dates.length})`).join(', ');
             window.showSnackbar?.(`Ничего не создано — всё уже сгенерировано: ${names}`, 'error');
         }
+
+        // Очищаем план в localStorage для дней, на которые мы только что
+        // создавали списки. Без этого чипы плана остаются после успешного
+        // создания и сбивают с толку (повторный клик «Создать списки» бэкенд
+        // отбивает дедупом, но визуально кажется будто всё сделано заново).
+        // После очистки на этих днях остаётся только зелёный блок «уже создан»
+        // и кнопка «⚙ Изменить шаблоны» — для добавочных правок.
+        const sched = loadSchedule();
+        dates.forEach(({ dayKey }) => {
+            if ((current[dayKey] ?? []).length > 0) {
+                sched[dayKey] = [];
+            }
+        });
+        saveScheduleToStorage(sched);
 
         await loadEventsDropdowns();
         renderScheduleGrid();
