@@ -41,33 +41,33 @@
     box-shadow: 0 1px 3px rgba(58, 99, 88, 0.2), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 .btn-filled:hover {
-    background: #558c7e;
+    background: var(--md-primary-hover);
     box-shadow: 0 3px 8px rgba(58, 99, 88, 0.22);
     transform: translateY(-1px);
 }
 
 /* Зелёная (идентична filled, более яркая) */
 .btn-success {
-    background: #4a7c6f;
-    color: #ffffff;
-    border-color: #3a6358;
+    background: var(--md-success);
+    color: var(--md-on-primary);
+    border-color: var(--md-primary-dark);
     box-shadow: 0 1px 3px rgba(58, 99, 88, 0.2), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 .btn-success:hover {
-    background: #558c7e;
+    background: var(--md-success-hover);
     box-shadow: 0 3px 8px rgba(58, 99, 88, 0.22);
     transform: translateY(-1px);
 }
 
 /* Красная кнопка удаления */
 .btn-danger {
-    background: #b85450;
-    color: #ffffff;
+    background: var(--md-error);
+    color: var(--md-on-primary);
     border-color: #9e3e3b;
     box-shadow: 0 1px 3px rgba(158, 62, 59, 0.2), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 .btn-danger:hover {
-    background: #c96360;
+    background: var(--md-error-hover);
     box-shadow: 0 3px 8px rgba(158, 62, 59, 0.22);
     transform: translateY(-1px);
 }
@@ -133,9 +133,9 @@
     width: 24px;
     height: 24px;
     border-radius: var(--md-radius-sm);
-    background: #fdf0f0;
-    color: #b85450;
-    border: 1px solid #f0c8c7;
+    background: var(--md-error-light);
+    color: var(--md-error);
+    border: 1px solid var(--md-outline-variant);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -146,9 +146,9 @@
     flex-shrink: 0;
 }
 .btn-tiny-danger:hover {
-    background: #b85450;
-    color: #ffffff;
-    border-color: #b85450;
+    background: var(--md-error);
+    color: var(--md-on-primary);
+    border-color: var(--md-error);
     transform: scale(1.05);
     box-shadow: 0 2px 6px rgba(184, 84, 80, 0.28);
 }

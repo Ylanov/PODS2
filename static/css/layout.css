@@ -14,7 +14,7 @@
 .top-app-bar {
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: var(--z-dropdown);
     background: var(--md-surface);
     border-bottom: 1px solid var(--md-outline-variant);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);

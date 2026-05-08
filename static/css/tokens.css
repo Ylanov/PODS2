@@ -8,6 +8,7 @@
     /* Primary — Refined Slate-Green (вместо синего) */
     --md-primary:            #4a7c6f;
     --md-primary-dark:       #3a6358;
+    --md-primary-hover:      #558c7e;
     --md-primary-light:      #eef4f2;
     --md-on-primary:         #ffffff;
 
@@ -24,8 +25,10 @@
 
     /* Semantic */
     --md-success:            #4a7c6f;
+    --md-success-hover:      #558c7e;
     --md-success-light:      #eef4f2;
     --md-error:              #b85450;
+    --md-error-hover:        #c96360;
     --md-error-light:        #fdf0f0;
     --md-warning:            #b07d3a;
     --md-warning-light:      #fdf6ea;
@@ -91,6 +94,7 @@
 :root[data-theme="dark"] {
     --md-primary:            #6ba89a;
     --md-primary-dark:       #87bcb0;
+    --md-primary-hover:      #87bcb0;
     --md-primary-light:      #1f3530;
     --md-on-primary:         #0f1a17;
 
@@ -104,8 +108,10 @@
     --md-on-surface-hint:    #7c7872;
 
     --md-success:            #6ba89a;
+    --md-success-hover:      #87bcb0;
     --md-success-light:      #1f3530;
     --md-error:              #d97870;
+    --md-error-hover:        #e89388;
     --md-error-light:        #3a1f1d;
     --md-warning:            #d4a060;
     --md-warning-light:      #3a2c18;
@@ -163,8 +169,14 @@ body {
 
 
 /* ─── Focus visible (a11y) ────────────────────────────────── */
+/* Многие компоненты исторически делают `outline: none` для своих :focus
+   состояний (выглядит чище при клике мышью). Это ломает клавиатурную
+   навигацию: пользователь, идущий по Tab, не видит, на каком элементе
+   находится фокус. !important здесь — намеренный override accessibility
+   поверх компонентных стилей; для мыши outline не появляется, потому
+   что :focus-visible срабатывает только при keyboard-focus. */
 :focus-visible {
-    outline: 2px solid var(--md-primary);
+    outline: 2px solid var(--md-primary) !important;
     outline-offset: 2px;
 }
 
