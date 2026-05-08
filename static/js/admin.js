@@ -2037,44 +2037,31 @@ function fmtIso(d) {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// generatedTplIds — множество tpl-id которые уже сгенерированы на текущий день.
-// Передаём в row чтобы пометить опции «уже создан» + дизейблить их.
-// usedInOtherRows — tpl-id уже выбранные в соседних select'ах этого же дня
-// (защита от выбора одного шаблона дважды в один день).
-function buildTemplateRow(dayKey, selectedId, rowIdx, showRemove,
-                          generatedTplIds = new Set(),
-                          usedInOtherRows = new Set()) {
-    const events    = getCachedEvents();
-    const templates = events.filter(e => e.is_template);
-
-    const opts = templates.map(t => {
-        const isSelected  = String(t.id) === String(selectedId);
-        const alreadyGen  = generatedTplIds.has(t.id);
-        const usedInOther = usedInOtherRows.has(String(t.id)) && !isSelected;
-        const disabled    = (alreadyGen || usedInOther) && !isSelected;
-        const suffix      = alreadyGen  ? ' ✓ уже создан'
-                          : usedInOther ? ' · уже выбран в этом дне'
-                          : '';
-        return `<option value="${t.id}"
-                        ${isSelected ? 'selected' : ''}
-                        ${disabled  ? 'disabled'  : ''}>${esc(t.title)}${suffix}</option>`;
+// Чипсы выбранных шаблонов в одной ячейке дня. Нажатие на ✕ — мгновенное
+// удаление и автосохранение в localStorage. Уже сгенерированные на эту дату
+// шаблоны (по source_template_id) помечаются галкой и не имеют кнопки ✕,
+// потому что снять их можно только удалив сам сгенерированный список.
+function _renderDayChips(dayKey, assignedIds, generatedTplIds, tplById) {
+    if (!assignedIds || assignedIds.length === 0) {
+        return '<div class="sched-day__empty">Шаблоны не выбраны</div>';
+    }
+    const chips = assignedIds.map(id => {
+        const t          = tplById.get(String(id));
+        const name       = t ? t.title : `#${id}`;
+        const alreadyGen = generatedTplIds.has(parseInt(id, 10));
+        const cls        = alreadyGen ? 'sched-chip sched-chip--done' : 'sched-chip';
+        const tip        = alreadyGen ? 'Уже создан на эту дату' : 'Будет создан при «Создать списки»';
+        const close      = alreadyGen
+            ? ''
+            : `<button class="sched-chip-x"
+                       data-day-key="${dayKey}" data-tpl-id="${id}"
+                       title="Убрать из плана этого дня" type="button">×</button>`;
+        return `<span class="${cls}" title="${tip}">
+                    <span class="sched-chip__name">${esc(name)}</span>
+                    ${close}
+                </span>`;
     }).join('');
-
-    // Подсвечиваем ряд если выбран шаблон который уже сгенерирован
-    const rowClass = generatedTplIds.has(parseInt(selectedId))
-        ? 'sched-tpl-row sched-tpl-row--already'
-        : 'sched-tpl-row';
-
-    return `
-        <div class="${rowClass}" style="display:flex;gap:4px;align-items:center;margin-bottom:3px;">
-            <select class="sched-day__select" style="flex:1;font-size:0.75rem;padding:3px 6px;">
-                <option value="">— шаблон —</option>
-                ${opts}
-            </select>
-            ${showRemove || rowIdx > 0
-                ? `<button class="sched-tpl-remove btn btn-danger btn-xs" data-day-key="${dayKey}" data-row="${rowIdx}" title="Убрать">✕</button>`
-                : ''}
-        </div>`;
+    return `<div class="sched-day__chips">${chips}</div>`;
 }
 
 export function renderScheduleGrid() {
@@ -2092,6 +2079,8 @@ export function renderScheduleGrid() {
     const weekLabel = el('sched-week-label');
     if (weekLabel) weekLabel.textContent = `${fmtDate(weekStart)} — ${fmtDate(weekEnd)}.${weekEnd.getFullYear()}`;
 
+    const tplById = new Map(events.filter(e => e.is_template).map(t => [String(t.id), t]));
+
     grid.innerHTML = dates.map(({ dayKey, date }) => {
         const dayInfo  = DAY_NAMES.find(d => d.key === dayKey);
         const dt       = new Date(date); dt.setHours(0,0,0,0);
@@ -2102,8 +2091,6 @@ export function renderScheduleGrid() {
 
         const isoDate   = fmtIso(date);
         const generated = events.filter(e => !e.is_template && e.date === isoDate);
-
-        // Set id шаблонов которые уже сгенерированы на эту дату
         const generatedTplIds = new Set(
             generated.map(e => e.source_template_id).filter(Boolean)
         );
@@ -2120,27 +2107,27 @@ export function renderScheduleGrid() {
             ? `<span class="sched-count-badge">${generated.length}</span>`
             : '';
 
-        const assigned = schedule[dayKey] ?? [];
-        // Уже выбранные в других строках этого дня — чтобы запретить выбор
-        // того же шаблона дважды.
-        const buildRows = (items) => {
-            if (!items.length) {
-                return buildTemplateRow(dayKey, '', 0, false, generatedTplIds, new Set());
-            }
-            return items.map((id, i) => {
-                const otherIds = new Set(items.filter((_, j) => j !== i));
-                return buildTemplateRow(dayKey, id, i, items.length > 1,
-                                        generatedTplIds, otherIds);
-            }).join('');
-        };
-        const rows = buildRows(assigned);
+        // Расширяем план дня сгенерированными — чтобы они отображались
+        // как «✓ уже создан» даже если их не было в schedule до этого
+        // (например, если кто-то развернул шаблон вручную из «Создать список»).
+        const assignedRaw = (schedule[dayKey] ?? []).map(String);
+        const assigned    = Array.from(new Set([
+            ...assignedRaw,
+            ...[...generatedTplIds].map(String),
+        ]));
 
-        const addBtn = `<button class="sched-add-tpl btn btn-outlined btn-xs" data-day-key="${dayKey}" style="margin-top:4px;width:100%;font-size:0.7rem;">+ шаблон</button>`;
+        const chipsHtml = _renderDayChips(dayKey, assigned, generatedTplIds, tplById);
+        const pickBtn = `
+            <button class="sched-pick-tpl btn btn-outlined btn-xs"
+                    data-day-key="${dayKey}" data-iso="${isoDate}"
+                    style="margin-top:6px;width:100%;font-size:0.74rem;"
+                    type="button">
+                ${assigned.length ? '⚙ Изменить шаблоны' : '+ Выбрать шаблоны'}
+            </button>`;
 
         return `
             <div class="sched-day${isToday?' sched-day--today':''}${past?' sched-day--past':''}${weekend?' sched-day--weekend':''}"
-                 data-day-key="${dayKey}"
-                 data-gen-tpl-ids="${[...generatedTplIds].join(',')}">
+                 data-day-key="${dayKey}">
                 <div class="sched-day__head">
                     <span class="sched-day__short">${dayInfo.short}</span>
                     <span class="sched-day__date">${fmtDate(date)}</span>
@@ -2148,63 +2135,24 @@ export function renderScheduleGrid() {
                     ${countBadge}
                 </div>
                 ${generatedHtml}
-                <div class="sched-tpl-list" id="tpl-list-${dayKey}">${rows}</div>
-                ${addBtn}
+                ${chipsHtml}
+                ${pickBtn}
             </div>`;
     }).join('');
 
     _bindSchedGridEvents(grid);
-
-    // Вешаем change-handler на select'ы — чтобы при выборе того же шаблона
-    // дважды в одном дне подсветить ошибку сразу (не дожидаясь нажатия
-    // «Сгенерировать»).
-    document.getElementById('sched-grid')?.querySelectorAll('.sched-day__select')
-        .forEach(sel => sel.addEventListener('change', _validateScheduleDay));
 }
 
-// Проверка на дубли шаблонов внутри одного дня — поместили выбор-дубль
-// → красная рамка + tooltip. При генерации бэкенд всё равно отсекёт,
-// но лучше показать пользователю проблему заранее.
-function _validateScheduleDay(e) {
-    const select = e.currentTarget;
-    const list   = select.closest('.sched-tpl-list');
-    if (!list) return;
-
-    const selects = Array.from(list.querySelectorAll('.sched-day__select'));
-    const values  = selects.map(s => s.value).filter(Boolean);
-    const dupSet  = new Set();
-    const seen    = new Set();
-    for (const v of values) {
-        if (seen.has(v)) dupSet.add(v);
-        seen.add(v);
-    }
-
-    selects.forEach(s => {
-        const isDup = s.value && dupSet.has(s.value);
-        s.classList.toggle('sched-day__select--dup', isDup);
-        s.title = isDup ? 'Этот шаблон уже выбран в этом дне' : '';
-    });
-
-    // Также помечаем select если выбрали шаблон уже сгенерированный
-    const day = list.closest('.sched-day');
-    const genIds = (day?.dataset.genTplIds || '').split(',').filter(Boolean);
-    selects.forEach(s => {
-        const isAlready = s.value && genIds.includes(s.value);
-        s.classList.toggle('sched-day__select--already', isAlready);
-        if (isAlready && !s.title) {
-            s.title = 'Этот шаблон уже сгенерирован на эту дату — будет пропущен';
-        }
-    });
-}
 
 function _bindSchedGridEvents(grid) {
+    // Полная перезагрузка обработчиков: клонируем узел чтобы снять старые.
     const fresh = grid.cloneNode(true);
     grid.parentNode.replaceChild(fresh, grid);
     const g = document.getElementById('sched-grid');
 
     g.addEventListener('click', async (e) => {
-        const addBtn    = e.target.closest('.sched-add-tpl');
-        const removeBtn = e.target.closest('.sched-tpl-remove');
+        const pickBtn   = e.target.closest('.sched-pick-tpl');
+        const chipX     = e.target.closest('.sched-chip-x');
         const delGenBtn = e.target.closest('.sched-gen-del-btn');
 
         if (delGenBtn) {
@@ -2227,47 +2175,129 @@ function _bindSchedGridEvents(grid) {
             return;
         }
 
-        if (addBtn) {
-            const dayKey = addBtn.dataset.dayKey;
-            const list   = document.getElementById(`tpl-list-${dayKey}`);
-            if (!list) return;
-            const newRow = document.createElement('div');
-            newRow.innerHTML = buildTemplateRow(dayKey, '', list.querySelectorAll('.sched-tpl-row').length, false);
-            list.appendChild(newRow.firstElementChild);
+        if (chipX) {
+            const dayKey = chipX.dataset.dayKey;
+            const tplId  = String(chipX.dataset.tplId);
+            const sched  = loadSchedule();
+            sched[dayKey] = (sched[dayKey] ?? []).map(String).filter(id => id !== tplId);
+            saveScheduleToStorage(sched);
+            renderScheduleGrid();
+            return;
         }
 
-        if (removeBtn) {
-            const dayKey = removeBtn.dataset.dayKey;
-            const rowIdx = parseInt(removeBtn.dataset.row);
-            const list   = document.getElementById(`tpl-list-${dayKey}`);
-            const rows   = list?.querySelectorAll('.sched-tpl-row');
-            if (!rows) return;
-            if (rows.length <= 1) rows[0].querySelector('select').value = '';
-            else rows[rowIdx]?.remove();
+        if (pickBtn) {
+            _openSchedDayPicker(pickBtn.dataset.dayKey, pickBtn.dataset.iso);
         }
     });
 }
 
-function readScheduleFromGrid() {
-    const schedule = {};
-    DAY_NAMES.forEach(({ key }) => {
-        const list = document.getElementById(`tpl-list-${key}`);
-        if (!list) return;
-        schedule[key] = Array.from(list.querySelectorAll('.sched-day__select')).map(s => s.value).filter(Boolean);
+
+// Модалка выбора шаблонов на день: чекбоксы + сохранение в localStorage.
+function _openSchedDayPicker(dayKeyRaw, isoDate) {
+    if (document.getElementById('sched-picker-overlay')) return;
+
+    const dayKey   = String(dayKeyRaw);
+    const dayInfo  = DAY_NAMES.find(d => String(d.key) === dayKey) || { full: '' };
+    const events   = getCachedEvents();
+    const templates = events.filter(e => e.is_template)
+        .slice()
+        .sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+
+    const generated = events.filter(e => !e.is_template && e.date === isoDate);
+    const generatedTplIds = new Set(
+        generated.map(e => String(e.source_template_id)).filter(Boolean),
+    );
+
+    const schedule = loadSchedule();
+    // Уже выбранные + уже созданные (последние всегда отмечены и залочены).
+    const initSelected = new Set([
+        ...((schedule[dayKey] ?? []).map(String)),
+        ...generatedTplIds,
+    ]);
+
+    const dateNice = isoDate
+        ? `${isoDate.slice(8,10)}.${isoDate.slice(5,7)}.${isoDate.slice(0,4)}`
+        : '';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'sched-picker-overlay';
+    overlay.className = 'gs-overlay';
+    overlay.innerHTML = `
+        <div class="gs-dialog" role="dialog" aria-label="Шаблоны на день"
+             style="max-width:520px; max-height:80vh; display:flex; flex-direction:column;">
+            <div class="gs-header" style="padding:12px 16px;">
+                <strong style="flex:1; font-size:0.95rem;">
+                    ${esc(dayInfo.full || '')}${dateNice ? ` · ${dateNice}` : ''}
+                </strong>
+                <button class="btn btn-text btn-sm" id="sched-pick-close" type="button">✕</button>
+            </div>
+            <div style="padding:10px 16px; flex:1; overflow-y:auto;">
+                <p style="font-size:0.78rem; color:var(--md-on-surface-hint); margin:0 0 10px;">
+                    Отметьте шаблоны, которые нужно развернуть на этот день. Уже созданные
+                    помечены ✓ и снять их можно только удалив сам список из дня.
+                </p>
+                <div class="sched-pick-list">
+                    ${templates.length === 0
+                        ? '<p style="color:var(--md-on-surface-hint); font-size:0.82rem;">В системе нет шаблонов.</p>'
+                        : templates.map(t => {
+                            const idStr = String(t.id);
+                            const isSel = initSelected.has(idStr);
+                            const isGen = generatedTplIds.has(idStr);
+                            return `
+                                <label class="sched-pick-item${isGen ? ' sched-pick-item--done' : ''}">
+                                    <input type="checkbox" value="${idStr}"
+                                           ${isSel ? 'checked' : ''}
+                                           ${isGen ? 'disabled' : ''}>
+                                    <span class="sched-pick-item__name">${esc(t.title)}</span>
+                                    ${isGen ? '<span class="sched-pick-item__badge">уже создан</span>' : ''}
+                                </label>`;
+                        }).join('')}
+                </div>
+            </div>
+            <div style="padding:10px 16px; border-top:1px solid var(--md-outline-variant);
+                        display:flex; gap:8px; justify-content:flex-end;
+                        background:var(--md-surface-container);">
+                <button class="btn btn-outlined btn-sm" id="sched-pick-cancel" type="button">Отмена</button>
+                <button class="btn btn-success btn-sm"  id="sched-pick-save"   type="button">Сохранить</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#sched-pick-close')?.addEventListener('click',  () => overlay.remove());
+    overlay.querySelector('#sched-pick-cancel')?.addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#sched-pick-save')?.addEventListener('click', () => {
+        const checked = Array.from(
+            overlay.querySelectorAll('input[type=checkbox]:checked')
+        ).filter(cb => !cb.disabled).map(cb => cb.value);
+
+        // Сохраняем только не-сгенерированные id; сгенерированные всегда
+        // подмешиваются в render отдельно (см. assigned выше).
+        const toStore = checked.filter(id => !generatedTplIds.has(id));
+        const sched   = loadSchedule();
+        sched[dayKey] = toStore;
+        saveScheduleToStorage(sched);
+        overlay.remove();
+        renderScheduleGrid();
     });
-    return schedule;
+}
+
+// Читает текущий план из localStorage в формате {dayKey: [tplId,...]}.
+// Используется в «Создать списки» вместо чтения из DOM.
+function readScheduleFromGrid() {
+    const sched = loadSchedule();
+    const out = {};
+    DAY_NAMES.forEach(({ key }) => {
+        out[key] = (sched[key] ?? []).map(String);
+    });
+    return out;
 }
 
 export function initSchedule() {
     document.getElementById('sched-prev-week') ?.addEventListener('click',  () => { schedWeekOffset--; renderScheduleGrid(); });
     document.getElementById('sched-next-week') ?.addEventListener('click',  () => { schedWeekOffset++; renderScheduleGrid(); });
     document.getElementById('sched-today-week')?.addEventListener('click',  () => { schedWeekOffset = 0; renderScheduleGrid(); });
-
-    document.getElementById('sched-save-btn')?.addEventListener('click', () => {
-        saveScheduleToStorage(readScheduleFromGrid());
-        window.showSnackbar?.('Расписание сохранено', 'success');
-        renderScheduleGrid();
-    });
 
     document.getElementById('sched-generate-btn')?.addEventListener('click', async () => {
         const current = readScheduleFromGrid();
