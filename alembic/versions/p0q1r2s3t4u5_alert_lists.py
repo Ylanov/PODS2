@@ -23,6 +23,26 @@ depends_on:    Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Защита от orphan-типов в pg_type. Бывает что предыдущая попытка
+    # CREATE TABLE упала после регистрации типа, но до создания самой
+    # таблицы — `pg_type` видит «alert_lists, 2200», а таблицы нет, и
+    # повторный CREATE TABLE IF NOT EXISTS падает с UniqueViolation
+    # (pg_type_typname_nsp_index). DROP TYPE IF EXISTS … CASCADE снимает
+    # такой висяк, на здоровых базах — no-op.
+    for tname in ("alert_lists", "alert_slots", "alert_marks"):
+        op.execute(f"""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_type WHERE typname = '{tname}')
+                   AND NOT EXISTS (
+                       SELECT 1 FROM information_schema.tables
+                        WHERE table_name = '{tname}'
+                   ) THEN
+                    EXECUTE 'DROP TYPE IF EXISTS {tname} CASCADE';
+                END IF;
+            END $$;
+        """)
+
     op.execute("""
         CREATE TABLE IF NOT EXISTS alert_lists (
             id   INTEGER PRIMARY KEY,
