@@ -1148,3 +1148,17 @@ tr.group-header .btn.group-delete-btn:hover {
     border-color: var(--md-error);
 }
 
+
+/* Аннотация замещения под ячейкой ФИО в редакторе списков.
+   Видна только админу, в docx-экспорте не печатается (запись в extra_data,
+   а build_event_docx использует отдельные поля Slot, не extra_data). */
+.slot-substitute-note {
+    margin-top: 2px;
+    font-size: 0.68rem;
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

@@ -153,6 +153,66 @@ def list_templates_for_filter(
     return [{"id": r.id, "title": r.title} for r in rows]
 
 
+@router.get("/templates/{template_id}/groups",
+            summary="Группы конкретного шаблона — для wizard замещений")
+def list_template_groups(
+    template_id: int,
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user),
+):
+    """
+    Группы (id + name + position_name) шаблона. Wizard замещений показывает
+    их как варианты, куда направить замещающий наряд.
+    """
+    tmpl = db.query(Event).filter(
+        Event.id == template_id,
+        Event.is_template == True,    # noqa: E712
+    ).first()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    rows = (
+        db.query(Group)
+        .filter(Group.event_id == template_id)
+        .order_by(Group.order_num, Group.id)
+        .all()
+    )
+    return [
+        {
+            "id":         g.id,
+            "name":       g.name,
+            "time_offset": getattr(g, "time_offset", "") or "",
+        }
+        for g in rows
+    ]
+
+
+@router.get("/departments",
+            summary="Список управлений/отделов для выбора квоты в wizard")
+def list_departments(
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user),
+):
+    """
+    Список username'ов активных управлений и отделов. Используется для
+    выбора квоты в wizard замещений. admin сверху, далее по алфавиту.
+    """
+    users = (
+        db.query(User)
+        .filter(User.is_active == True)   # noqa: E712
+        .all()
+    )
+
+    def _rank(u):
+        if u.role == "admin":      return 0
+        if u.role == "department": return 1
+        if u.role == "unit":       return 2
+        return 3
+
+    sorted_users = sorted(users, key=lambda u: (_rank(u), u.username or ""))
+    return [u.username for u in sorted_users]
+
+
 @router.get("/positions", summary="Получить список должностей для выпадающего меню")
 def get_dept_positions(
     db: Session = Depends(get_db),
@@ -754,6 +814,137 @@ def get_approval_status(
     }
 
 
+# ─── Замещения (substitution): wizard перед утверждением ────────────────────
+
+def _conflicts_for_month(db: Session, schedule_id: int, year: int, month: int):
+    """
+    Возвращает список дней, в которых у графика >1 отметки 'N', с полной
+    информацией о каждой отметке (id, person, is_primary, substitute_*).
+
+    Используется и в GET /conflicts (для wizard), и в pre-check approval.
+    """
+    from calendar import monthrange
+    last = monthrange(year, month)[1]
+
+    rows = (
+        db.query(DutyMark, Person)
+        .join(Person, DutyMark.person_id == Person.id)
+        .filter(
+            DutyMark.schedule_id == schedule_id,
+            DutyMark.mark_type   == "N",
+            DutyMark.duty_date   >= date_type(year, month, 1),
+            DutyMark.duty_date   <= date_type(year, month, last),
+        )
+        .order_by(DutyMark.duty_date.asc(), DutyMark.id.asc())
+        .all()
+    )
+
+    # Группируем по дате
+    by_date: dict = {}
+    for mark, person in rows:
+        by_date.setdefault(mark.duty_date.isoformat(), []).append({
+            "mark_id":   mark.id,
+            "person_id": person.id,
+            "person":    person.full_name,
+            "rank":      person.rank,
+            "is_primary":                    bool(mark.is_primary),
+            "substitute_department":         mark.substitute_department,
+            "substitute_template_group_id":  mark.substitute_template_group_id,
+        })
+
+    # Возвращаем только дни с >1 наряда
+    result = []
+    for d, marks in sorted(by_date.items()):
+        if len(marks) > 1:
+            primary_count = sum(1 for m in marks if m["is_primary"])
+            unresolved = (
+                primary_count != 1
+                or any(
+                    not m["is_primary"]
+                    and (not m["substitute_department"]
+                         or not m["substitute_template_group_id"])
+                    for m in marks
+                )
+            )
+            result.append({
+                "date":       d,
+                "marks":      marks,
+                "unresolved": unresolved,
+            })
+    return result
+
+
+@router.get("/schedules/{schedule_id}/conflicts",
+            summary="Дни с >1 нарядов в графике (для wizard замещений)")
+def get_schedule_conflicts(
+    schedule_id: int,
+    year:  int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user),
+):
+    _check_owner(db, schedule_id, user.username)
+    return {
+        "conflicts":  _conflicts_for_month(db, schedule_id, year, month),
+        "year":       year,
+        "month":      month,
+    }
+
+
+class DeptMarkDecision(BaseModel):
+    mark_id:    int
+    is_primary: bool
+    substitute_department:        Optional[str] = None
+    substitute_template_group_id: Optional[int] = None
+
+
+class DeptConflictsResolvePayload(BaseModel):
+    decisions: List[DeptMarkDecision]
+
+
+@router.patch("/schedules/{schedule_id}/conflicts",
+              summary="Сохранить решения wizard'а: кто primary, кто замещает")
+def resolve_schedule_conflicts(
+    schedule_id: int,
+    payload:     DeptConflictsResolvePayload,
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user_in_window),
+):
+    _check_owner(db, schedule_id, user.username)
+
+    if not payload.decisions:
+        return {"updated": 0}
+
+    mark_ids = [d.mark_id for d in payload.decisions]
+    marks = (
+        db.query(DutyMark)
+        .filter(
+            DutyMark.id.in_(mark_ids),
+            DutyMark.schedule_id == schedule_id,
+        )
+        .all()
+    )
+    by_id = {m.id: m for m in marks}
+
+    updated = 0
+    for d in payload.decisions:
+        mark = by_id.get(d.mark_id)
+        if not mark:
+            continue   # mark не наш или удалён — пропускаем
+        if d.is_primary:
+            mark.is_primary = True
+            mark.substitute_department = None
+            mark.substitute_template_group_id = None
+        else:
+            mark.is_primary = False
+            mark.substitute_department = (d.substitute_department or "").strip() or None
+            mark.substitute_template_group_id = d.substitute_template_group_id
+        updated += 1
+
+    db.commit()
+    return {"updated": updated}
+
+
 @router.post("/schedules/{schedule_id}/approval", status_code=201)
 async def approve_schedule_month(
     schedule_id: int,
@@ -768,9 +959,27 @@ async def approve_schedule_month(
     за этот месяц уже существовал (редкий случай: повторное утверждение
     после разблокировки) — старый заменяется новым.
     Админам отправляется уведомление: «<управление> утвердил <график> за <месяц/год>».
+
+    Pre-check: если в месяце есть дни с >1 нарядом, все они должны быть
+    разрешены через wizard (один is_primary, остальные с заполненными
+    substitute_*). Иначе — 409 с сообщением и списком конфликтов.
     """
     schedule = _check_owner(db, schedule_id, user.username)
     _validate_month(year, month)
+
+    # Pre-check: блокируем утверждение если есть нерешённые конфликты
+    conflicts = _conflicts_for_month(db, schedule_id, year, month)
+    unresolved = [c for c in conflicts if c["unresolved"]]
+    if unresolved:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code":      "duty_conflicts_unresolved",
+                "message":   "В графике есть дни с несколькими нарядами — нужно "
+                             "указать, кто из них основной, а кто замещает кого-то.",
+                "conflicts": unresolved,
+            },
+        )
 
     try:
         approval = _approve_month(db, schedule_id, year, month, user.id)

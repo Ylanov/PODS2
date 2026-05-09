@@ -208,7 +208,16 @@ function buildCell(col, slot) {
                 inputId = `cx-${col.key}-${slot.id}`;
                 rawVal  = slot.extra_data?.[col.key] ?? '';
             }
-            return `<td><input id="${inputId}" value="${esc(rawVal)}" placeholder="${esc(col.label)}"></td>`;
+            // Аннотация о замещении («5 Управление (оператор)») — только под
+            // ячейкой ФИО и только когда она есть в extra_data. В docx-экспорт
+            // не идёт. Помогает админу понять, откуда пришёл этот человек.
+            const note = (col.key === 'full_name')
+                ? (slot.extra_data?.substitute_note || '')
+                : '';
+            const noteHtml = note
+                ? `<div class="slot-substitute-note" title="Замещение из графика наряда">↩ ${esc(note)}</div>`
+                : '';
+            return `<td><input id="${inputId}" value="${esc(rawVal)}" placeholder="${esc(col.label)}">${noteHtml}</td>`;
         }
     }
 }

@@ -1540,3 +1540,76 @@ tr:hover .duty-grid__remove-person {
     background: var(--md-surface-container);
     color: var(--md-on-surface);
 }
+
+/* Wizard замещений (substitution) */
+.subst-day {
+    margin-bottom: 14px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    overflow: hidden;
+}
+.subst-day__title {
+    margin: 0;
+    padding: 6px 10px;
+    background: var(--md-surface-container);
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    font-family: var(--md-font-mono);
+}
+
+.subst-day__rows {
+    display: flex;
+    flex-direction: column;
+}
+.subst-row {
+    display: grid;
+    grid-template-columns: minmax(160px, 1.4fr) auto auto minmax(280px, 1.6fr);
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-top: 1px solid var(--md-outline-variant);
+    font-size: 0.82rem;
+}
+.subst-row:first-child { border-top: none; }
+
+.subst-row__person {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.subst-row__person small {
+    color: var(--md-on-surface-hint);
+    font-size: 0.76rem;
+}
+
+.subst-row__radio {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 0.76rem;
+}
+
+.subst-row__placement {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.subst-row__placement select {
+    flex: 1;
+    min-width: 80px;
+    padding: 3px 6px;
+    font-size: 0.76rem;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 4px;
+}
+
+@media (max-width: 700px) {
+    .subst-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+}

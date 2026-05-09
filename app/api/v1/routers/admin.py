@@ -325,6 +325,13 @@ def _get_substitutes_for_date(db: Session, target_date) -> list[dict]:
             "person":                       person,
             "substitute_department":        mark.substitute_department,
             "substitute_template_group_id": mark.substitute_template_group_id,
+            # Должность исходного графика — для аннотации в slot:
+            # "5 Управление (оператор)" чтобы админ видел откуда пришла замена.
+            "schedule_position_name": (
+                schedule.position_name
+                or (schedule.position.name if schedule.position else None)
+                or ""
+            ),
         }
         for mark, schedule, person in rows
     ]
@@ -337,6 +344,10 @@ def _apply_substitute_for_slot(substitutes: list[dict], slot, group) -> bool:
 
     Совпадение: substitute_template_group_id == group.source_group_id
     и substitute_department == slot.department.
+
+    Дополнительно записывает в slot.extra_data ключ substitute_note —
+    компактную аннотацию вида «5 Управление (оператор)». Эта подсказка
+    видна админу в редакторе, в docx-экспорт не попадает.
     """
     src = getattr(group, "source_group_id", None)
     if not src or not slot.department:
@@ -347,6 +358,16 @@ def _apply_substitute_for_slot(substitutes: list[dict], slot, group) -> bool:
             slot.full_name = sub["person"].full_name
             if sub["person"].rank:
                 slot.rank = sub["person"].rank
+            # Аннотация: квота слота + должность исходного графика.
+            note_pos = (sub.get("schedule_position_name") or "").strip()
+            note = (
+                f"{slot.department} ({note_pos})"
+                if note_pos else slot.department
+            )
+            extra = slot.get_extra() if hasattr(slot, "get_extra") else {}
+            extra["substitute_note"] = note
+            if hasattr(slot, "set_extra"):
+                slot.set_extra(extra)
             return True
     return False
 
@@ -958,41 +979,31 @@ async def add_slot_to_group(
     # При добавлении новой строки — проверяем наряд на дату списка
     # Со сдвигом по duty_day_offset группы: для групп с большим временем
     # готовности подставляем уже завтрашний наряд (event.date + 1).
-    # Сначала пробуем замещение для конкретной (source_group_id, department)
-    # — если есть, подставляем его. Иначе fallback на primary по position_id.
-    person_on_duty = None
-    substitute_person = None
+    # Сначала пробуем замещение для конкретной (source_group_id, department) —
+    # если есть, подставляем его (и записываем substitute_note в extra_data).
+    # Иначе fallback на primary по position_id.
+    new_slot = Slot(
+        group_id=group_id,
+        department=slot_in.department,
+        position_id=slot_in.position_id,
+    )
+
     if slot_in.position_id or slot_in.department:
         event = db.query(Event).filter(Event.id == group.event_id).first()
         if event and event.date:
             offset = int(getattr(group, "duty_day_offset", 0) or 0)
             target = event.date + timedelta(days=offset)
 
-            # Поиск замещения
-            src_grp_id = getattr(group, "source_group_id", None)
-            if src_grp_id and slot_in.department:
-                for sub in _get_substitutes_for_date(db, target):
-                    if (sub["substitute_template_group_id"] == src_grp_id
-                            and sub["substitute_department"] == slot_in.department):
-                        substitute_person = sub["person"]
-                        break
+            substitutes = _get_substitutes_for_date(db, target)
+            applied_sub = _apply_substitute_for_slot(substitutes, new_slot, group)
 
-            # Если замещение не подошло — обычный primary-кандидат
-            if not substitute_person and slot_in.position_id:
+            if not applied_sub and slot_in.position_id:
                 duty_map = _get_duty_map_for_date(db, target, event=event)
                 person_on_duty = duty_map.get(slot_in.position_id)
+                if person_on_duty:
+                    new_slot.full_name = person_on_duty.full_name
+                    new_slot.rank      = person_on_duty.rank
 
-    # Замещение имеет приоритет над primary
-    if substitute_person:
-        person_on_duty = substitute_person
-
-    new_slot = Slot(
-        group_id=group_id,
-        department=slot_in.department,
-        position_id=slot_in.position_id,
-        full_name  = person_on_duty.full_name if person_on_duty else None,
-        rank       = person_on_duty.rank      if person_on_duty else None,
-    )
     db.add(new_slot)
     db.commit()
     db.refresh(new_slot)
@@ -1227,29 +1238,27 @@ async def update_slot(
             offset = int(getattr(slot.group, "duty_day_offset", 0) or 0)
             target = event.date + timedelta(days=offset)
 
-            # Сначала ищем замещение для (source_group_id, slot.department)
-            substitute_person = None
-            src_grp_id = getattr(slot.group, "source_group_id", None)
-            if src_grp_id and slot.department:
-                for sub in _get_substitutes_for_date(db, target):
-                    if (sub["substitute_template_group_id"] == src_grp_id
-                            and sub["substitute_department"] == slot.department):
-                        substitute_person = sub["person"]
-                        break
+            # Сначала пытаемся замещение для (source_group_id, slot.department).
+            # Если оно сработало — slot.full_name/rank/extra_data уже
+            # обновлены. Иначе fallback на primary по новой position.
+            substitutes = _get_substitutes_for_date(db, target)
+            applied_sub = _apply_substitute_for_slot(substitutes, slot, slot.group)
 
-            person_on_duty = substitute_person
-            if not person_on_duty:
+            if not applied_sub:
                 duty_map = _get_duty_map_for_date(db, target, event=event)
                 person_on_duty = duty_map.get(new_position_id)
-
-            if person_on_duty:
-                slot.full_name = person_on_duty.full_name
-                slot.rank      = person_on_duty.rank or slot.rank
-                via = "substitute" if substitute_person else "primary"
+                if person_on_duty:
+                    slot.full_name = person_on_duty.full_name
+                    slot.rank      = person_on_duty.rank or slot.rank
+                    print(f"[duty→update_slot] slot_id={slot_id} "
+                          f"pos {old_position_id}→{new_position_id} "
+                          f"day_offset={offset} via=primary "
+                          f"→ '{person_on_duty.full_name}'")
+            else:
                 print(f"[duty→update_slot] slot_id={slot_id} "
                       f"pos {old_position_id}→{new_position_id} "
-                      f"day_offset={offset} via={via} "
-                      f"→ '{person_on_duty.full_name}'")
+                      f"day_offset={offset} via=substitute "
+                      f"→ '{slot.full_name}'")
 
     slot.version += 1
 
