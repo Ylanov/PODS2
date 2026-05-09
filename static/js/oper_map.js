@@ -349,15 +349,19 @@ function _placeBaseMarker() {
 async function _findBase() {
     const q = document.getElementById('om-base-input').value.trim();
     if (!q) return;
-    const result = await _geocode(q);
-    if (!result) return;
-    _baseLat = result.lat;
-    _baseLng = result.lng;
-    document.getElementById('om-base-input').value = result.text;
-    document.getElementById('om-base-hint').textContent =
-        `Найдено: ${result.lat.toFixed(5)}, ${result.lng.toFixed(5)} (нажмите «Сохранить базу»)`;
-    _placeBaseMarker();
-    _map.setView([result.lat, result.lng], 14);
+    await _geocodePick({
+        q,
+        anchorId: 'om-base-input',
+        onPick: (result) => {
+            _baseLat = result.lat;
+            _baseLng = result.lng;
+            document.getElementById('om-base-input').value = result.text;
+            document.getElementById('om-base-hint').textContent =
+                `Найдено: ${result.lat.toFixed(5)}, ${result.lng.toFixed(5)} (нажмите «Сохранить базу»)`;
+            _placeBaseMarker();
+            _map.setView([result.lat, result.lng], 14);
+        },
+    });
 }
 
 async function _saveBase() {
@@ -379,21 +383,104 @@ async function _saveBase() {
 
 // ─── Геокодер ─────────────────────────────────────────────────────────────
 
-async function _geocode(q) {
-    // Ограничиваем bbox Москва+МО — Яндекс отдаёт первый локальный матч.
+const KIND_LABELS = {
+    house:    'дом',
+    street:   'улица',
+    locality: 'нас. пункт',
+    district: 'район',
+    province: 'регион',
+    metro:    'метро',
+    area:     'местность',
+};
+
+async function _geocodeRaw(q) {
+    // Bbox Москва+МО — приоритезирует область, но не отбрасывает результаты
+    // совсем за её краем (rspn=1 был слишком строгим, его убрали в backend).
     const bbox = '35.15,54.25~40.20,56.97';
     try {
         const res = await api.get(`/oper-map/geocode?q=${encodeURIComponent(q)}&bbox=${encodeURIComponent(bbox)}`);
-        const first = res?.results?.[0];
-        if (!first) {
-            window.showSnackbar?.('Адрес не найден', 'error');
-            return null;
-        }
-        return first;
+        return Array.isArray(res?.results) ? res.results : [];
     } catch (err) {
         window.showSnackbar?.(`Геокодер недоступен: ${err?.message || err}`, 'error');
-        return null;
+        return [];
     }
+}
+
+// Открывает выпадашку с вариантами под input'ом. Клик/Enter — onPick.
+async function _geocodePick({ q, anchorId, onPick }) {
+    const results = await _geocodeRaw(q);
+    if (results.length === 0) {
+        window.showSnackbar?.('По этому запросу ничего не найдено', 'error');
+        return;
+    }
+    // Если результат ровно один — применяем сразу, без выпадашки.
+    if (results.length === 1) {
+        onPick(results[0]);
+        return;
+    }
+    _showGeocodeDropdown(anchorId, results, onPick);
+}
+
+function _showGeocodeDropdown(anchorId, results, onPick) {
+    document.getElementById('om-geocode-dropdown')?.remove();
+
+    const anchor = document.getElementById(anchorId);
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+
+    const dd = document.createElement('div');
+    dd.id = 'om-geocode-dropdown';
+    dd.className = 'om-geocode-dropdown';
+    dd.style.cssText = `
+        position:fixed; z-index:10000;
+        top:${rect.bottom + 2}px; left:${rect.left}px;
+        width:${Math.max(rect.width, 280)}px;
+        max-height:300px; overflow-y:auto;
+        background:var(--md-surface,#fff);
+        border:1px solid var(--md-outline-variant,#ccc);
+        border-radius:6px;
+        box-shadow:0 6px 18px rgba(0,0,0,0.18);
+        font-size:0.84rem;
+    `;
+    dd.innerHTML = results.map((r, i) => {
+        const kindLabel = KIND_LABELS[r.kind] || r.kind || '';
+        const kindHtml = kindLabel
+            ? `<span class="om-geocode-kind">${_esc(kindLabel)}</span>`
+            : '';
+        return `
+            <div class="om-geocode-row" data-idx="${i}">
+                <div class="om-geocode-text">${_esc(r.text)}</div>
+                <div class="om-geocode-meta">
+                    ${kindHtml}
+                    <span class="om-geocode-coords">${r.lat.toFixed(4)}, ${r.lng.toFixed(4)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+    document.body.appendChild(dd);
+
+    const close = () => {
+        dd.remove();
+        document.removeEventListener('click', onOutsideClick, true);
+        document.removeEventListener('keydown', onKey);
+    };
+    const onOutsideClick = (e) => {
+        if (!dd.contains(e.target) && e.target !== anchor) close();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+
+    dd.querySelectorAll('.om-geocode-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const idx = parseInt(row.dataset.idx, 10);
+            close();
+            onPick(results[idx]);
+        });
+    });
+
+    setTimeout(() => {
+        document.addEventListener('click', onOutsideClick, true);
+        document.addEventListener('keydown', onKey);
+    }, 0);
 }
 
 
@@ -405,17 +492,21 @@ let _targetLng = null;
 async function _findTarget() {
     const q = document.getElementById('om-target-input').value.trim();
     if (!q) return;
-    const r = await _geocode(q);
-    if (!r) return;
-    _targetLat = r.lat;
-    _targetLng = r.lng;
-    document.getElementById('om-target-input').value = r.text;
-    if (_targetMarker) _map.removeLayer(_targetMarker);
-    _targetMarker = _L.marker([r.lat, r.lng], { title: r.text })
-        .bindPopup(r.text)
-        .addTo(_map);
-    _map.setView([r.lat, r.lng], 14);
-    _showZoneHits(r.lat, r.lng);
+    await _geocodePick({
+        q,
+        anchorId: 'om-target-input',
+        onPick: (r) => {
+            _targetLat = r.lat;
+            _targetLng = r.lng;
+            document.getElementById('om-target-input').value = r.text;
+            if (_targetMarker) _map.removeLayer(_targetMarker);
+            _targetMarker = _L.marker([r.lat, r.lng], { title: r.text })
+                .bindPopup(r.text)
+                .addTo(_map);
+            _map.setView([r.lat, r.lng], 14);
+            _showZoneHits(r.lat, r.lng);
+        },
+    });
 }
 
 function _showZoneHits(lat, lng) {

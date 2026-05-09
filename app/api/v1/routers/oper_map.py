@@ -277,16 +277,28 @@ async def proxy_geocode(
     if not settings.YANDEX_MAPS_API_KEY:
         raise HTTPException(status_code=503, detail="YANDEX_MAPS_API_KEY не задан")
 
+    # Если в запросе нет упоминания Москвы или области — добавляем префикс,
+    # иначе на коротких запросах вроде «Тверская 1» Яндекс может найти
+    # одноимённую улицу в другом регионе. С префиксом результаты заметно
+    # релевантнее.
+    q_lower = q.lower()
+    if not any(w in q_lower for w in ("москва", "московская", "подмосков", "мо ", "мо,")):
+        geocode_q = f"Россия, Москва, {q}"
+    else:
+        geocode_q = q
+
     params = {
         "apikey":  settings.YANDEX_MAPS_API_KEY,
         "format":  "json",
-        "geocode": q,
+        "geocode": geocode_q,
         "lang":    "ru_RU",
-        "results": "10",
+        "results": "20",
     }
+    # bbox без rspn=1 — Яндекс приоритезирует результаты в этой области,
+    # но не отбрасывает совсем близкие за её границей. С rspn=1 геокодер
+    # часто вообще ничего не возвращал даже на корректные адреса в МО.
     if bbox:
-        params["bbox"]  = bbox
-        params["rspn"]  = "1"
+        params["bbox"] = bbox
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get("https://geocode-maps.yandex.ru/1.x/", params=params)
@@ -307,14 +319,18 @@ async def proxy_geocode(
             obj = m["GeoObject"]
             pos = obj["Point"]["pos"].split()  # "lng lat"
             lng, lat = float(pos[0]), float(pos[1])
-            text = (
-                obj.get("metaDataProperty", {})
-                   .get("GeocoderMetaData", {})
-                   .get("text")
-                or obj.get("name")
-                or ""
-            )
-            out.append({"text": text, "lat": lat, "lng": lng})
+            meta = obj.get("metaDataProperty", {}).get("GeocoderMetaData", {})
+            text = meta.get("text") or obj.get("name") or ""
+            kind = meta.get("kind")              # 'house' / 'street' / 'locality' / ...
+            # Точность: дом > улица > населённый пункт > район > регион.
+            # Используется на фронте для сортировки и подсказок пользователю.
+            out.append({
+                "text":        text,
+                "lat":         lat,
+                "lng":         lng,
+                "kind":        kind,
+                "description": obj.get("description") or "",
+            })
         except (KeyError, ValueError, TypeError, IndexError):
             continue
     return {"results": out}
