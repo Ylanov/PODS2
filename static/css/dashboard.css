@@ -845,13 +845,17 @@
    белые с лёгким оттенком. Совместимо со светлой темой; в тёмной теме
    оттенки переопределяются ниже. */
 
-.g-tier-0 { --tier-bg: #eff5f1; --tier-bg-row: #f7faf8; --tier-edge: #b8d4c4; }
-.g-tier-1 { --tier-bg: #eef3f8; --tier-bg-row: #f6f9fc; --tier-edge: #b8cee0; }
-.g-tier-2 { --tier-bg: #f0eff7; --tier-bg-row: #f7f6fb; --tier-edge: #c5c0db; }
-.g-tier-3 { --tier-bg: #f6f1ee; --tier-bg-row: #fbf7f5; --tier-edge: #d9c4b8; }
-.g-tier-4 { --tier-bg: #f3f4ec; --tier-bg-row: #f9faf3; --tier-edge: #cccea5; }
-.g-tier-5 { --tier-bg: #f4eef0; --tier-bg-row: #faf6f7; --tier-edge: #d6bdc4; }
-.g-tier-6 { --tier-bg: #ecf3f4; --tier-bg-row: #f5fafa; --tier-edge: #b3cdcf; }
+/* Тiers — определяем только цвет акцента (вертикальная полоска слева).
+   Заливать строку фоном НЕ нужно: пёстрая раскраска делала input/кнопки
+   в group-header плохо читаемыми. Группировка визуально остаётся за
+   счёт name+chip-ов в шапке и тонких границ — этого достаточно. */
+.g-tier-0 { --tier-edge: #4a8c6a; }
+.g-tier-1 { --tier-edge: #3b6c95; }
+.g-tier-2 { --tier-edge: #5a539b; }
+.g-tier-3 { --tier-edge: #7a5d40; }
+.g-tier-4 { --tier-edge: #767944; }
+.g-tier-5 { --tier-edge: #884b5d; }
+.g-tier-6 { --tier-edge: #406f70; }
 
 tr.group-header.g-tier-0,
 tr.group-header.g-tier-1,
@@ -860,18 +864,8 @@ tr.group-header.g-tier-3,
 tr.group-header.g-tier-4,
 tr.group-header.g-tier-5,
 tr.group-header.g-tier-6 {
-    background: var(--tier-bg) !important;
-    box-shadow: inset 3px 0 0 var(--tier-edge);
-}
-
-tr.g-slot-row.g-tier-0,
-tr.g-slot-row.g-tier-1,
-tr.g-slot-row.g-tier-2,
-tr.g-slot-row.g-tier-3,
-tr.g-slot-row.g-tier-4,
-tr.g-slot-row.g-tier-5,
-tr.g-slot-row.g-tier-6 {
-    background: var(--tier-bg-row);
+    background: var(--md-surface-container) !important;
+    box-shadow: inset 4px 0 0 var(--tier-edge);
 }
 
 tr.g-slot-row.g-tier-0 > td:first-child,
@@ -881,18 +875,107 @@ tr.g-slot-row.g-tier-3 > td:first-child,
 tr.g-slot-row.g-tier-4 > td:first-child,
 tr.g-slot-row.g-tier-5 > td:first-child,
 tr.g-slot-row.g-tier-6 > td:first-child {
-    box-shadow: inset 3px 0 0 var(--tier-edge);
+    box-shadow: inset 4px 0 0 var(--tier-edge);
 }
 
-/* Тёмная тема — те же оттенки, но из приглушённого тёмного спектра */
+/* Тёмная тема — приглушённые акценты для тех же tier'ов */
 @media (prefers-color-scheme: dark) {
-    .g-tier-0 { --tier-bg: #21302a; --tier-bg-row: #1c2622; --tier-edge: #466b58; }
-    .g-tier-1 { --tier-bg: #1f2a36; --tier-bg-row: #1b232c; --tier-edge: #466177; }
-    .g-tier-2 { --tier-bg: #25243a; --tier-bg-row: #1f1e30; --tier-edge: #545278; }
-    .g-tier-3 { --tier-bg: #322823; --tier-bg-row: #28201d; --tier-edge: #6f5446; }
-    .g-tier-4 { --tier-bg: #2c2f1f; --tier-bg-row: #25281a; --tier-edge: #686b3f; }
-    .g-tier-5 { --tier-bg: #322327; --tier-bg-row: #281d20; --tier-edge: #714a55; }
-    .g-tier-6 { --tier-bg: #1f3030; --tier-bg-row: #1a2727; --tier-edge: #466465; }
+    .g-tier-0 { --tier-edge: #5a9d7a; }
+    .g-tier-1 { --tier-edge: #5b8eb8; }
+    .g-tier-2 { --tier-edge: #7c75ba; }
+    .g-tier-3 { --tier-edge: #a07e5d; }
+    .g-tier-4 { --tier-edge: #98995c; }
+    .g-tier-5 { --tier-edge: #ac6d80; }
+    .g-tier-6 { --tier-edge: #5d8e90; }
+}
+
+/* ── Toolbar внутри group-header: time_offset + day-toggle ─────────────── */
+
+.group-header__bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.group-header__left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+.group-header__right {
+    display: flex;
+    gap: 6px;
+}
+
+/* Чип «Ч+3.00» — компактный inline-input в pill-форме. Моноширинный
+   шрифт, явный фон, заметная рамка. При «локке» (когда «завтра») —
+   пунктирная рамка и приглушённый цвет: видно что не редактируется. */
+.group-time-offset-input {
+    width: 88px;
+    padding: 3px 8px;
+    font-size: 0.78rem;
+    font-family: var(--md-font-mono);
+    font-weight: 600;
+    color: var(--md-on-surface);
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 999px;
+    text-align: center;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+.group-time-offset-input:focus {
+    outline: none;
+    border-color: var(--md-primary);
+    background: var(--md-surface);
+}
+.group-time-offset-input--locked {
+    border-style: dashed;
+    color: var(--md-on-surface-variant);
+    background: transparent;
+    cursor: not-allowed;
+}
+
+/* Чип «☀ сегодня / 🌙 завтра» — двухсостоянческий toggle. Сегодня —
+   нейтральный (чтобы не давил), завтра — заметный фиолетовый. */
+.group-day-toggle-btn {
+    padding: 3px 10px;
+    font-size: 0.76rem;
+    font-weight: 500;
+    border-radius: 999px;
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface-variant);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.group-day-toggle-btn:hover {
+    background: var(--md-surface-variant);
+}
+.group-day-toggle-btn--today {
+    /* нейтральный — день обычный, без выделения */
+}
+.group-day-toggle-btn--tomorrow {
+    background: #ede9fe;
+    color: #5b21b6;
+    border-color: #c4b5fd;
+    font-weight: 600;
+}
+.group-day-toggle-btn--tomorrow:hover {
+    background: #ddd6fe;
+}
+@media (prefers-color-scheme: dark) {
+    .group-day-toggle-btn--tomorrow {
+        background: rgba(124, 58, 237, 0.22);
+        color: #c4b5fd;
+        border-color: rgba(124, 58, 237, 0.55);
+    }
+    .group-day-toggle-btn--tomorrow:hover {
+        background: rgba(124, 58, 237, 0.32);
+    }
 }
 
 /* ── Подсветка дубликатов в списке ────────────────────────────────────────── */
@@ -928,16 +1011,32 @@ tr.g-slot-row.is-duplicate select {
     opacity: 0.85;
 }
 
-/* Метка времени готовности рядом с названием группы в evt-edit-модалке */
+/* Метка времени готовности рядом с названием группы в evt-edit-модалке.
+   Чип-pill с моно-шрифтом — явный визуальный признак «Ч+3.00» офсета. */
 .evt-edit__group-tag {
     display: inline-block;
     margin-left: 8px;
-    padding: 1px 6px;
-    border-radius: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
     font-size: 0.72rem;
     font-family: var(--md-font-mono);
-    color: var(--md-on-surface-variant);
-    background: var(--md-surface-container, rgba(0,0,0,0.04));
+    font-weight: 600;
+    color: var(--md-on-surface);
+    background: var(--md-surface-container, rgba(0,0,0,0.05));
+    border: 1px solid var(--md-outline-variant);
+}
+/* Если в подписи есть «завтра» — отдельный фиолетовый акцент. */
+.evt-edit__group-tag--tomorrow {
+    background: #ede9fe;
+    color: #5b21b6;
+    border-color: #c4b5fd;
+}
+@media (prefers-color-scheme: dark) {
+    .evt-edit__group-tag--tomorrow {
+        background: rgba(124, 58, 237, 0.22);
+        color: #c4b5fd;
+        border-color: rgba(124, 58, 237, 0.55);
+    }
 }
 
 /* ── Onboarding-модалка СЭД-моста ─────────────────────────────────────────── */

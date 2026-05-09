@@ -380,7 +380,6 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
             const dayTitle   = isTomorrow
                 ? 'Слоты группы заполняются нарядом следующего дня (метка фиксируется как «Ч+3.00»). Нажмите чтобы переключить на сегодня.'
                 : 'Слоты группы заполняются нарядом текущего дня. Нажмите чтобы переключить на завтра — метка станет «Ч+3.00».';
-            const dayCls     = isTomorrow ? 'btn-outlined' : 'btn-text';
             // При «Завтра» метка времени фиксируется = «Ч+3.00» (input залочен),
             // т.к. логически «завтрашний наряд» — это про 3-часовую готовность.
             // При «Сегодня» метка свободная — для разных мини-офсетов
@@ -393,30 +392,25 @@ async function renderAdminEditor(eventId, isSilentUpdate = false) {
             return `
                 <tr class="group-header${tierCls}" data-group-id="${group.id}">
                     <td colspan="${colspan}">
-                        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-                            <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
+                        <div class="group-header__bar">
+                            <div class="group-header__left">
                                 <span class="group-header__name">${esc(group.name)}</span>
-                                <input type="text" class="group-time-offset-input"
+                                <input type="text"
+                                       class="group-time-offset-input ${isTomorrow ? 'group-time-offset-input--locked' : ''}"
                                        data-group-id="${group.id}"
                                        value="${esc(group.time_offset || '')}"
                                        placeholder="Ч+1.00"
                                        title="${offsetTitle}"
-                                       ${offsetReadonly}
-                                       style="width:90px; padding:2px 6px; font-size:0.78rem;
-                                              border:1px solid var(--md-outline-variant);
-                                              border-radius:4px;
-                                              background:${isTomorrow ? 'var(--md-surface-container, rgba(0,0,0,0.04))' : 'transparent'};
-                                              color:${isTomorrow ? 'var(--md-on-surface-hint)' : 'inherit'};
-                                              font-family:var(--md-font-mono);">
-                                <button class="btn btn-xs ${dayCls} group-day-toggle-btn"
+                                       ${offsetReadonly}>
+                                <button class="group-day-toggle-btn ${isTomorrow ? 'group-day-toggle-btn--tomorrow' : 'group-day-toggle-btn--today'}"
                                         data-group-id="${group.id}"
                                         data-day-offset="${isTomorrow ? 1 : 0}"
                                         title="${dayTitle}"
                                         type="button">
-                                    Наряд: ${dayLabel}
+                                    ${isTomorrow ? '🌙 завтра' : '☀ сегодня'}
                                 </button>
                             </div>
-                            <div style="display:flex; gap:6px;">
+                            <div class="group-header__right">
                                 <button class="btn btn-success btn-xs group-add-row-btn" data-group-id="${group.id}" title="Добавить пустую строку в группу">+ Строку</button>
                                 <button class="btn btn-outlined btn-xs group-toggle-supp-btn" data-group-id="${group.id}" data-make-supp="${isSupp ? '0' : '1'}" title="${toggleTitle}">${toggleLabel}</button>
                                 <button class="btn btn-outlined btn-xs group-delete-btn" data-group-id="${group.id}" title="Удалить группу">✕ Группу</button>

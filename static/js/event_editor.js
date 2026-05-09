@@ -226,17 +226,29 @@ function _renderContent() {
         const tier   = tierMap.get(group.time_offset || '') ?? '';
         const tierCls = tier === '' ? '' : ` g-tier-${tier}`;
         const offsetLabel = (group.time_offset || '').trim();
-        const dayLabel = (group.duty_day_offset || 0) === 1 ? ' · завтрашний наряд' : '';
+        const isTomorrow = (group.duty_day_offset || 0) === 1;
 
         const slotRows = (group.slots || []).map(slot => {
             return _renderSlotRow(slot, globalIdx++, tierCls);
         }).join('');
 
+        // Чип-метка офсета. При «завтра» — фиолетовый акцент через класс.
+        let tagHtml = '';
+        if (offsetLabel || isTomorrow) {
+            const tagCls = isTomorrow
+                ? 'evt-edit__group-tag evt-edit__group-tag--tomorrow'
+                : 'evt-edit__group-tag';
+            const tagText = offsetLabel
+                ? (isTomorrow ? `${offsetLabel} · завтра` : offsetLabel)
+                : 'завтра';
+            tagHtml = `<span class="${tagCls}">${_esc(tagText)}</span>`;
+        }
+
         return `
             <tr class="evt-edit__group-row group-header${tierCls}" data-group-id="${group.id}">
                 <td colspan="${_state.columns.length + 2}">
                     <span class="evt-edit__group-name">${_esc(group.name)}</span>
-                    ${offsetLabel ? `<span class="evt-edit__group-tag">${_esc(offsetLabel)}${dayLabel}</span>` : ''}
+                    ${tagHtml}
                 </td>
             </tr>
             ${slotRows}
