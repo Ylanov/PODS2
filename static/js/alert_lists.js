@@ -74,6 +74,7 @@ function _renderShell(root) {
             </div>
             <button id="al-add-slot" class="btn btn-outlined btn-sm" type="button">+ позиция</button>
             <button id="al-seed"     class="btn btn-outlined btn-sm" type="button" title="Заполнить стандартными позициями (управления, отделы, службы)">📋 Шаблон</button>
+            <button id="al-sync"     class="btn btn-outlined btn-sm" type="button" title="Прописать должности в Базе людей по текущим привязкам в оповещении">🔄 Синхронизировать</button>
             <button id="al-print"    class="btn btn-filled   btn-sm" type="button" title="Скачать список на день в Word">📄 Печать на день</button>
         </div>
         <div id="al-grid-wrap" class="al-grid-wrap"></div>
@@ -559,6 +560,25 @@ async function _openSlotEditor(slotId) {
 }
 
 
+async function _syncPositions() {
+    if (!confirm(
+        'Синхронизировать должности в Базе людей?\n\n' +
+        'Для всех привязанных в списках оповещения людей у них в карточке ' +
+        'будет прописана соответствующая должность (по AlertPosition.title). ' +
+        'Это разовая операция для починки данных — обычно синхронизация ' +
+        'идёт автоматически при привязке.'
+    )) return;
+    try {
+        const res = await api.post('/alert-lists/sync-persons-positions', {});
+        const msg = res.updated > 0
+            ? `Обновлено: ${res.updated}, уже было синхронизировано: ${res.skipped}`
+            : `Все ${res.skipped} привязок уже синхронизированы — нечего обновлять`;
+        window.showSnackbar?.(msg, 'success');
+    } catch (err) {
+        window.showSnackbar?.(`Не удалось: ${err?.message || err}`, 'error');
+    }
+}
+
 async function _seedFromTemplate() {
     const totalTpl = 43;
     const existing = _slots.length;
@@ -640,6 +660,7 @@ export async function initAlertLists(rootId) {
     });
     document.getElementById('al-add-slot').addEventListener('click', _addSlot);
     document.getElementById('al-seed').addEventListener('click', _seedFromTemplate);
+    document.getElementById('al-sync').addEventListener('click', _syncPositions);
     document.getElementById('al-print').addEventListener('click', _printDay);
 
     await _loadLists();

@@ -428,6 +428,45 @@ def template_preview():
     return DEFAULT_SLOT_TEMPLATES
 
 
+@router.post("/sync-persons-positions",
+             summary="Синхронизировать должности всех AlertPosition в Базу людей")
+async def sync_persons_positions(db: Session = Depends(get_db)):
+    """
+    Проходит по всем AlertPosition с primary_person_id и переписывает у
+    привязанных Person'ов position_title в соответствие с title должности.
+    Полезно для разовой починки данных, когда часть привязок делалась
+    до new-77 (когда обратной записи в Person ещё не было).
+
+    Возвращает {updated, skipped} — сколько Person'ов реально изменилось
+    и сколько уже было синхронизировано.
+    """
+    rows = (
+        db.query(AlertPosition)
+        .filter(AlertPosition.primary_person_id.isnot(None))
+        .all()
+    )
+    updated_ids: list[int] = []
+    skipped = 0
+    for pos in rows:
+        person = db.query(Person).filter(Person.id == pos.primary_person_id).first()
+        if not person:
+            continue
+        if person.position_title == pos.title:
+            skipped += 1
+            continue
+        person.position_title = pos.title
+        updated_ids.append(person.id)
+    db.commit()
+
+    # Один общий broadcast для всех изменённых; персональные не критичны.
+    if updated_ids:
+        await manager.broadcast({"action": "alert_lists_update"})
+        for pid in updated_ids:
+            await manager.broadcast({"action": "person_update", "person_id": pid})
+
+    return {"updated": len(updated_ids), "skipped": skipped, "total_with_person": len(rows)}
+
+
 @router.post("/{list_id}/slots/seed",
              summary="Заполнить список стандартными позициями (idempotent)")
 async def seed_slots(list_id: int, payload: SeedPayload, db: Session = Depends(get_db)):
