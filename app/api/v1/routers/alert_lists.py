@@ -43,6 +43,64 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_permission("alert_lists"))])
 
 
+# ─── Шаблон позиций по умолчанию ─────────────────────────────────────────────
+# Стандартный набор должностей центра. Применяется через POST /seed —
+# одним кликом фронт может создать всё это в пустом списке. Уже существующие
+# позиции (по совпадению title) пропускаются, чтобы повторный seed работал
+# идемпотентно. Группы упорядочены: руководство ЦЕНТРА → УПРАВЛЕНИЯ →
+# ОТДЕЛЫ И СЛУЖБЫ; sort_order проставляется в порядке массива.
+DEFAULT_SLOT_TEMPLATES: list[dict] = [
+    # Руководство центра
+    {"title": "Первый зам. НЦ",                                "role_kind": "cnc"},
+    {"title": "НШ–заместит. НЦ",                               "role_kind": "cnc"},
+    {"title": "Заместитель НЦ",                                "role_kind": "cnc"},
+    {"title": "Заместитель НЦ по оперативному реагированию",   "role_kind": "cnc"},
+    {"title": "Заместитель НЦ по воспитательной работе",       "role_kind": "cnc"},
+    {"title": "Зам. НЦ по тылу",                               "role_kind": "cnc"},
+    {"title": "Зам. НЦ по вооружению",                         "role_kind": "cnc"},
+    {"title": "Зам. НШ",                                       "role_kind": "cnc"},
+    {"title": "Зам. НШ (по орг.-моб. раб.)",                   "role_kind": "cnc"},
+    {"title": "зам. НШ по оперативной работе",                 "role_kind": "cnc"},
+    # Управления
+    {"title": "1 Управление",                                  "role_kind": "upr"},
+    {"title": "2 Управление",                                  "role_kind": "upr"},
+    {"title": "3 Управление",                                  "role_kind": "upr"},
+    {"title": "4 Управление",                                  "role_kind": "upr"},
+    {"title": "5 Управление",                                  "role_kind": "upr"},
+    {"title": "6 Управление",                                  "role_kind": "upr"},
+    {"title": "7 Управление",                                  "role_kind": "upr"},
+    {"title": "8 Управление",                                  "role_kind": "upr"},
+    # Отделы и группы
+    {"title": "Отдел кадров",                                  "role_kind": "otd"},
+    {"title": "Отдел воспитательной работы",                   "role_kind": "otd"},
+    {"title": "Отдел организационный и комплектования",        "role_kind": "otd"},
+    {"title": "Отдел эксплуатации зданий",                     "role_kind": "otd"},
+    {"title": "Отдел (профессиональной подготовки)",           "role_kind": "otd"},
+    {"title": "Отдел (организации контрактной работы)",        "role_kind": "otd"},
+    {"title": "Нач. отд. – гл. бухгалтер",                     "role_kind": "otd"},
+    {"title": "Начальник отдела-нач. связи",                   "role_kind": "otd"},
+    {"title": "Начальник клуба",                               "role_kind": "otd"},
+    {"title": "Начальник группы-комендант",                    "role_kind": "otd"},
+    # Службы
+    {"title": "Юридическая служба",                            "role_kind": "otd"},
+    {"title": "Психологическая служба",                        "role_kind": "otd"},
+    {"title": "Вещевая служба",                                "role_kind": "otd"},
+    {"title": "Продовольственная служба",                      "role_kind": "otd"},
+    {"title": "Автомобильная служба",                          "role_kind": "otd"},
+    {"title": "Инженерная служба",                             "role_kind": "otd"},
+    {"title": "Воздушно-десантная служба",                     "role_kind": "otd"},
+    {"title": "Служба горючего и смазочных материалов",        "role_kind": "otd"},
+    {"title": "Служба артиллерийского вооружения",             "role_kind": "otd"},
+    {"title": "Служба защиты государственной тайны",           "role_kind": "otd"},
+    {"title": "Служба ППЗ и СР",                               "role_kind": "otd"},
+    {"title": "Служба РХБЗ",                                   "role_kind": "otd"},
+    # Прочее
+    {"title": "ВАИ",                                           "role_kind": "otd"},
+    {"title": "БАЗА (ОБЕСПЕЧЕНИЯ)",                            "role_kind": "otd"},
+    {"title": "Оркестр - Военный дирижер",                     "role_kind": "otd"},
+]
+
+
 # ─── Pydantic ────────────────────────────────────────────────────────────────
 
 class _PersonRef(BaseModel):
@@ -213,6 +271,63 @@ async def delete_slot(slot_id: int, db: Session = Depends(get_db)):
 class ReorderPayload(BaseModel):
     """Новый порядок: массив slot_id в нужной последовательности."""
     slot_ids: List[int]
+
+
+class SeedPayload(BaseModel):
+    """Применить шаблон стандартных позиций. Существующие пропускаются."""
+    pass
+
+
+@router.get("/template/preview", response_model=List[dict],
+            summary="Получить шаблон стандартных позиций (для preview)")
+def template_preview():
+    return DEFAULT_SLOT_TEMPLATES
+
+
+@router.post("/{list_id}/slots/seed",
+             summary="Заполнить список стандартными позициями (idempotent)")
+async def seed_slots(list_id: int, payload: SeedPayload, db: Session = Depends(get_db)):
+    """
+    Создаёт в указанном списке все позиции из DEFAULT_SLOT_TEMPLATES,
+    которые в нём ещё отсутствуют (по совпадению title — case-sensitive).
+    Уже существующие — не трогаем.
+
+    Порядок sort_order — продолжается от текущего максимума, чтобы новые
+    позиции легли в конец и не перемешали ручные правки.
+    """
+    if not db.query(AlertList).filter(AlertList.id == list_id).first():
+        raise HTTPException(status_code=404, detail="Список не найден")
+
+    existing_titles = {
+        s.title for s in db.query(AlertSlot.title).filter(AlertSlot.list_id == list_id).all()
+    }
+    max_order = (
+        db.query(AlertSlot.sort_order)
+        .filter(AlertSlot.list_id == list_id)
+        .order_by(AlertSlot.sort_order.desc())
+        .first()
+    )
+    next_order = (max_order[0] + 1) if max_order else 0
+
+    created = 0
+    skipped = 0
+    for tpl in DEFAULT_SLOT_TEMPLATES:
+        if tpl["title"] in existing_titles:
+            skipped += 1
+            continue
+        slot = AlertSlot(
+            list_id=list_id,
+            title=tpl["title"],
+            role_kind=tpl["role_kind"],
+            sort_order=next_order,
+        )
+        db.add(slot)
+        next_order += 1
+        created += 1
+
+    db.commit()
+    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
+    return {"created": created, "skipped": skipped, "total": created + skipped}
 
 
 @router.put("/{list_id}/slots/reorder", summary="Переупорядочить слоты списка (drag-n-drop)")

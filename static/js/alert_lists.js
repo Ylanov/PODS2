@@ -76,6 +76,7 @@ function _renderShell(root) {
                 <button class="al-mode-btn" data-mode="clear" type="button">— снять</button>
             </div>
             <button id="al-add-slot" class="btn btn-outlined btn-sm" type="button">+ позиция</button>
+            <button id="al-seed"     class="btn btn-outlined btn-sm" type="button" title="Заполнить стандартными позициями (управления, отделы, службы)">📋 Шаблон</button>
             <button id="al-print"    class="btn btn-filled   btn-sm" type="button" title="Скачать список на день в Word">📄 Печать на день</button>
         </div>
         <div id="al-grid-wrap" class="al-grid-wrap"></div>
@@ -534,6 +535,29 @@ async function _openSlotEditor(slotId) {
 }
 
 
+async function _seedFromTemplate() {
+    const totalTpl = 43;
+    const existing = _slots.length;
+    const msg = existing > 0
+        ? `Дополнить список «${_lists.find(l => l.id === _activeList)?.name}» стандартными позициями?\n\n` +
+          `В шаблоне ${totalTpl} позиций. Уже существующие (${existing}) пропустятся, ` +
+          `новые добавятся в конец. После — назначите ФИО кликом по строке.`
+        : `Заполнить список «${_lists.find(l => l.id === _activeList)?.name}» стандартными позициями?\n\n` +
+          `Будет создано до ${totalTpl} позиций (управления, отделы, службы, руководство центра). ` +
+          `Затем останется только привязать ФИО к каждой строке.`;
+    if (!confirm(msg)) return;
+    try {
+        const res = await api.post(`/alert-lists/${_activeList}/slots/seed`, {});
+        const summary = res.skipped > 0
+            ? `Добавлено: ${res.created}, пропущено (уже было): ${res.skipped}`
+            : `Добавлено ${res.created} позиций`;
+        window.showSnackbar?.(summary, 'success');
+        await _loadAndRender();
+    } catch (err) {
+        window.showSnackbar?.(`Не удалось: ${err?.message || err}`, 'error');
+    }
+}
+
 async function _addSlot() {
     const title = prompt('Название новой позиции (например, «Начальник 5 управления»):');
     if (!title) return;
@@ -591,6 +615,7 @@ export async function initAlertLists(rootId) {
         });
     });
     document.getElementById('al-add-slot').addEventListener('click', _addSlot);
+    document.getElementById('al-seed').addEventListener('click', _seedFromTemplate);
     document.getElementById('al-print').addEventListener('click', _printDay);
 
     await _loadLists();
