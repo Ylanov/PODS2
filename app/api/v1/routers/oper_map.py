@@ -360,18 +360,23 @@ _VENDOR_MIME = {
 }
 
 
-@public_router.get("/vendor/{name}", summary="Прокси для статики Leaflet (через CDN→диск кеш)")
+@public_router.get("/vendor/{name:path}", summary="Прокси для статики Leaflet (через CDN→диск кеш)")
 async def proxy_vendor(name: str):
-    upstream = _VENDOR_FILES.get(name)
+    # Leaflet парсит leaflet.css и считает что иконки лежат рядом в images/.
+    # Поэтому в одних случаях он просит '/vendor/marker-icon.png' (по нашему
+    # mergeOptions), в других — '/vendor/images/marker-icon.png' (его дефолт).
+    # Поддерживаем оба варианта: нормализуем ключ — снимаем префикс images/.
+    key = name.removeprefix("images/")
+    upstream = _VENDOR_FILES.get(key)
     if not upstream:
         raise HTTPException(status_code=404, detail="Файл не в whitelist")
 
     cache_dir = settings.OPER_MAP_TILE_CACHE_DIR
     cache_path: Optional[Path] = None
     if cache_dir:
-        cache_path = Path(cache_dir) / "_vendor" / name
+        cache_path = Path(cache_dir) / "_vendor" / key
 
-    ext = os.path.splitext(name)[1].lower()
+    ext = os.path.splitext(key)[1].lower()
     media_type = _VENDOR_MIME.get(ext, "application/octet-stream")
     headers = {"Cache-Control": "public, max-age=604800"}
 
@@ -399,6 +404,70 @@ async def proxy_vendor(name: str):
             logger.warning("oper_map: vendor cache write failed: %s", exc)
 
     return Response(content=data, media_type=media_type, headers=headers)
+
+
+# ─── Прокси: Suggest API (автоподсказки как в Я.Картах) ──────────────────────
+#
+# Геокодер даёт «адрес → координаты». Для UX «как в Яндексе» нужны автоподсказки
+# при наборе — это другой API: suggest-maps.yandex.ru. Возвращает массив строк
+# с title/subtitle, фронт показывает их выпадашкой при печати в input'е.
+#
+# По правилам Яндекса для Suggest API нужен отдельный тариф «Геосаджест», но
+# часто базовый ключ для геокодера работает. Если придёт 403 — фронт молча
+# деградирует к обычному поиску по Enter (без подсказок).
+
+@router.get("/suggest", summary="Прокси Яндекс Suggest: автоподсказки адресов")
+async def proxy_suggest(q: str = Query(..., min_length=2, max_length=200)):
+    if not settings.YANDEX_MAPS_API_KEY:
+        raise HTTPException(status_code=503, detail="YANDEX_MAPS_API_KEY не задан")
+
+    params = {
+        "apikey":        settings.YANDEX_MAPS_API_KEY,
+        "text":          q,
+        "lang":          "ru_RU",
+        "results":       "10",
+        # Центр Москвы + охват МО (ull = lat,lng центра, spn = размах в градусах).
+        # Подсказки в этой области приоритезируются, но дальние тоже возвращаются.
+        "ll":            "37.6173,55.7558",
+        "spn":           "5,3",
+        "print_address": "1",
+        "attrs":         "uri",
+        "types":         "geo,biz",   # адреса/места + организации
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get("https://suggest-maps.yandex.ru/v1/suggest", params=params)
+            if r.status_code in (401, 403):
+                # ключ не имеет прав на Suggest — фронт молча деградирует
+                raise HTTPException(status_code=403, detail="Suggest API недоступен для текущего ключа")
+            r.raise_for_status()
+            data = r.json()
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        logger.warning("oper_map: suggest failed q=%r: %s", q, exc)
+        raise HTTPException(status_code=502, detail="Suggest API недоступен")
+
+    out = []
+    for item in data.get("results", []):
+        try:
+            title = (item.get("title") or {}).get("text") or ""
+            sub   = (item.get("subtitle") or {}).get("text") or ""
+            addr  = ((item.get("address") or {}).get("formatted_address") or "")
+            tags  = item.get("tags") or []
+            uri   = item.get("uri") or ""
+            if not title:
+                continue
+            out.append({
+                "title":    title,
+                "subtitle": sub,
+                "address":  addr,
+                "tags":     tags,
+                "uri":      uri,
+            })
+        except (KeyError, TypeError):
+            continue
+    return {"results": out}
 
 
 # ─── Прокси: OSRM-маршрут ────────────────────────────────────────────────────

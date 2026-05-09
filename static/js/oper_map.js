@@ -484,6 +484,119 @@ function _showGeocodeDropdown(anchorId, results, onPick) {
 }
 
 
+// ─── Автоподсказки при наборе (Suggest API) ──────────────────────────────
+//
+// Привязывается к input'у. На каждый ввод (debounce 250ms) дёргает
+// /oper-map/suggest, рисует выпадашку под полем. Клик по подсказке —
+// делает обычный геокодер по её тексту чтобы получить точные координаты,
+// затем зовёт onPick. Esc/клик вне — закрывает.
+//
+// Если бэк вернул 403 (ключ не поддерживает Suggest) — флаг suggest
+// отключается до конца сессии и input работает только по Enter.
+
+let _suggestDisabled = false;
+const _suggestState = new WeakMap();   // input → {timer, lastQuery, abortController}
+
+function _attachSuggest(inputId, onPick) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    _suggestState.set(input, { timer: null });
+
+    input.addEventListener('input', () => {
+        if (_suggestDisabled) return;
+        const state = _suggestState.get(input);
+        clearTimeout(state.timer);
+        const q = input.value.trim();
+        if (q.length < 2) {
+            _hideSuggestDropdown();
+            return;
+        }
+        state.timer = setTimeout(() => _runSuggest(input, q, onPick), 250);
+    });
+
+    input.addEventListener('blur', () => {
+        // Чуть-чуть задержки — дать клику по элементу выпадашки сработать.
+        setTimeout(_hideSuggestDropdown, 150);
+    });
+}
+
+async function _runSuggest(input, q, onPick) {
+    let res;
+    try {
+        res = await api.get(`/oper-map/suggest?q=${encodeURIComponent(q)}`);
+    } catch (err) {
+        if (err?.status === 403) {
+            // ключ не поддерживает Suggest — больше не пытаемся
+            _suggestDisabled = true;
+            console.warn('[oper_map] Suggest API недоступен для текущего ключа Яндекса — поиск работает только по Enter');
+            return;
+        }
+        return;   // прочие ошибки молча игнорируем (некритично)
+    }
+    const items = Array.isArray(res?.results) ? res.results : [];
+    if (items.length === 0) {
+        _hideSuggestDropdown();
+        return;
+    }
+    _showSuggestDropdown(input, items, onPick);
+}
+
+function _hideSuggestDropdown() {
+    document.getElementById('om-suggest-dropdown')?.remove();
+}
+
+function _showSuggestDropdown(input, items, onPick) {
+    _hideSuggestDropdown();
+
+    const rect = input.getBoundingClientRect();
+    const dd = document.createElement('div');
+    dd.id = 'om-suggest-dropdown';
+    dd.className = 'om-geocode-dropdown';
+    dd.style.cssText = `
+        position:fixed; z-index:10000;
+        top:${rect.bottom + 2}px; left:${rect.left}px;
+        width:${Math.max(rect.width, 280)}px;
+        max-height:300px; overflow-y:auto;
+        background:var(--md-surface,#fff);
+        border:1px solid var(--md-outline-variant,#ccc);
+        border-radius:6px;
+        box-shadow:0 6px 18px rgba(0,0,0,0.18);
+        font-size:0.84rem;
+    `;
+    dd.innerHTML = items.map((it, i) => `
+        <div class="om-geocode-row" data-idx="${i}">
+            <div class="om-geocode-text">${_esc(it.title)}</div>
+            ${(it.subtitle || it.address)
+                ? `<div class="om-geocode-meta">
+                       <span class="om-geocode-coords">${_esc(it.subtitle || it.address)}</span>
+                   </div>`
+                : ''}
+        </div>
+    `).join('');
+    document.body.appendChild(dd);
+
+    dd.querySelectorAll('.om-geocode-row').forEach(row => {
+        // mousedown а не click — потому что input.blur срабатывает раньше click
+        // и закрывает дропдаун до того как событие дойдёт до строки.
+        row.addEventListener('mousedown', async (e) => {
+            e.preventDefault();
+            const idx = parseInt(row.dataset.idx, 10);
+            const it = items[idx];
+            _hideSuggestDropdown();
+            input.value = it.title;
+            // По выбранной подсказке делаем обычный геокодер чтобы получить
+            // координаты — Suggest API их не возвращает.
+            const results = await _geocodeRaw(it.address || it.title);
+            if (results.length > 0) {
+                onPick(results[0]);
+            } else {
+                window.showSnackbar?.('По выбранной подсказке не удалось определить координаты', 'error');
+            }
+        });
+    });
+}
+
+
 // ─── Цель и маршрут ───────────────────────────────────────────────────────
 
 let _targetLat = null;
@@ -598,6 +711,29 @@ export async function initOperMap(rootId) {
     });
     document.getElementById('om-target-input').addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); _findTarget(); }
+    });
+
+    // Автоподсказки при наборе — UX как у Яндекс.Карт. Если ключ не
+    // поддерживает Suggest API, фронт молча деградирует к поиску по Enter.
+    _attachSuggest('om-base-input', (r) => {
+        _baseLat = r.lat;
+        _baseLng = r.lng;
+        document.getElementById('om-base-input').value = r.text;
+        document.getElementById('om-base-hint').textContent =
+            `Найдено: ${r.lat.toFixed(5)}, ${r.lng.toFixed(5)} (нажмите «Сохранить базу»)`;
+        _placeBaseMarker();
+        _map.setView([r.lat, r.lng], 14);
+    });
+    _attachSuggest('om-target-input', (r) => {
+        _targetLat = r.lat;
+        _targetLng = r.lng;
+        document.getElementById('om-target-input').value = r.text;
+        if (_targetMarker) _map.removeLayer(_targetMarker);
+        _targetMarker = _L.marker([r.lat, r.lng], { title: r.text })
+            .bindPopup(r.text)
+            .addTo(_map);
+        _map.setView([r.lat, r.lng], 14);
+        _showZoneHits(r.lat, r.lng);
     });
 }
 
