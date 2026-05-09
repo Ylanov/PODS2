@@ -6,8 +6,12 @@ from app.db.database import Base
 # Полный список доступных вкладок для управлений.
 # Admin всегда имеет доступ ко всему — его permissions игнорируются.
 # Любая новая вкладка добавляется сюда + в frontend-проверки.
-AVAILABLE_PERMISSIONS = ("lists", "duty", "combat", "tasks", "persons")
-DEFAULT_PERMISSIONS   = list(AVAILABLE_PERMISSIONS)
+AVAILABLE_PERMISSIONS = ("lists", "duty", "combat", "tasks", "persons", "sed_inbox")
+# В DEFAULT_PERMISSIONS sed_inbox НЕ входит: его выдают точечно, только
+# тем сотрудникам (Отдел связи, Аппарат), кому реально нужен дайджест
+# с sed.mchs.ru. Иначе у каждого нового юзера была бы пустая кнопка
+# «Почта» в шапке без задачи.
+DEFAULT_PERMISSIONS   = ["lists", "duty", "combat", "tasks", "persons"]
 
 
 # ── Модули операций (для unit-юзеров) ───────────────────────────────────────

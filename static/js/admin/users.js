@@ -61,6 +61,11 @@ const ALL_PERMISSIONS = [
         key: 'persons', label: 'База людей',      hint: 'Общий справочник людей',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>',
     },
+    {
+        key: 'sed_inbox', label: 'СЭД',
+        hint: 'Кнопка «Почта · СЭД» в шапке: дайджест писем из sed.mchs.ru через расширение браузера',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+    },
 ];
 
 const MODULE_LABELS = {

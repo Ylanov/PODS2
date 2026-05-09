@@ -125,11 +125,19 @@ function _renderList(snap) {
     if (!snap || !snap.sections || snap.sections.length === 0) {
         list.innerHTML = `
             <div style="padding:18px 14px; text-align:center;
-                        color:var(--md-on-surface-hint); font-size:0.82rem;">
+                        color:var(--md-on-surface-hint); font-size:0.82rem;
+                        line-height:1.5;">
                 Дайджест ещё не пришёл.<br>
-                Установите расширение «pods2 СЭД-мост» в браузер,
-                откройте sed.mchs.ru и подождите минуту.
+                <button class="btn btn-success btn-sm" id="sed-onboarding-btn"
+                        type="button" style="margin-top:10px;">
+                    🛠 Подключить расширение
+                </button>
             </div>`;
+        // Кнопка открывает пошаговый wizard. По требованию open via attach
+        // (innerHTML переписывается каждый рефреш).
+        list.querySelector('#sed-onboarding-btn')?.addEventListener('click', () => {
+            openSedOnboarding();
+        });
         if (meta) meta.textContent = '';
         return;
     }
@@ -199,3 +207,156 @@ function _renderItem(item) {
             ${filesHtml ? `<div class="sed-item__files">${filesHtml}</div>` : ''}
         </div>`;
 }
+
+
+// ─── Onboarding wizard ───────────────────────────────────────────────────────
+//
+// Открывается из dropdown'а «Почта · СЭД» когда у пользователя ещё нет
+// snapshot'а. Делает 3 вещи за пользователя:
+//   1. Кнопка «Скачать расширение» → /api/v1/sed/bridge.zip
+//   2. Показывает токен из localStorage с кнопкой «Скопировать»
+//   3. Показывает URL pods2 (текущий window.location.origin) с кнопкой
+//      «Скопировать»
+//
+// После — простая инструкция: распаковать ZIP, browser://extensions/,
+// «Загрузить распакованное», открыть «Настройки», вставить URL+токен,
+// зайти в sed.mchs.ru и нажать «Синхр. сейчас» в popup'е.
+
+export function openSedOnboarding() {
+    if (document.getElementById('sed-onboarding-overlay')) return;
+
+    const token   = localStorage.getItem('token') || '';
+    const pods2Url = window.location.origin;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'sed-onboarding-overlay';
+    overlay.className = 'gs-overlay';
+    overlay.innerHTML = `
+        <div class="gs-dialog sed-onb__dialog" role="dialog"
+             aria-label="Подключение СЭД-моста">
+            <div class="gs-header">
+                <strong style="flex:1;">📬 Подключение СЭД-моста</strong>
+                <button type="button" class="btn btn-text btn-sm" id="sed-onb-close">Закрыть</button>
+            </div>
+
+            <div class="sed-onb__body">
+
+                <p class="sed-onb__intro">
+                    Расширение работает в Яндекс.Браузере под уже залогиненной
+                    сессией пользователя в СЭД. Никакие пароли никуда не уходят —
+                    оно просто читает страницы СЭД и шлёт компактную сводку
+                    в pods2.
+                </p>
+
+                <ol class="sed-onb__steps">
+                    <li>
+                        <h4>Скачайте расширение</h4>
+                        <p>Получите ZIP с папкой расширения.</p>
+                        <a class="btn btn-success btn-sm" id="sed-onb-dl"
+                           href="/api/v1/sed/bridge.zip" download="sed-bridge.zip">
+                            ⬇ Скачать sed-bridge.zip
+                        </a>
+                    </li>
+
+                    <li>
+                        <h4>Распакуйте и подключите в браузере</h4>
+                        <p>
+                            В Яндекс.Браузере откройте
+                            <code>browser://extensions/</code>, включите
+                            «Режим разработчика» (переключатель сверху справа),
+                            нажмите <b>«Загрузить распакованное»</b> и выберите
+                            папку <code>sed-bridge</code> из распакованного архива.
+                        </p>
+                    </li>
+
+                    <li>
+                        <h4>Скопируйте URL pods2 и токен</h4>
+                        <p>В настройках расширения введите эти два значения:</p>
+
+                        <div class="sed-onb__copy">
+                            <label>URL pods2</label>
+                            <div class="sed-onb__copy-row">
+                                <input type="text" id="sed-onb-url" value="${pods2Url}" readonly>
+                                <button class="btn btn-outlined btn-xs" id="sed-onb-copy-url"
+                                        type="button">Скопировать</button>
+                            </div>
+                        </div>
+
+                        <div class="sed-onb__copy">
+                            <label>Токен (Bearer)</label>
+                            <div class="sed-onb__copy-row">
+                                <input type="text" id="sed-onb-token"
+                                       value="${token ? token.slice(0, 20) + '…' : '(не найден)'}"
+                                       readonly>
+                                <button class="btn btn-outlined btn-xs" id="sed-onb-copy-token"
+                                        type="button">Скопировать</button>
+                            </div>
+                            <p class="sed-onb__hint">
+                                Токен — длинная строка, которая обновляется при каждом входе.
+                                Если позже выйдете из pods2 и снова войдёте — токен
+                                поменяется, нужно будет обновить его в расширении.
+                            </p>
+                        </div>
+                    </li>
+
+                    <li>
+                        <h4>Залогиньтесь в СЭД</h4>
+                        <p>
+                            Откройте <a href="https://sed.mchs.ru/" target="_blank"
+                                        rel="noopener noreferrer">sed.mchs.ru</a>
+                            в этом же браузере, войдите как обычно своим логином
+                            и паролем.
+                        </p>
+                    </li>
+
+                    <li>
+                        <h4>Проверьте</h4>
+                        <p>
+                            Кликните на иконку расширения (конверт) в шапке браузера
+                            → <b>«Синхр. сейчас»</b>. В popup'е появится статус
+                            «Дайджест отправлен. Всего непрочитанных: N». В этой
+                            странице pods2 кнопка «Почта · СЭД» в шапке покажет
+                            тот же счётчик.
+                        </p>
+                    </li>
+                </ol>
+            </div>
+
+            <div class="sed-onb__footer">
+                <button class="btn btn-success btn-sm" id="sed-onb-done"
+                        type="button">Готово</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#sed-onb-close')?.addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#sed-onb-done')?.addEventListener('click',  () => overlay.remove());
+
+    overlay.querySelector('#sed-onb-copy-url')?.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(pods2Url);
+            window.showSnackbar?.('URL скопирован', 'success');
+        } catch {
+            window.showSnackbar?.('Не удалось скопировать — выделите вручную', 'error');
+        }
+    });
+
+    overlay.querySelector('#sed-onb-copy-token')?.addEventListener('click', async () => {
+        if (!token) {
+            window.showSnackbar?.('Токен не найден. Перелогиньтесь в pods2.', 'error');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(token);
+            window.showSnackbar?.('Токен скопирован (хранить никому не давать!)', 'success');
+        } catch {
+            window.showSnackbar?.('Не удалось скопировать — выделите вручную', 'error');
+        }
+    });
+}
+
+// Делаем доступным из консоли — если пользователь хочет открыть wizard
+// напрямую без empty-state.
+window.openSedOnboarding = openSedOnboarding;

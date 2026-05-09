@@ -33,10 +33,15 @@ Permission «sed_inbox» защищает оба эндпоинта; require_per
 автоматически пропускает админа без явного permission'а.
 """
 
+import io
+import os
+import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -171,3 +176,49 @@ def delete_snapshot(
         SedInboxSnapshot.user_id == current_user.id
     ).delete(synchronize_session=False)
     db.commit()
+
+
+# ─── Скачивание расширения (zip) ─────────────────────────────────────────────
+
+# Каталог extension/sed-bridge/ относительно корня репо. В docker-образе
+# код лежит в /code (см. Dockerfile WORKDIR), поэтому путь — /code/extension/...
+_EXT_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "extension" / "sed-bridge"
+
+
+@router.get("/bridge.zip",
+            summary="Скачать ZIP расширения 'pods2 — мост СЭД'")
+def download_extension_zip(
+    _user: User = Depends(get_current_user),
+):
+    """
+    Выдаёт ZIP с папкой sed-bridge — пользователь распаковывает локально и
+    подгружает в браузере как «распакованное расширение». Permission уже
+    проверен на уровне роутера (sed_inbox).
+    """
+    if not _EXT_DIR.exists() or not _EXT_DIR.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail="Каталог расширения не найден на сервере. "
+                   "Свяжитесь с администратором pods2.",
+        )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(_EXT_DIR):
+            for fname in files:
+                fpath = Path(root) / fname
+                # Внутри ZIP кладём с префиксом sed-bridge/, чтобы
+                # пользователь распаковал именно папку, а не файлы
+                # вразброс по диску.
+                rel = Path("sed-bridge") / fpath.relative_to(_EXT_DIR)
+                zf.write(fpath, arcname=str(rel))
+    buf.seek(0)
+
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="sed-bridge.zip"',
+            "Cache-Control":       "no-store",
+        },
+    )
