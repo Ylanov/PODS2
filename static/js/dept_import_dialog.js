@@ -234,20 +234,28 @@ function _renderPreview(overlay, data) {
         ${changedCount > 0 ? `
             <h4 class="di-h">Изменения, которые будут применены (${changedCount})</h4>
             <p class="di-sub">
-                Снимите галку напротив строки, чтобы оставить у человека текущее управление.
-                Колонка «Будет» — выпадающий список: можно поправить целевое управление прямо
-                здесь, не правя Word.
+                Колонка «Сейчас» — текущее управление. «Будет» — что предлагает Word
+                (выпадающий список можно поправить).
+                <b>Если у человека уже было управление и оно отличается — галка снята
+                по умолчанию</b> (не перезаписываем без явного согласия). Поставьте её
+                чтобы изменение применилось. Для людей без управления — галка стоит,
+                управление будет добавлено.
             </p>
             <div style="display:flex; gap:8px; margin-bottom:6px; font-size:0.78rem;">
                 <button type="button" class="btn btn-text btn-xs" id="di-apply-toggle-all">
                     Снять/отметить все
                 </button>
+                ${overlay._matchedChanged.some(m => (m.current || '').trim()) ? `
+                    <button type="button" class="btn btn-text btn-xs" id="di-apply-only-new">
+                        Только без управления
+                    </button>
+                ` : ''}
             </div>
             <table class="di-table di-matched-table">
                 <thead>
                     <tr>
                         <th style="width:32px; text-align:center;">
-                            <input type="checkbox" id="di-apply-all" checked
+                            <input type="checkbox" id="di-apply-all"
                                    title="Применить все строки">
                         </th>
                         <th>ФИО</th>
@@ -261,12 +269,20 @@ function _renderPreview(overlay, data) {
                     const opts = departments.map(d =>
                         `<option value="${_esc(d)}"${d === m.department ? ' selected' : ''}>${_esc(d)}</option>`
                     ).join('');
+                    // Безопасное по умолчанию: галка стоит ✓ ТОЛЬКО если у
+                    // человека сейчас нет управления. Если есть и отличается
+                    // — админ должен явно отметить чтобы перезаписать.
+                    const hasCurrent = !!(m.current && m.current.trim());
+                    const checked = hasCurrent ? '' : 'checked';
+                    const rowCls = hasCurrent ? ' di-row--overwrite' : '';
                     return `
-                    <tr data-match-idx="${i}">
+                    <tr data-match-idx="${i}" class="di-matched-row${rowCls}">
                         <td style="text-align:center;">
                             <input type="checkbox" class="di-apply-cb"
-                                   data-apply-idx="${i}" checked
-                                   title="Применить эту строку">
+                                   data-apply-idx="${i}" ${checked}
+                                   title="${hasCurrent
+                                       ? 'У человека уже есть управление — поставьте галку чтобы перезаписать'
+                                       : 'Применить эту строку (управление новое)'}">
                         </td>
                         <td>${_esc(m.full_name)}</td>
                         <td><span class="di-old">${_esc(m.current || '—')}</span></td>
@@ -301,16 +317,45 @@ function _renderPreview(overlay, data) {
 
     // Тоггл «отметить все / снять все» в таблице matched-changes.
     const toggleBtn = overlay.querySelector('#di-apply-toggle-all');
+    const onlyNewBtn = overlay.querySelector('#di-apply-only-new');
     const applyAllCb = overlay.querySelector('#di-apply-all');
     function _setAllChecked(value) {
         overlay.querySelectorAll('.di-apply-cb').forEach(cb => { cb.checked = value; });
-        if (applyAllCb) applyAllCb.checked = value;
+        if (applyAllCb) {
+            applyAllCb.checked = value;
+            applyAllCb.indeterminate = false;
+        }
     }
     toggleBtn?.addEventListener('click', () => {
         const anyChecked = !!overlay.querySelector('.di-apply-cb:checked');
         _setAllChecked(!anyChecked);
     });
+    // «Только без управления» — оставляет галки только у строк где
+    // current пусто (не перезаписывает уже заполненных).
+    onlyNewBtn?.addEventListener('click', () => {
+        overlay.querySelectorAll('.di-matched-row').forEach(row => {
+            const cb = row.querySelector('.di-apply-cb');
+            if (!cb) return;
+            cb.checked = !row.classList.contains('di-row--overwrite');
+        });
+        // Синхронизируем header-чекбокс
+        const all = overlay.querySelectorAll('.di-apply-cb');
+        const on  = overlay.querySelectorAll('.di-apply-cb:checked').length;
+        if (applyAllCb) {
+            applyAllCb.checked = on === all.length && all.length > 0;
+            applyAllCb.indeterminate = on > 0 && on < all.length;
+        }
+    });
     applyAllCb?.addEventListener('change', () => _setAllChecked(applyAllCb.checked));
+
+    // Начальное состояние header-чекбокса: indeterminate если часть строк
+    // отмечена (типичный кейс — часть с current, часть без).
+    if (applyAllCb) {
+        const all = overlay.querySelectorAll('.di-apply-cb');
+        const on  = overlay.querySelectorAll('.di-apply-cb:checked').length;
+        applyAllCb.checked = on === all.length && all.length > 0;
+        applyAllCb.indeterminate = on > 0 && on < all.length;
+    }
     overlay.querySelectorAll('.di-apply-cb').forEach(cb => {
         cb.addEventListener('change', () => {
             // Синхронизируем header-чекбокс: если все отмечены — он отмечен, и наоборот.

@@ -464,3 +464,22 @@
 .di-matched-table tr:has(.di-apply-cb:not(:checked)) .di-dept-sel {
     pointer-events: none;
 }
+
+/* «Перезапись» — у человека уже было управление, и оно отличается от
+   нового. По дефолту галка снята → строка приглушённая (см. правило
+   выше). Дополнительно подсвечиваем «Сейчас» жёлтым предупреждением,
+   чтобы было видно: тут будет затёрто чужое значение если поставить
+   галку. */
+.di-matched-table tr.di-row--overwrite .di-old {
+    background: rgba(217, 119, 6, 0.12);
+    color: #92400e;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+    .di-matched-table tr.di-row--overwrite .di-old {
+        background: rgba(217, 119, 6, 0.22);
+        color: #fbbf24;
+    }
+}
