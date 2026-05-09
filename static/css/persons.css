@@ -437,3 +437,30 @@
 .di-perfile__stat { color: var(--md-on-surface-hint); }
 .di-perfile__err  { color: var(--md-error); font-weight: 500; }
 .di-perfile__item--err { background: rgba(184,84,80,0.06); }
+
+/* ── Импорт квот: per-row checkbox + select управления ───────────────────── */
+
+.di-matched-table .di-apply-cb {
+    cursor: pointer;
+    accent-color: var(--md-primary);
+}
+
+.di-matched-table .di-dept-sel {
+    width: 100%;
+    padding: 3px 6px;
+    font-size: 0.78rem;
+    height: auto;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    color: var(--md-on-surface);
+}
+
+/* Снятый чекбокс — приглушаем строку, чтобы было видно «эта запись
+   будет пропущена при применении». */
+.di-matched-table tr:has(.di-apply-cb:not(:checked)) {
+    opacity: 0.55;
+}
+.di-matched-table tr:has(.di-apply-cb:not(:checked)) .di-dept-sel {
+    pointer-events: none;
+}

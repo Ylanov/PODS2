@@ -154,6 +154,7 @@ function _renderPreview(overlay, data) {
 
     // Сохраняем state в DOM dataset — чтобы apply мог собрать всё разом.
     overlay._matched         = data.matched || [];
+    overlay._matchedChanged  = (data.matched || []).filter(m => m.changed);
     overlay._unknownAliases  = data.unknown_aliases || [];
     // unknown_persons — массив объектов с candidates[]; нормализуем формат
     // на случай если бэк (старый) ещё отдаёт массив строк.
@@ -232,20 +233,53 @@ function _renderPreview(overlay, data) {
 
         ${changedCount > 0 ? `
             <h4 class="di-h">Изменения, которые будут применены (${changedCount})</h4>
-            <table class="di-table">
-                <thead><tr><th>ФИО</th><th>Сейчас</th><th>→</th><th>Будет</th></tr></thead>
-                <tbody>
-                ${data.matched.filter(m => m.changed).slice(0, 80).map(m => `
+            <p class="di-sub">
+                Снимите галку напротив строки, чтобы оставить у человека текущее управление.
+                Колонка «Будет» — выпадающий список: можно поправить целевое управление прямо
+                здесь, не правя Word.
+            </p>
+            <div style="display:flex; gap:8px; margin-bottom:6px; font-size:0.78rem;">
+                <button type="button" class="btn btn-text btn-xs" id="di-apply-toggle-all">
+                    Снять/отметить все
+                </button>
+            </div>
+            <table class="di-table di-matched-table">
+                <thead>
                     <tr>
+                        <th style="width:32px; text-align:center;">
+                            <input type="checkbox" id="di-apply-all" checked
+                                   title="Применить все строки">
+                        </th>
+                        <th>ФИО</th>
+                        <th>Сейчас</th>
+                        <th>→</th>
+                        <th>Будет</th>
+                    </tr>
+                </thead>
+                <tbody>
+                ${overlay._matchedChanged.map((m, i) => {
+                    const opts = departments.map(d =>
+                        `<option value="${_esc(d)}"${d === m.department ? ' selected' : ''}>${_esc(d)}</option>`
+                    ).join('');
+                    return `
+                    <tr data-match-idx="${i}">
+                        <td style="text-align:center;">
+                            <input type="checkbox" class="di-apply-cb"
+                                   data-apply-idx="${i}" checked
+                                   title="Применить эту строку">
+                        </td>
                         <td>${_esc(m.full_name)}</td>
                         <td><span class="di-old">${_esc(m.current || '—')}</span></td>
                         <td>→</td>
-                        <td><b>${_esc(m.department)}</b></td>
-                    </tr>
-                `).join('')}
+                        <td>
+                            <select class="di-dept-sel" data-dept-idx="${i}">
+                                ${opts}
+                            </select>
+                        </td>
+                    </tr>`;
+                }).join('')}
                 </tbody>
             </table>
-            ${changedCount > 80 ? `<p class="di-sub">…и ещё ${changedCount - 80}.</p>` : ''}
         ` : ''}
     `;
 
@@ -264,6 +298,31 @@ function _renderPreview(overlay, data) {
 
     // Привязываем интерактив на строки unknown_persons (radio + поиск).
     _bindUnknownRows(overlay);
+
+    // Тоггл «отметить все / снять все» в таблице matched-changes.
+    const toggleBtn = overlay.querySelector('#di-apply-toggle-all');
+    const applyAllCb = overlay.querySelector('#di-apply-all');
+    function _setAllChecked(value) {
+        overlay.querySelectorAll('.di-apply-cb').forEach(cb => { cb.checked = value; });
+        if (applyAllCb) applyAllCb.checked = value;
+    }
+    toggleBtn?.addEventListener('click', () => {
+        const anyChecked = !!overlay.querySelector('.di-apply-cb:checked');
+        _setAllChecked(!anyChecked);
+    });
+    applyAllCb?.addEventListener('change', () => _setAllChecked(applyAllCb.checked));
+    overlay.querySelectorAll('.di-apply-cb').forEach(cb => {
+        cb.addEventListener('change', () => {
+            // Синхронизируем header-чекбокс: если все отмечены — он отмечен, и наоборот.
+            const all   = overlay.querySelectorAll('.di-apply-cb');
+            const total = all.length;
+            const on    = overlay.querySelectorAll('.di-apply-cb:checked').length;
+            if (applyAllCb) {
+                applyAllCb.checked       = on === total && total > 0;
+                applyAllCb.indeterminate = on > 0 && on < total;
+            }
+        });
+    });
 }
 
 
@@ -433,11 +492,22 @@ async function _applyChanges(overlay) {
         }
     }
 
-    // Применяем уже резолвленные изменения
-    const changes = (overlay._matched || []).filter(m => m.changed).map(m => ({
-        person_id:  m.person_id,
-        department: m.department,
-    }));
+    // Собираем changes из таблицы matched-changes: только отмеченные строки,
+    // и для каждой берём актуальное значение из dropdown'а (admin мог
+    // поправить целевое управление прямо в preview).
+    const matched = overlay._matchedChanged || [];
+    const changes = [];
+    overlay.querySelectorAll('tr[data-match-idx]').forEach(tr => {
+        const idx = parseInt(tr.dataset.matchIdx, 10);
+        const m = matched[idx];
+        if (!m) return;
+        const cb = tr.querySelector('.di-apply-cb');
+        if (!cb || !cb.checked) return;   // снятая галка — пропускаем
+        const sel  = tr.querySelector('.di-dept-sel');
+        const dept = (sel?.value || m.department || '').trim();
+        if (!dept) return;
+        changes.push({ person_id: m.person_id, department: dept });
+    });
 
     // Решения по неизвестным ФИО (radio + поиск).
     const unknownDecisions = [];
