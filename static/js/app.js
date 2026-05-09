@@ -50,17 +50,24 @@ const PERM_TAB_MAP = {
 };
 
 export function applyPermissionsToTabs(permissions) {
+    // Admin в pods2 ВСЕГДА видит все вкладки независимо от permissions.
+    // Это согласовано с бэком (require_permission пропускает админа без
+    // явного permission'а). Доп. защита: если бэк по какой-то причине
+    // не отдал admin'у полный AVAILABLE_PERMISSIONS — фронт всё равно
+    // покажет ему все кнопки, без фантомных «исчезновений вкладок».
+    const isAdmin = window.currentUser?.role === 'admin';
+
     const perms = new Set(Array.isArray(permissions) ? permissions : []);
     Object.entries(PERM_TAB_MAP).forEach(([perm, btnId]) => {
         const btn = document.getElementById(btnId);
         if (!btn) return;
-        btn.style.display = perms.has(perm) ? '' : 'none';
+        btn.style.display = (isAdmin || perms.has(perm)) ? '' : 'none';
     });
 
     // Если текущая активная вкладка скрыта (например админ только что
     // убрал доступ) — переключаемся на первую доступную. Так пользователь
     // не застревает на 404/403.
-    const firstAvailable = Object.keys(PERM_TAB_MAP).find(p => perms.has(p));
+    const firstAvailable = Object.keys(PERM_TAB_MAP).find(p => isAdmin || perms.has(p));
     if (firstAvailable) {
         const firstBtn = document.getElementById(PERM_TAB_MAP[firstAvailable]);
         const activeHidden = Object.values(PERM_TAB_MAP).some(id => {
