@@ -253,12 +253,26 @@
                         </svg>
                         Карта ОД
                     </button>
+                    <!-- «Списки оповещения» — permission='alert_lists'. -->
+                    <button id="dept-alert-lists-tab-btn" class="btn btn-outlined btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        Списки оповещения
+                    </button>
                 </div>
             </div>
 
             <!-- Панель «Карта ОД»: вся разметка строится JS-модулем oper_map.js -->
             <div id="dept-oper-map-panel" class="hidden" style="padding-top:8px;">
                 <div id="oper-map-root"></div>
+            </div>
+
+            <!-- Панель «Списки оповещения»: вся разметка строится alert_lists.js -->
+            <div id="dept-alert-lists-panel" class="hidden" style="padding-top:8px;">
+                <div id="alert-lists-root"></div>
             </div>
 
             <!-- Панель «Операции» (отдел): список кнопок-операций.

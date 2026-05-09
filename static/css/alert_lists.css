@@ -1,0 +1,276 @@
+/* static/css/alert_lists.css
+ * Списки оповещения — стили вкладки.
+ */
+
+/* ── Тулбар ───────────────────────────────────────────────────────────── */
+
+.al-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 8px 4px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.al-list-tabs {
+    display: flex;
+    gap: 4px;
+}
+.al-list-tab {
+    padding: 6px 12px;
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface-variant);
+    font-size: 0.84rem;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.al-list-tab--active {
+    background: var(--md-primary);
+    color: var(--md-on-primary, #fff);
+    border-color: var(--md-primary);
+}
+
+.al-month-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.al-month-label {
+    min-width: 140px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.al-mode-switch {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--md-surface-container);
+    border-radius: 8px;
+}
+.al-mode-label {
+    font-size: 0.76rem;
+    color: var(--md-on-surface-variant);
+    margin-right: 4px;
+}
+.al-mode-btn {
+    padding: 3px 10px;
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--md-on-surface);
+}
+.al-mode-btn--active {
+    background: var(--md-primary);
+    color: var(--md-on-primary, #fff);
+    border-color: var(--md-primary);
+}
+
+/* ── Сетка ────────────────────────────────────────────────────────────── */
+
+.al-grid-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+}
+.al-grid {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    font-size: 0.78rem;
+    background: var(--md-surface);
+}
+.al-grid th, .al-grid td {
+    border: 1px solid var(--md-outline-variant);
+    padding: 0;
+}
+.al-corner {
+    min-width: 200px;
+    max-width: 260px;
+    padding: 6px 8px !important;
+    background: var(--md-surface-container);
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+}
+.al-day {
+    min-width: 30px;
+    width: 30px;
+    text-align: center;
+    padding: 4px 0 !important;
+    background: var(--md-surface-container);
+    color: var(--md-on-surface-variant);
+    font-weight: 500;
+}
+.al-day--weekend {
+    background: var(--md-error-container, #ffeaea);
+    color: var(--md-error, #c62828);
+}
+.al-slot-title {
+    padding: 6px 8px !important;
+    cursor: pointer;
+    background: var(--md-surface);
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    line-height: 1.25;
+}
+.al-slot-title:hover {
+    background: var(--md-surface-variant);
+}
+.al-slot-title small {
+    color: var(--md-on-surface-variant);
+}
+
+.al-cell {
+    height: 36px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+}
+.al-cell:hover {
+    background: var(--md-surface-variant);
+}
+.al-cell--marked {
+    background: var(--md-surface-container);
+}
+.al-mark {
+    display: inline-block;
+    min-width: 20px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: #fff;
+}
+.al-mark--N { background: var(--md-primary, #2e7d32); }
+.al-mark--O { background: var(--md-tertiary, #1976d2); }
+.al-mark--V { background: var(--md-error, #c62828); }
+
+.al-cell-sub {
+    display: block;
+    font-size: 0.66rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.1;
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 90px;
+}
+
+.al-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+}
+
+/* ── Модалки (редактор слота, выбор зама) ────────────────────────────── */
+
+.al-modal {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+}
+.al-modal-card {
+    background: var(--md-surface, #fff);
+    border-radius: var(--md-radius-lg, 14px);
+    max-width: 520px;
+    width: 100%;
+    max-height: 80vh;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+.al-modal-title {
+    margin: 0 0 6px;
+    font-size: 1rem;
+    font-weight: 600;
+}
+.al-modal-hint {
+    margin: 0 0 10px;
+    font-size: 0.8rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.4;
+}
+.al-modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    align-items: center;
+}
+
+.al-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+    color: var(--md-on-surface-variant);
+}
+.al-field input,
+.al-field select {
+    padding: 6px 8px;
+    font-size: 0.86rem;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 6px;
+    color: var(--md-on-surface);
+}
+.al-primary-pick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--md-surface-container);
+    border-radius: 6px;
+}
+
+.al-subst-list {
+    flex: 1;
+    overflow-y: auto;
+    margin: 8px 0;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 6px;
+    min-height: 120px;
+    max-height: 320px;
+}
+.al-subst-row {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    cursor: pointer;
+}
+.al-subst-row:last-child { border-bottom: none; }
+.al-subst-row:hover { background: var(--md-surface-variant); }
+.al-subst-row__name {
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: var(--md-on-surface);
+}
+.al-subst-row__meta {
+    display: flex;
+    gap: 8px;
+    font-size: 0.74rem;
+    color: var(--md-on-surface-variant);
+    margin-top: 1px;
+}
+
+#al-subst-search {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 0.86rem;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 6px;
+}
