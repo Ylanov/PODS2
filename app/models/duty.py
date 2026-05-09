@@ -219,6 +219,33 @@ class DutyMark(Base):
         default=MARK_DUTY,
     )
 
+    # ── Замещения («Иванов идёт на квоту 5 управления вместо своей должности»)
+    # Применяется только к mark_type='N' и только когда в один день у графика
+    # стоит >1 наряда. Один из них становится "основным" (is_primary=True,
+    # default), остальные — "замещающие".
+    #
+    # is_primary=True   → ФИО подставляется в слоты с position_id графика
+    #                     (старая логика автозаполнения)
+    # is_primary=False  → ФИО подставляется только в слоты, у которых
+    #                     group.source_group_id == substitute_template_group_id
+    #                     И department == substitute_department.
+    #
+    # До первого утверждения is_primary=True у всех (бэк-совместимо).
+    # При утверждении wizard собирает решения админа.
+    is_primary = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    substitute_department = Column(String, nullable=True)
+    substitute_template_group_id = Column(
+        Integer,
+        ForeignKey("groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # ── Relationships ─────────────────────────────────────────────────────────
     schedule = relationship("DutySchedule", back_populates="marks")
     person   = relationship("Person", lazy="joined")

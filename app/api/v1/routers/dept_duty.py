@@ -512,6 +512,12 @@ async def toggle_my_mark(
             db.commit()
             return {"action": "removed", "filled_slots_count": 0}
         existing.mark_type = mark_type
+        # При смене типа сбрасываем замещения — они актуальны только для
+        # текущей роли наряда, при V/U/R substitute-поля бессмысленны и
+        # при возврате в N не должны всплывать stale-данные.
+        existing.is_primary = True
+        existing.substitute_department = None
+        existing.substitute_template_group_id = None
         db.commit()
         if mark_type != MARK_DUTY:
             return {"action": "changed", "mark_type": mark_type, "filled_slots_count": 0}

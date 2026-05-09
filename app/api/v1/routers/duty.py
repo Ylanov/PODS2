@@ -394,6 +394,11 @@ async def toggle_mark(
         else:
             # Переключаем тип, не удаляя запись
             existing.mark_type = mark_type
+            # При смене типа сбрасываем замещения — substitute-поля
+            # актуальны только для роли N; при V/U/R они бессмысленны.
+            existing.is_primary = True
+            existing.substitute_department = None
+            existing.substitute_template_group_id = None
             db.commit()
             logger.debug(f"Changed mark type: person={person.full_name} date={payload.duty_date} → {mark_type}")
             # Автозаполнение делаем только для MARK_DUTY (см. ниже)

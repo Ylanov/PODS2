@@ -257,18 +257,14 @@ class EventUpdatePayload(BaseModel):
 
 def _get_duty_map_for_date(db: Session, target_date, *, event=None) -> dict:
     """
-    Возвращает {position_id: Person} для заданной даты.
+    Возвращает {position_id: Person} для заданной даты — только основные
+    наряды (is_primary=True).
 
-    Берёт DutyMark с типом «наряд» (N) за эту дату у которых в графике задана
-    должность. Отметки 'V' (отпуск), 'U' (увольнение) и 'R' (резерв) не считаются
-    нарядом и в слоты не подставляются.
+    Замещающие наряды (is_primary=False с substitute_*) сюда НЕ попадают —
+    они обрабатываются отдельной функцией _get_substitutes_for_date,
+    которая привязывает их к конкретным группам инстанса.
 
-    Если задан event — учитываем ограничение DutySchedule.applicable_template_ids:
-      - график без фильтра (NULL / [])  → применяется ко всем (как раньше);
-      - график с фильтром                → применяется только если
-                                            event.source_template_id есть в нём.
-
-    Если на одну должность несколько человек — берётся последний (по id).
+    Если задан event — учитываем DutySchedule.applicable_template_ids.
     """
     rows = (
         db.query(DutyMark, DutySchedule, Person)
@@ -277,7 +273,8 @@ def _get_duty_map_for_date(db: Session, target_date, *, event=None) -> dict:
         .filter(
             DutyMark.duty_date       == target_date,
             DutyMark.mark_type       == MARK_DUTY,
-            DutySchedule.position_id != None,       # noqa: E711
+            DutyMark.is_primary      == True,        # noqa: E712
+            DutySchedule.position_id != None,        # noqa: E711
             DutySchedule.kind        == DUTY_KIND_DUTY,
         )
         .order_by(DutyMark.id.asc())
@@ -291,6 +288,67 @@ def _get_duty_map_for_date(db: Session, target_date, *, event=None) -> dict:
         duty_map[schedule.position_id] = person
 
     return duty_map
+
+
+def _get_substitutes_for_date(db: Session, target_date) -> list[dict]:
+    """
+    Возвращает список замещений (DutyMark с is_primary=False и заполненными
+    substitute_*) на эту дату. Каждое — словарь:
+      {
+          "person":                       Person,
+          "substitute_department":        str,
+          "substitute_template_group_id": int,
+      }
+
+    Применяется при автозаполнении слотов инстансов: если у слота
+    group.source_group_id == substitute_template_group_id и
+    slot.department == substitute_department — этот человек подставляется
+    вместо primary-кандидата.
+    """
+    rows = (
+        db.query(DutyMark, DutySchedule, Person)
+        .join(DutySchedule, DutyMark.schedule_id == DutySchedule.id)
+        .join(Person,       DutyMark.person_id   == Person.id)
+        .filter(
+            DutyMark.duty_date == target_date,
+            DutyMark.mark_type == MARK_DUTY,
+            DutyMark.is_primary == False,            # noqa: E712
+            DutyMark.substitute_department.isnot(None),
+            DutyMark.substitute_template_group_id.isnot(None),
+            DutySchedule.kind  == DUTY_KIND_DUTY,
+        )
+        .order_by(DutyMark.id.asc())
+        .all()
+    )
+    return [
+        {
+            "person":                       person,
+            "substitute_department":        mark.substitute_department,
+            "substitute_template_group_id": mark.substitute_template_group_id,
+        }
+        for mark, schedule, person in rows
+    ]
+
+
+def _apply_substitute_for_slot(substitutes: list[dict], slot, group) -> bool:
+    """
+    Если для текущего slot есть подходящее замещение — применяет его и
+    возвращает True (slot.full_name/rank подставлены). Иначе False.
+
+    Совпадение: substitute_template_group_id == group.source_group_id
+    и substitute_department == slot.department.
+    """
+    src = getattr(group, "source_group_id", None)
+    if not src or not slot.department:
+        return False
+    for sub in substitutes:
+        if (sub["substitute_template_group_id"] == src
+                and sub["substitute_department"] == slot.department):
+            slot.full_name = sub["person"].full_name
+            if sub["person"].rank:
+                slot.rank = sub["person"].rank
+            return True
+    return False
 
 
 # ─── Столбцы ─────────────────────────────────────────────────────────────────
@@ -698,26 +756,45 @@ async def instantiate_template(
                 is_supplementary=getattr(group, "is_supplementary", False),
                 time_offset=getattr(group, "time_offset", "") or "",
                 duty_day_offset=int(getattr(group, "duty_day_offset", 0) or 0),
+                # Связь с группой-источником в шаблоне — нужно для механизма
+                # замещений, чтобы отметка с substitute_template_group_id могла
+                # найти конкретные слоты в инстансах.
+                source_group_id=group.id,
             )
             db.add(new_group)
             db.flush()
 
             duty_map = _duty_map(new_group.duty_day_offset)
+            # Замещения на ту же дату — кэшируем по offset, как и primary.
+            sub_offset_date = target_date + timedelta(days=new_group.duty_day_offset)
+            substitutes = _get_substitutes_for_date(db, sub_offset_date)
 
             for slot in group.slots:
-                person_on_duty = duty_map.get(slot.position_id) if slot.position_id else None
-
+                # Сначала пытаемся применить замещение: оно адресовано
+                # КОНКРЕТНОЙ группе+квоте, поэтому имеет приоритет над
+                # обычным автозаполнением по position_id.
                 new_slot = Slot(
                     group_id=new_group.id,
                     position_id=slot.position_id,
                     department=slot.department,
                     callsign=slot.callsign,
                     note=slot.note,
-                    full_name  = person_on_duty.full_name if person_on_duty else None,
-                    rank       = person_on_duty.rank      if person_on_duty else None,
-                    doc_number = None,
-                    extra_data = None,
+                    doc_number=None,
+                    extra_data=None,
                 )
+
+                applied_sub = _apply_substitute_for_slot(
+                    substitutes, new_slot, new_group,
+                )
+                if not applied_sub:
+                    person_on_duty = (
+                        duty_map.get(slot.position_id)
+                        if slot.position_id else None
+                    )
+                    if person_on_duty:
+                        new_slot.full_name = person_on_duty.full_name
+                        new_slot.rank      = person_on_duty.rank
+
                 db.add(new_slot)
 
         created_ids.append(new_event.id)
@@ -881,14 +958,33 @@ async def add_slot_to_group(
     # При добавлении новой строки — проверяем наряд на дату списка
     # Со сдвигом по duty_day_offset группы: для групп с большим временем
     # готовности подставляем уже завтрашний наряд (event.date + 1).
+    # Сначала пробуем замещение для конкретной (source_group_id, department)
+    # — если есть, подставляем его. Иначе fallback на primary по position_id.
     person_on_duty = None
-    if slot_in.position_id:
+    substitute_person = None
+    if slot_in.position_id or slot_in.department:
         event = db.query(Event).filter(Event.id == group.event_id).first()
         if event and event.date:
             offset = int(getattr(group, "duty_day_offset", 0) or 0)
             target = event.date + timedelta(days=offset)
-            duty_map = _get_duty_map_for_date(db, target, event=event)
-            person_on_duty = duty_map.get(slot_in.position_id)
+
+            # Поиск замещения
+            src_grp_id = getattr(group, "source_group_id", None)
+            if src_grp_id and slot_in.department:
+                for sub in _get_substitutes_for_date(db, target):
+                    if (sub["substitute_template_group_id"] == src_grp_id
+                            and sub["substitute_department"] == slot_in.department):
+                        substitute_person = sub["person"]
+                        break
+
+            # Если замещение не подошло — обычный primary-кандидат
+            if not substitute_person and slot_in.position_id:
+                duty_map = _get_duty_map_for_date(db, target, event=event)
+                person_on_duty = duty_map.get(slot_in.position_id)
+
+    # Замещение имеет приоритет над primary
+    if substitute_person:
+        person_on_duty = substitute_person
 
     new_slot = Slot(
         group_id=group_id,
@@ -1130,14 +1226,29 @@ async def update_slot(
         if event and event.date:
             offset = int(getattr(slot.group, "duty_day_offset", 0) or 0)
             target = event.date + timedelta(days=offset)
-            duty_map = _get_duty_map_for_date(db, target, event=event)
-            person_on_duty = duty_map.get(new_position_id)
+
+            # Сначала ищем замещение для (source_group_id, slot.department)
+            substitute_person = None
+            src_grp_id = getattr(slot.group, "source_group_id", None)
+            if src_grp_id and slot.department:
+                for sub in _get_substitutes_for_date(db, target):
+                    if (sub["substitute_template_group_id"] == src_grp_id
+                            and sub["substitute_department"] == slot.department):
+                        substitute_person = sub["person"]
+                        break
+
+            person_on_duty = substitute_person
+            if not person_on_duty:
+                duty_map = _get_duty_map_for_date(db, target, event=event)
+                person_on_duty = duty_map.get(new_position_id)
+
             if person_on_duty:
                 slot.full_name = person_on_duty.full_name
                 slot.rank      = person_on_duty.rank or slot.rank
+                via = "substitute" if substitute_person else "primary"
                 print(f"[duty→update_slot] slot_id={slot_id} "
                       f"pos {old_position_id}→{new_position_id} "
-                      f"day_offset={offset} "
+                      f"day_offset={offset} via={via} "
                       f"→ '{person_on_duty.full_name}'")
 
     slot.version += 1

@@ -99,6 +99,19 @@ class Group(Base):
     # моменту реакции уже сменится суточный наряд.
     duty_day_offset = Column(Integer, nullable=False, default=0, server_default="0")
 
+    # Ссылка на группу-источник из шаблона: при инстанцировании шаблона
+    # каждая копируемая группа получает source_group_id = id оригинала.
+    # Нужно для механизма «замещений» (DutyMark.substitute_template_group_id):
+    # когда замещающий наряд указывает «положить ФИО в группу X шаблона Y»,
+    # бэк находит конкретные инстансные groups через source_group_id.
+    # Для шаблонов и ручных групп — NULL.
+    source_group_id = Column(
+        Integer,
+        ForeignKey("groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     event = relationship("Event", back_populates="groups")
     slots = relationship("Slot",  back_populates="group", cascade="all, delete-orphan")
 
