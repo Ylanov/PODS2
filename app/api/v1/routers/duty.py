@@ -541,6 +541,9 @@ async def toggle_mark(
     # Рассылаем WebSocket-уведомления
     for eid in affected_event_ids:
         await manager.broadcast({"event_id": eid, "action": "update"})
+    # Списки оповещения подтягивают N/V/T/H из DutyMark — синхронизируем
+    # их у всех открытых клиентов без F5.
+    await manager.broadcast({"action": "alert_lists_update"})
 
     return {
         "action":              "added",

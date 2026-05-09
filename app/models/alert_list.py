@@ -26,11 +26,18 @@ from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 
-# Допустимые типы отметки.
+# Допустимые типы отметки. N/V/T/H обычно подтягиваются из графиков
+# нарядов автоматически (см. /marks с source='duty'), но можно ставить
+# и вручную — manual-отметка перекроет derived (приоритет ручной).
 ALERT_MARK_DUTY      = "N"
 ALERT_MARK_RESP      = "O"
 ALERT_MARK_VACATION  = "V"
-ALL_ALERT_MARK_TYPES = (ALERT_MARK_DUTY, ALERT_MARK_RESP, ALERT_MARK_VACATION)
+ALERT_MARK_TRIP      = "T"
+ALERT_MARK_HOSPITAL  = "H"
+ALL_ALERT_MARK_TYPES = (
+    ALERT_MARK_DUTY, ALERT_MARK_RESP, ALERT_MARK_VACATION,
+    ALERT_MARK_TRIP, ALERT_MARK_HOSPITAL,
+)
 
 # Тип позиции — для фильтра в модалке выбора зама.
 ALERT_ROLE_UPR = "upr"   # управление

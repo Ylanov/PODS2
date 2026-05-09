@@ -684,6 +684,9 @@ async def toggle_my_mark(
     # Уведомить всех подключённых о изменении (как у админа)
     for eid in affected_event_ids:
         await manager.broadcast({"event_id": eid, "action": "update"})
+    # Списки оповещения тянут N/V/T/H из DutyMark — синхронизируем у всех
+    # открытых клиентов без F5.
+    await manager.broadcast({"action": "alert_lists_update"})
 
     for uid in admin_recipients:
         await manager.push_to_user(uid, {

@@ -21,11 +21,8 @@ const MARK_LABELS = {
     N: 'Наряд',
     O: 'Ответственный',
     V: 'Отпуск',
-};
-const MARK_COLORS = {
-    N: 'var(--md-primary, #2e7d32)',
-    O: 'var(--md-tertiary, #1976d2)',
-    V: 'var(--md-error, #c62828)',
+    T: 'Командировка',
+    H: 'Госпиталь',
 };
 
 let _lists       = [];
@@ -233,12 +230,19 @@ function _renderCell(slot, dateStr, mark) {
         return `<td class="al-cell" data-slot-id="${slot.id}" data-date="${dateStr}"></td>`;
     }
     const t = mark.mark_type;
-    let label = t;
-    let inner = `<span class="al-mark al-mark--${t}" title="${MARK_LABELS[t] || t}">${label}</span>`;
+    const isDuty = mark.source === 'duty';
+    const baseTitle = MARK_LABELS[t] || t;
+    const fullTitle = isDuty
+        ? `${baseTitle} (из графика${mark.duty_schedule_title ? ': ' + mark.duty_schedule_title : ''})`
+        : baseTitle;
+    let inner = `<span class="al-mark al-mark--${t} ${isDuty ? 'al-mark--auto' : ''}"
+                       title="${_esc(fullTitle)}">${t}</span>`;
     if (t === 'V' && mark.substitute_person) {
         inner += `<span class="al-cell-sub" title="Замещает: ${_esc(mark.substitute_person.full_name)}">↳ ${_esc(mark.substitute_person.full_name)}</span>`;
     }
-    return `<td class="al-cell al-cell--marked" data-slot-id="${slot.id}" data-date="${dateStr}">${inner}</td>`;
+    const cls = `al-cell al-cell--marked ${isDuty ? 'al-cell--from-duty' : ''}`;
+    const dataSrc = isDuty ? 'duty' : 'manual';
+    return `<td class="${cls}" data-slot-id="${slot.id}" data-date="${dateStr}" data-src="${dataSrc}">${inner}</td>`;
 }
 
 
@@ -289,7 +293,17 @@ async function _loadMarks() {
 // ─── Клик по ячейке: ставим/снимаем отметку ──────────────────────────────
 
 async function _onCellClick(slotId, dateStr) {
+    const current = _marks.get(_markKey(slotId, dateStr));
+    const isDerived = current?.source === 'duty';
+
     if (_activeMode === 'clear') {
+        if (isDerived) {
+            window.showSnackbar?.(
+                'Эта отметка взята из графика наряда — снять её можно только там.',
+                'info',
+            );
+            return;
+        }
         try {
             await api.delete(`/alert-lists/slots/${slotId}/marks/${dateStr}`);
             _marks.delete(_markKey(slotId, dateStr));

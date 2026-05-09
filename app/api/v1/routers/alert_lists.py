@@ -166,11 +166,19 @@ class MarkOut(BaseModel):
     """
     slot_id оставлен в выдаче для бэк-совместимости фронта (он строит
     Map по этому ключу). Бэкенд по slot_id → position_id и работает.
+
+    source:
+      'manual' — отметка введена вручную в списках оповещения (AlertMark)
+      'duty'   — отметка взята из графика нарядов (DutyMark) по primary_person
+                  данной должности. На фронте такие — read-only, нельзя
+                  снять кликом «снять» (они подтянутся обратно).
     """
     slot_id:   int
     mark_date: date_type
     mark_type: str
     substitute_person: Optional[_PersonRef] = None
+    source:    str = "manual"
+    duty_schedule_title: Optional[str] = None   # для подсказки «откуда»
 
 
 class MarkIn(BaseModel):
@@ -215,7 +223,14 @@ def _mark_out(slot_id: int, m: AlertMark) -> MarkOut:
         mark_date=m.mark_date,
         mark_type=m.mark_type,
         substitute_person=_person_ref(m.substitute_person),
+        source="manual",
     )
+
+
+# Приоритет «полосовых» отметок: чем недоступнее — тем выше. Используется
+# при выборе одной отметки на день когда у человека несколько DutyMark за
+# один день в разных графиках.
+_DUTY_MARK_PRIORITY = {"V": 4, "T": 3, "H": 2, "N": 1}
 
 
 def _get_or_create_position(db: Session, title: str, role_kind: str,
@@ -422,29 +437,105 @@ async def seed_slots(list_id: int, payload: SeedPayload, db: Session = Depends(g
 # ─── Marks ───────────────────────────────────────────────────────────────────
 
 @router.get("/{list_id}/marks", response_model=List[MarkOut],
-            summary="Все отметки списка за месяц")
+            summary="Все отметки списка за месяц (manual + derived из DutyMark)")
 def list_marks(
     list_id: int,
     year:    int = Query(..., ge=2000, le=2100),
     month:   int = Query(..., ge=1, le=12),
     db:      Session = Depends(get_db),
 ):
+    """
+    Возвращает union:
+      • ручные AlertMark для позиций этого списка (source='manual')
+      • derived из DutyMark за тот же месяц для primary_person каждой
+        позиции (source='duty'); типы N/V/T/H — наряд/отпуск/командировка/
+        госпиталь. Тип U (увольнение/выходной) НЕ переносим — он не
+        блокирует оповещение.
+
+    Приоритет на одну ячейку: manual > derived. Если у одного человека
+    несколько DutyMark за день в разных графиках — выбирается самая
+    «недоступная» (V > T > H > N).
+    """
+    from app.models.duty import DutyMark, DutySchedule
+
     if not db.query(AlertList).filter(AlertList.id == list_id).first():
         raise HTTPException(status_code=404, detail="Список не найден")
-    last = monthrange(year, month)[1]
-    # Отметки общие на position. Нам нужно отдать их «по слотам этого
-    # списка» — фронт работает с slot_id. Делаем join.
-    rows = (
+    last  = monthrange(year, month)[1]
+    start = date_type(year, month, 1)
+    end   = date_type(year, month, last)
+
+    # 1. Ручные отметки.
+    manual_rows = (
         db.query(AlertSlot.id, AlertMark)
         .join(AlertMark, AlertMark.position_id == AlertSlot.position_id)
         .filter(
             AlertSlot.list_id == list_id,
-            AlertMark.mark_date >= date_type(year, month, 1),
-            AlertMark.mark_date <= date_type(year, month, last),
+            AlertMark.mark_date >= start,
+            AlertMark.mark_date <= end,
         )
         .all()
     )
-    return [_mark_out(slot_id, m) for slot_id, m in rows]
+
+    out: list[MarkOut] = []
+    seen_keys: set[tuple[int, date_type]] = set()   # (slot_id, date) уже занятые ручной
+
+    for slot_id, m in manual_rows:
+        out.append(_mark_out(slot_id, m))
+        seen_keys.add((slot_id, m.mark_date))
+
+    # 2. Derived из DutyMark. Для каждого слота списка с привязанной person
+    #    тащим её отметки за период.
+    slot_rows = (
+        db.query(AlertSlot.id, AlertPosition.primary_person_id)
+        .join(AlertPosition, AlertSlot.position_id == AlertPosition.id)
+        .filter(
+            AlertSlot.list_id == list_id,
+            AlertPosition.primary_person_id.isnot(None),
+        )
+        .all()
+    )
+    person_to_slots: dict[int, list[int]] = {}
+    for slot_id, person_id in slot_rows:
+        person_to_slots.setdefault(person_id, []).append(slot_id)
+
+    if person_to_slots:
+        duty_rows = (
+            db.query(DutyMark, DutySchedule.title)
+            .join(DutySchedule, DutyMark.schedule_id == DutySchedule.id)
+            .filter(
+                DutyMark.person_id.in_(person_to_slots.keys()),
+                DutyMark.mark_type.in_(["N", "V", "T", "H"]),
+                DutyMark.duty_date >= start,
+                DutyMark.duty_date <= end,
+            )
+            .all()
+        )
+
+        # Для каждой пары (person_id, date) — выбираем ОДНУ отметку с
+        # наивысшим приоритетом, если в нескольких графиках разные.
+        best_per_person_day: dict[tuple[int, date_type], tuple[DutyMark, str]] = {}
+        for dm, sched_title in duty_rows:
+            key = (dm.person_id, dm.duty_date)
+            cur = best_per_person_day.get(key)
+            if not cur or _DUTY_MARK_PRIORITY.get(dm.mark_type, 0) > _DUTY_MARK_PRIORITY.get(cur[0].mark_type, 0):
+                best_per_person_day[key] = (dm, sched_title)
+
+        # Раскладываем по слотам, пропуская уже занятые ручной отметкой.
+        for (person_id, day), (dm, sched_title) in best_per_person_day.items():
+            for slot_id in person_to_slots.get(person_id, []):
+                if (slot_id, day) in seen_keys:
+                    continue
+                out.append(MarkOut(
+                    slot_id=slot_id,
+                    mark_date=day,
+                    mark_type=dm.mark_type,
+                    substitute_person=None,
+                    source="duty",
+                    duty_schedule_title=sched_title,
+                ))
+                seen_keys.add((slot_id, day))
+
+    return out
 
 
 @router.put("/slots/{slot_id}/marks/{mark_date}", response_model=MarkOut,
@@ -548,9 +639,12 @@ def export_alert_list_docx(
     )
 
     position_ids = [s.position_id for s in slots]
-    marks = []
+    # Карта position_id → (mark_type, substitute_person | None) с приоритетом
+    # manual > derived. Сначала собираем manual (могут перекрыть derived).
+    marks_by_position: dict[int, tuple[str, Optional[Person]]] = {}
+
     if position_ids:
-        marks = (
+        manual_marks = (
             db.query(AlertMark)
             .filter(
                 AlertMark.position_id.in_(position_ids),
@@ -558,9 +652,37 @@ def export_alert_list_docx(
             )
             .all()
         )
-    marks_by_position = {m.position_id: m for m in marks}
+        for m in manual_marks:
+            marks_by_position[m.position_id] = (m.mark_type, m.substitute_person)
 
-    MARK_TITLES = {"N": "Наряд", "O": "Ответственный", "V": "Отпуск"}
+        # Derived для тех позиций, по которым ещё нет manual.
+        from app.models.duty import DutyMark
+        person_ids = [s.position.primary_person_id for s in slots
+                      if s.position.primary_person_id]
+        if person_ids:
+            duty_today = (
+                db.query(DutyMark)
+                .filter(
+                    DutyMark.person_id.in_(person_ids),
+                    DutyMark.mark_type.in_(["N", "V", "T", "H"]),
+                    DutyMark.duty_date == on_date,
+                )
+                .all()
+            )
+            best: dict[int, DutyMark] = {}
+            for dm in duty_today:
+                cur = best.get(dm.person_id)
+                if not cur or _DUTY_MARK_PRIORITY.get(dm.mark_type, 0) > _DUTY_MARK_PRIORITY.get(cur.mark_type, 0):
+                    best[dm.person_id] = dm
+            for s in slots:
+                pid = s.position.primary_person_id
+                if pid and pid in best and s.position_id not in marks_by_position:
+                    marks_by_position[s.position_id] = (best[pid].mark_type, None)
+
+    MARK_TITLES = {
+        "N": "Наряд", "O": "Ответственный",
+        "V": "Отпуск", "T": "Командировка", "H": "Госпиталь",
+    }
 
     doc = Document()
     section = doc.sections[0]
@@ -589,18 +711,21 @@ def export_alert_list_docx(
 
     for idx, slot in enumerate(slots, start=1):
         pos = slot.position
-        mark = marks_by_position.get(pos.id)
+        entry = marks_by_position.get(pos.id)
+        mark_type = entry[0] if entry else None
+        sub_person = entry[1] if entry else None
+
         who = None
         suffix = ""
-        if mark and mark.mark_type == "V" and mark.substitute_person:
-            who = mark.substitute_person
+        if mark_type == "V" and sub_person:
+            who = sub_person
             suffix = " (замещает)"
         elif pos.primary_person:
             who = pos.primary_person
         full_name = who.full_name if who else "—"
         rank      = (who.rank + " ") if who and who.rank else ""
 
-        mark_label = MARK_TITLES.get(mark.mark_type, "") if mark else ""
+        mark_label = MARK_TITLES.get(mark_type, "") if mark_type else ""
 
         row = table.add_row().cells
         row[0].text = str(idx)

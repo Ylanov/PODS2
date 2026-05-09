@@ -175,6 +175,42 @@ tr.al-row-drop-target td {
 .al-mark--N { background: var(--md-primary, #2e7d32); }
 .al-mark--O { background: var(--md-tertiary, #1976d2); }
 .al-mark--V { background: var(--md-error, #c62828); }
+.al-mark--T { background: #7c3aed; }   /* фиолетовый — Командировка */
+.al-mark--H { background: #e11d48; }   /* малиновый — Госпиталь */
+
+/* Derived из графика наряда — read-only, отличаются виду:
+   тонкая dashed-обводка + лёгкая прозрачность фона ячейки. */
+.al-mark--auto {
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6);
+    position: relative;
+}
+.al-mark--auto::after {
+    content: '⛓';
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    font-size: 0.55rem;
+    color: rgba(0,0,0,0.55);
+    background: var(--md-surface, #fff);
+    border-radius: 50%;
+    width: 9px;
+    height: 9px;
+    line-height: 9px;
+    text-align: center;
+    box-shadow: 0 0 0 1px var(--md-outline-variant);
+}
+.al-cell--from-duty {
+    background: repeating-linear-gradient(
+        45deg,
+        var(--md-surface-container) 0,
+        var(--md-surface-container) 6px,
+        var(--md-surface) 6px,
+        var(--md-surface) 12px
+    );
+}
+.al-cell--from-duty:hover {
+    background: var(--md-surface-variant);
+}
 
 .al-cell-sub {
     display: block;
