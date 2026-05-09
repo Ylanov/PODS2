@@ -23,6 +23,11 @@ export async function openDeptImportDialog() {
     const overlay = document.createElement('div');
     overlay.id = 'di-overlay';
     overlay.className = 'gs-overlay';
+    // Накопительный список выбранных файлов. Держим явно массив (не
+    // полагаемся на input.files), чтобы пользователь мог добирать
+    // файлы несколькими кликами «Выбрать», и убирать ✕ конкретные.
+    overlay._selectedFiles = [];
+
     overlay.innerHTML = `
         <div class="gs-dialog" role="dialog" aria-label="Импорт квот из Word"
              style="max-width:640px; max-height:85vh; display:flex; flex-direction:column;">
@@ -32,14 +37,15 @@ export async function openDeptImportDialog() {
             </div>
             <div id="di-body" style="flex:1; overflow-y:auto; padding:14px 16px; min-height:200px;">
                 <div class="field">
-                    <label class="field-label" for="di-file">Word-файл со штатным составом (.docx)</label>
-                    <input type="file" id="di-file" accept=".docx">
+                    <label class="field-label" for="di-file">Word-файлы со штатным составом (.docx)</label>
+                    <input type="file" id="di-file" accept=".docx" multiple>
                 </div>
+                <div id="di-files-list" class="di-files-list"></div>
                 <p style="margin-top:8px; font-size:0.78rem; color:var(--md-on-surface-hint); line-height:1.5;">
-                    Система прочитает таблицы, найдёт колонки <b>«ФИО»</b> и
-                    <b>«Примечание»</b>, и сопоставит каждого человека с управлением.
-                    Если метка («5 упр.», «НУ-3» и т.п.) не сопоставлена ранее —
-                    спросит, что это за управление. Ответ запомнится навсегда.
+                    Можно выбрать сразу несколько файлов или добирать их по одному.
+                    Система прочитает таблицы (колонки <b>«ФИО»</b> и <b>«Примечание»</b>),
+                    дедуплицирует одинаковые записи между файлами и сопоставит каждого
+                    с управлением. Неизвестные метки спросит у вас один раз и запомнит.
                 </p>
             </div>
             <div style="display:flex; gap:8px; justify-content:flex-end; padding:10px 16px;
@@ -56,18 +62,62 @@ export async function openDeptImportDialog() {
     overlay.querySelector('#di-cancel')?.addEventListener('click', () => overlay.remove());
 
     const fileInput  = overlay.querySelector('#di-file');
+    const filesList  = overlay.querySelector('#di-files-list');
     const previewBtn = overlay.querySelector('#di-preview');
+
+    function _renderFilesList() {
+        const items = overlay._selectedFiles;
+        if (!items.length) {
+            filesList.innerHTML = '';
+            previewBtn.disabled = true;
+            return;
+        }
+        filesList.innerHTML = items.map((f, idx) => `
+            <div class="di-file-row">
+                <span class="di-file-row__name" title="${_esc(f.name)}">${_esc(f.name)}</span>
+                <span class="di-file-row__size">${(f.size / 1024).toFixed(0)} КБ</span>
+                <button type="button" class="btn-tiny-danger" data-remove-idx="${idx}" title="Убрать">✕</button>
+            </div>
+        `).join('');
+        previewBtn.disabled = false;
+    }
+
     fileInput.addEventListener('change', () => {
-        previewBtn.disabled = !fileInput.files?.length;
+        const incoming = Array.from(fileInput.files || []);
+        // Дедуп по имени+размеру — пользователь не должен случайно выбрать
+        // тот же файл дважды и получить «дубликаты» в per_file.
+        const existing = new Set(
+            overlay._selectedFiles.map(f => `${f.name}::${f.size}`)
+        );
+        for (const f of incoming) {
+            const key = `${f.name}::${f.size}`;
+            if (!existing.has(key)) {
+                overlay._selectedFiles.push(f);
+                existing.add(key);
+            }
+        }
+        // Очищаем input — иначе при повторном выборе того же файла событие
+        // 'change' не сработает.
+        fileInput.value = '';
+        _renderFilesList();
+    });
+
+    filesList.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-remove-idx]');
+        if (!btn) return;
+        const idx = parseInt(btn.dataset.removeIdx, 10);
+        if (Number.isFinite(idx)) {
+            overlay._selectedFiles.splice(idx, 1);
+            _renderFilesList();
+        }
     });
 
     previewBtn.addEventListener('click', async () => {
-        const f = fileInput.files?.[0];
-        if (!f) return;
+        if (!overlay._selectedFiles.length) return;
         previewBtn.disabled = true;
         previewBtn.textContent = 'Распознаём…';
         try {
-            await _runPreview(overlay, f);
+            await _runPreview(overlay, overlay._selectedFiles);
         } catch (err) {
             const msg = err?.message || err;
             window.showSnackbar?.(`Ошибка: ${msg}`, 'error');
@@ -78,9 +128,11 @@ export async function openDeptImportDialog() {
 }
 
 
-async function _runPreview(overlay, file) {
+async function _runPreview(overlay, files) {
     const form = new FormData();
-    form.append('file', file);
+    // FastAPI принимает list[UploadFile] как несколько значений с одним
+    // именем поля. Имя совпадает с параметром в роутере: `files`.
+    for (const f of files) form.append('files', f);
 
     const resp = await fetch('/api/v1/admin/persons/import-departments/preview', {
         method: 'POST',
@@ -114,7 +166,29 @@ function _renderPreview(overlay, data) {
     const changedCount = (data.matched || []).filter(m => m.changed).length;
     const unknownPersonsCount = overlay._unknownPersons.length;
 
+    const perFile = Array.isArray(data.per_file) ? data.per_file : [];
+    const filesCount = data.files_count || perFile.length || 1;
+    const fileErrors = perFile.filter(f => f.error);
+
+    const perFileBlock = perFile.length > 1 || fileErrors.length ? `
+        <details class="di-perfile" ${fileErrors.length ? 'open' : ''}>
+            <summary>Файлы (${filesCount})${fileErrors.length ? ` · ошибок: ${fileErrors.length}` : ''}</summary>
+            <ul class="di-perfile__list">
+                ${perFile.map(f => `
+                    <li class="${f.error ? 'di-perfile__item--err' : ''}">
+                        <span class="di-perfile__name" title="${_esc(f.filename || '')}">${_esc(f.filename || '—')}</span>
+                        ${f.error
+                            ? `<span class="di-perfile__err">${_esc(f.error)}</span>`
+                            : `<span class="di-perfile__stat">${f.added} добавлено${f.skipped_duplicates ? `, ${f.skipped_duplicates} дублей` : ''}</span>`}
+                    </li>
+                `).join('')}
+            </ul>
+        </details>
+    ` : '';
+
     body.innerHTML = `
+        ${perFileBlock}
+
         <div class="di-summary">
             <div class="di-stat"><b>${data.total_rows}</b> строк прочитано</div>
             <div class="di-stat"><b>${data.matched.length}</b> сопоставлено</div>
@@ -347,9 +421,9 @@ async function _applyChanges(overlay) {
                 changes: [], new_aliases: newAliases,
             });
             // Теперь повторяем preview — теперь «5 упр.» система знает,
-            // и эти строки уйдут в matched.
-            const fileInput = overlay.querySelector('#di-file');
-            await _runPreview(overlay, fileInput.files[0]);
+            // и эти строки уйдут в matched. Используем накопленный
+            // список файлов (тот же, который был при первом распознавании).
+            await _runPreview(overlay, overlay._selectedFiles || []);
             return;
         } catch (err) {
             window.showSnackbar?.(`Ошибка сохранения алиасов: ${err?.message || err}`, 'error');

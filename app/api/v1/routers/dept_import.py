@@ -194,26 +194,75 @@ class ImportApplyPayload(BaseModel):
 @router.post("/persons/import-departments/preview",
              summary="Распарсить Word и вернуть preview импорта квот людей")
 async def preview_import(
-        file:         UploadFile          = File(...),
+        files:        list[UploadFile]    = File(...),
         db:           Session             = Depends(get_db),
         current_admin: User               = Depends(get_current_active_admin),
 ):
-    if not file.filename.lower().endswith(".docx"):
-        raise HTTPException(status_code=400, detail="Ожидается .docx (не .doc).")
+    """
+    Принимает один или несколько .docx за раз. Пары (ФИО, alias) сливаются
+    в общий список с дедупликацией: один и тот же ФИО, попавшийся в двух
+    файлах с одной квотой, не светится в preview дважды.
 
-    raw = await file.read()
-    try:
-        pairs = _extract_pairs_from_docx(raw)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Не удалось прочитать docx: {e}")
+    Битый файл не валит весь импорт — его ошибка попадает в `per_file`,
+    остальные файлы обрабатываются.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="Не выбран ни один файл.")
+
+    pairs: list[dict] = []
+    per_file: list[dict] = []      # сводка по каждому файлу для UX
+    seen_pair: set[tuple] = set()  # (нормализованное ФИО, нормализованный alias)
+
+    for f in files:
+        info = {
+            "filename": f.filename or "",
+            "rows":     0,
+            "added":    0,
+            "skipped_duplicates": 0,
+            "error":    None,
+        }
+        if not (f.filename or "").lower().endswith(".docx"):
+            info["error"] = "Ожидается .docx (не .doc)."
+            per_file.append(info)
+            continue
+
+        try:
+            raw = await f.read()
+            file_pairs = _extract_pairs_from_docx(raw)
+        except Exception as e:
+            info["error"] = f"Не удалось прочитать docx: {e}"
+            per_file.append(info)
+            continue
+
+        info["rows"] = len(file_pairs)
+        for p in file_pairs:
+            key = (_normalize(p["full_name"]).lower(),
+                   _normalize_alias(p["alias_raw"]))
+            if key in seen_pair:
+                info["skipped_duplicates"] += 1
+                continue
+            seen_pair.add(key)
+            pairs.append(p)
+            info["added"] += 1
+        per_file.append(info)
 
     if not pairs:
+        # Нет ни одного валидного парного значения. Сообщение зависит от
+        # того, были ли вообще ошибки чтения файлов.
+        had_errors = any(x["error"] for x in per_file)
+        msg = (
+            "Ни в одном файле не найдено таблиц с колонками «ФИО» и «Примечание»."
+            if not had_errors
+            else "Файлы не удалось обработать. См. подробности в per_file."
+        )
         return {
             "matched":          [],
             "unknown_aliases":  [],
             "unknown_persons":  [],
             "total_rows":       0,
-            "message":          "В документе не найдено таблиц с колонками «ФИО» и «Примечание».",
+            "per_file":         per_file,
+            "files_count":      len(files),
+            "message":          msg,
         }
 
     # Известные алиасы — нормализуем для сравнения
@@ -283,6 +332,8 @@ async def preview_import(
         "unknown_persons": unknown_persons,
         "total_rows":      len(pairs),
         "departments":     sorted(known_usernames),
+        "per_file":        per_file,
+        "files_count":     len(files),
     }
 
 
