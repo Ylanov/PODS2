@@ -243,7 +243,21 @@
                         </svg>
                         Операции
                     </button>
+                    <!-- «Карта ОД» — видна только при наличии permission='oper_map' (или admin). -->
+                    <button id="dept-oper-map-tab-btn" class="btn btn-outlined btn-sm hidden" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                            <circle cx="12" cy="10" r="3"/>
+                        </svg>
+                        Карта ОД
+                    </button>
                 </div>
+            </div>
+
+            <!-- Панель «Карта ОД»: вся разметка строится JS-модулем oper_map.js -->
+            <div id="dept-oper-map-panel" class="hidden" style="padding-top:8px;">
+                <div id="oper-map-root"></div>
             </div>
 
             <!-- Панель «Операции» (отдел): список кнопок-операций.

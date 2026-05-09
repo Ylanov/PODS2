@@ -40,11 +40,12 @@ window.app = {
 // через require_permission, поэтому обход через devtools не сработает —
 // будет 403.
 const PERM_TAB_MAP = {
-    'lists':   'dept-main-tab-btn',
-    'duty':    'dept-duty-tab-btn',
-    'combat':  'cc-dept-tab-btn',
-    'tasks':   'dept-tasks-tab-btn',
-    'persons': 'dept-persons-tab-btn',
+    'lists':    'dept-main-tab-btn',
+    'duty':     'dept-duty-tab-btn',
+    'combat':   'cc-dept-tab-btn',
+    'tasks':    'dept-tasks-tab-btn',
+    'persons':  'dept-persons-tab-btn',
+    'oper_map': 'dept-oper-map-tab-btn',
 };
 
 export function applyPermissionsToTabs(permissions) {
@@ -76,6 +77,7 @@ window._applyPermissionsToTabs = applyPermissionsToTabs;
 
 let _tasksDeptInited   = false;
 let _deptPersonsInited = false;
+let _operMapInited     = false;
 
 function switchDeptTab(tab) {
     // Если сейчас на вкладке "Графики наряда" и текущий месяц в draft —
@@ -99,6 +101,7 @@ function switchDeptTab(tab) {
     document.getElementById('dept-tasks-panel')?.classList.add('hidden');
     document.getElementById('dept-persons-panel')?.classList.add('hidden');
     document.getElementById('dept-ops-panel')?.classList.add('hidden');
+    document.getElementById('dept-oper-map-panel')?.classList.add('hidden');
 
     // Сбрасываем активный стиль у всех кнопок управления
     const resetBtn = (id) => {
@@ -108,7 +111,8 @@ function switchDeptTab(tab) {
         b.classList.add('btn-outlined');
     };
     ['dept-main-tab-btn', 'cc-dept-tab-btn', 'dept-duty-tab-btn',
-     'dept-tasks-tab-btn', 'dept-persons-tab-btn', 'dept-ops-tab-btn'].forEach(resetBtn);
+     'dept-tasks-tab-btn', 'dept-persons-tab-btn', 'dept-ops-tab-btn',
+     'dept-oper-map-tab-btn'].forEach(resetBtn);
 
     const activateBtn = (id) => {
         const b = document.getElementById(id);
@@ -156,6 +160,17 @@ function switchDeptTab(tab) {
         document.getElementById('dept-ops-panel')?.classList.remove('hidden');
         activateBtn('dept-ops-tab-btn');
         import('./comms_report.js').then(m => m.mountOpsPanel());
+    } else if (tab === 'oper_map') {
+        document.getElementById('dept-oper-map-panel')?.classList.remove('hidden');
+        activateBtn('dept-oper-map-tab-btn');
+        import('./oper_map.js').then(m => {
+            if (!_operMapInited) {
+                m.initOperMap('oper-map-root');
+                _operMapInited = true;
+            } else {
+                m.invalidateMapSize?.();   // пересчёт размеров после показа
+            }
+        });
     }
 }
 
@@ -306,6 +321,7 @@ function bindEvents() {
     document.getElementById('dept-tasks-tab-btn')?.addEventListener('click',   () => switchDeptTab('tasks'));
     document.getElementById('dept-persons-tab-btn')?.addEventListener('click', () => switchDeptTab('persons'));
     document.getElementById('dept-ops-tab-btn')?.addEventListener('click',     () => switchDeptTab('ops'));
+    document.getElementById('dept-oper-map-tab-btn')?.addEventListener('click',() => switchDeptTab('oper_map'));
 
     // ── Инициализация UI-компонентов (без API-вызовов) ────────────────────────
     ui.initPersonsTab();
