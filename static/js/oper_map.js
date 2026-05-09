@@ -71,13 +71,21 @@ async function _loadLeaflet() {
         document.head.appendChild(script);
     });
     _L = window.L;
-    // Иконки маркеров — переопределяем пути на наш прокси, иначе Leaflet
-    // ищет images/marker-icon.png относительно URL leaflet.css.
-    _L.Icon.Default.mergeOptions({
-        iconUrl:       `${VENDOR}/marker-icon.png`,
-        iconRetinaUrl: `${VENDOR}/marker-icon-2x.png`,
-        shadowUrl:     `${VENDOR}/marker-shadow.png`,
-    });
+    // Leaflet 1.9 в Icon.Default._getIconUrl ВСЕГДА делает
+    //   imagePath + this.options.iconUrl
+    // даже если iconUrl уже абсолютный путь. Если задать iconUrl через
+    // mergeOptions как '/api/v1/oper-map/vendor/marker-icon.png', а
+    // imagePath авто-вычислился из URL leaflet.css в '/api/v1/oper-map/vendor/' —
+    // получится двойной путь /api/v1/oper-map/vendor/api/v1/oper-map/vendor/...
+    // 404. Поэтому iconUrl НЕ трогаем (по умолчанию там относительные
+    // 'marker-icon.png' / 'marker-icon-2x.png' / 'marker-shadow.png'),
+    // а имя файла без префикса whitelist-ит наш бэк.
+    //
+    // imagePath на всякий случай выставляем явно — auto-detect ищет
+    // тэг <link rel="stylesheet"> с 'leaflet' в имени, наш CSS грузится
+    // ровно с такого URL, поэтому detect совпадёт. Но явная установка
+    // надёжнее на случай гонки/переупорядочивания тегов в head.
+    _L.Icon.Default.imagePath = `${VENDOR}/`;
 }
 
 
