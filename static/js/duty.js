@@ -241,7 +241,18 @@ function _renderScheduleList() {
         return;
     }
 
-    container.innerHTML = _schedules.map(s => `
+    container.innerHTML = _schedules.map(s => {
+        const tplCount = Array.isArray(s.applicable_template_ids) ? s.applicable_template_ids.length : 0;
+        const scopeBadge = tplCount === 0
+            ? '<span class="duty-sched-item__scope" title="Применяется ко всем спискам с такой должностью">все списки</span>'
+            : `<span class="duty-sched-item__scope duty-sched-item__scope--bound"
+                       title="Применяется только к ${tplCount} шаблон(у/ам)">${tplCount} шаблон.</span>`;
+        const kind = s.kind || 'duty';
+        const kindBadge = kind === 'amg_duty'
+            ? `<span class="duty-sched-item__kind duty-sched-item__kind--amg"
+                     title="Дежурство в АМГ — учётный график, в слоты не подставляет">АМГ</span>`
+            : '';
+        return `
         <div class="duty-sched-item${s.id === _currentId ? ' duty-sched-item--active' : ''}"
              data-sched-id="${s.id}">
             <div class="duty-sched-item__body">
@@ -250,23 +261,164 @@ function _renderScheduleList() {
                     ? `<span class="duty-sched-item__pos">${_esc(s.position_name)}</span>`
                     : ''}
             </div>
-            <button class="duty-sched-item__del" data-del-sched="${s.id}" title="Удалить график">✕</button>
-        </div>
-    `).join('');
+            ${kindBadge}
+            ${scopeBadge}
+            <div class="duty-sched-item__actions">
+                <button class="duty-sched-item__kind-toggle btn btn-outlined btn-xs"
+                        data-sched-kind="${s.id}" data-current-kind="${kind}" type="button"
+                        title="Переключить тип графика (наряд / дежурство АМГ)">⇄</button>
+                <button class="duty-sched-item__tpl btn btn-outlined btn-xs"
+                        data-sched-tpl="${s.id}" type="button"
+                        title="Применять только к выбранным шаблонам списков">🎯</button>
+                <button class="duty-sched-item__del btn btn-danger btn-xs"
+                        data-del-sched="${s.id}" type="button"
+                        title="Удалить график">✕</button>
+            </div>
+        </div>`;
+    }).join('');
 
+    // Делегирование: один listener на контейнер. e.stopPropagation на
+    // дочерних кнопках чтобы клик по строке (выбор графика) не срабатывал.
     container.onclick = async (e) => {
-        const delBtn = e.target.closest('[data-del-sched]');
-        const item   = e.target.closest('[data-sched-id]');
+        const delBtn  = e.target.closest('[data-del-sched]');
+        const tplBtn  = e.target.closest('[data-sched-tpl]');
+        const kindBtn = e.target.closest('[data-sched-kind]');
+        const item    = e.target.closest('[data-sched-id]');
 
         if (delBtn) {
             e.stopPropagation();
-            await _deleteSchedule(parseInt(delBtn.dataset.delSched));
+            await _deleteSchedule(parseInt(delBtn.dataset.delSched, 10));
+            return;
+        }
+        if (tplBtn) {
+            e.stopPropagation();
+            await _openTemplateFilterModal(parseInt(tplBtn.dataset.schedTpl, 10));
+            return;
+        }
+        if (kindBtn) {
+            e.stopPropagation();
+            await _toggleScheduleKind(
+                parseInt(kindBtn.dataset.schedKind, 10),
+                kindBtn.dataset.currentKind || 'duty',
+            );
             return;
         }
         if (item) {
-            await _selectSchedule(parseInt(item.dataset.schedId));
+            await _selectSchedule(parseInt(item.dataset.schedId, 10));
         }
     };
+}
+
+
+// ─── kind / applicable_template_ids — admin зеркало dept-стороны ──────────
+
+async function _toggleScheduleKind(scheduleId, currentKind) {
+    const next = currentKind === 'amg_duty' ? 'duty' : 'amg_duty';
+    const label = next === 'amg_duty' ? '«Дежурство в АМГ»' : '«Наряд»';
+    if (!confirm(`Сменить тип графика на ${label}?`)) return;
+    try {
+        await api.patch(`/admin/schedules/${scheduleId}/kind`, { kind: next });
+        window.showSnackbar?.(`Тип графика изменён на ${label}`, 'success');
+        await loadSchedules();
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
+    }
+}
+
+// Модалка «Применять только к шаблонам». Шаблоны тащим через dept-эндпоинт
+// /dept/templates — он защищён require_permission, но admin проходит всегда.
+async function _openTemplateFilterModal(scheduleId) {
+    const schedule = _schedules.find(s => s.id === scheduleId);
+    if (!schedule) return;
+
+    document.getElementById('duty-tpl-filter-modal')?.remove();
+
+    let templates = [];
+    try {
+        templates = await api.get('/dept/templates');
+    } catch (err) {
+        window.showSnackbar?.(`Не удалось загрузить шаблоны: ${err?.message || err}`, 'error');
+        return;
+    }
+
+    const selected = new Set(
+        (schedule.applicable_template_ids || []).map(Number),
+    );
+
+    const modal = document.createElement('div');
+    modal.id = 'duty-tpl-filter-modal';
+    modal.style.cssText = `
+        position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.45);
+        display:flex; align-items:center; justify-content:center; padding:20px;
+    `;
+    modal.innerHTML = `
+        <div style="background:var(--md-surface,#fff); border-radius:var(--md-radius-lg,14px);
+                    max-width:520px; width:100%; padding:18px 20px; max-height:80vh;
+                    display:flex; flex-direction:column;
+                    box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+            <div style="margin-bottom:6px;">
+                <h3 style="margin:0; font-size:1rem; font-weight:600;">Применять только к шаблонам</h3>
+                <p style="margin:4px 0 0; font-size:0.8rem; color:var(--md-on-surface-variant); line-height:1.4;">
+                    График «${_esc(schedule.title)}». Если ничего не отметить — он будет применяться ко всем
+                    спискам с должностью «${_esc(schedule.position_name || '—')}». Отметив шаблоны,
+                    вы ограничите автозаполнение только их инстансами.
+                </p>
+            </div>
+            <div style="flex:1; overflow-y:auto; margin:10px 0; padding:6px;
+                        border:1px solid var(--md-outline-variant); border-radius:6px;">
+                ${templates.length === 0
+                    ? '<p style="color:var(--md-on-surface-hint); font-size:0.85rem; padding:10px;">Шаблонов в системе пока нет.</p>'
+                    : templates.map(t => `
+                        <label class="duty-tpl-row" style="display:flex; align-items:center; gap:8px; padding:5px 8px; cursor:pointer; border-radius:4px;">
+                            <input type="checkbox" value="${t.id}" ${selected.has(t.id) ? 'checked' : ''}>
+                            <span style="flex:1; font-size:0.86rem;">${_esc(t.title)}</span>
+                        </label>
+                    `).join('')}
+            </div>
+            <div style="display:flex; justify-content:space-between; gap:8px;">
+                <div>
+                    <button id="duty-tpl-clear" class="btn btn-text btn-sm" type="button">Снять привязку</button>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button id="duty-tpl-cancel" class="btn btn-outlined btn-sm" type="button">Отмена</button>
+                    <button id="duty-tpl-save"   class="btn btn-success  btn-sm" type="button">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    modal.querySelector('#duty-tpl-cancel').addEventListener('click', () => modal.remove());
+
+    modal.querySelector('#duty-tpl-clear').addEventListener('click', async () => {
+        await _applyTemplateFilter(scheduleId, []);
+        modal.remove();
+    });
+
+    modal.querySelector('#duty-tpl-save').addEventListener('click', async () => {
+        const ids = Array.from(modal.querySelectorAll('input[type=checkbox]:checked'))
+            .map(cb => parseInt(cb.value, 10));
+        await _applyTemplateFilter(scheduleId, ids);
+        modal.remove();
+    });
+}
+
+async function _applyTemplateFilter(scheduleId, templateIds) {
+    try {
+        await api.patch(`/admin/schedules/${scheduleId}/applicable-templates`, {
+            template_ids: templateIds,
+        });
+        window.showSnackbar?.(
+            templateIds.length === 0
+                ? 'Привязка к шаблонам снята — график применяется ко всем'
+                : `Привязка обновлена (${templateIds.length} шаблонов)`,
+            'success',
+        );
+        await loadSchedules();
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
+    }
 }
 
 async function _deleteSchedule(id) {
