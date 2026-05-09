@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Настройки · СЭД-мост pods2</title>
+    <style>
+        :root {
+            --bg:        #fafaf9;
+            --surface:   #ffffff;
+            --border:    #d5d2cc;
+            --primary:   #4a7c6f;
+            --primary-h: #3a6358;
+            --text:      #1c1a18;
+            --hint:      #707070;
+            --error:     #b85450;
+            --success:   #2f7d4a;
+        }
+        body {
+            font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 24px;
+            font-size: 14px;
+        }
+        h1 { font-size: 20px; margin: 0 0 16px; }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 20px;
+            margin-bottom: 14px;
+            max-width: 720px;
+        }
+        .field { margin-bottom: 14px; }
+        .field:last-child { margin-bottom: 0; }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--hint);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        input[type=text], input[type=password], input[type=number] {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 9px 11px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            background: var(--surface);
+        }
+        input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+        .hint {
+            font-size: 12px;
+            color: var(--hint);
+            margin-top: 5px;
+            line-height: 1.4;
+        }
+        button {
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-h); }
+        .btn-outlined {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .actions { display: flex; gap: 8px; margin-top: 12px; }
+        .status {
+            margin-top: 14px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .status--ok    { background: #e8f5ee; color: var(--success); }
+        .status--err   { background: #fdf0f0; color: var(--error); }
+        .sections-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .sections-table th, .sections-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+        }
+        .sections-table th { font-weight: 600; color: var(--hint); font-size: 12px; }
+        .sections-table input[type=text] { padding: 4px 6px; font-size: 12px; }
+        .sections-table .col-key   { width: 28%; }
+        .sections-table .col-url   { width: 30%; }
+        .sections-table .col-title { }
+        .sections-table .col-act   { width: 36px; text-align: center; }
+        .row-x {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--error);
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+        .row-x:hover { background: rgba(184,84,80,0.08); }
+    </style>
+</head>
+<body>
+
+<h1>Настройки · СЭД-мост pods2</h1>
+
+<div class="card">
+    <div class="field">
+        <label for="pods2_url">URL pods2</label>
+        <input type="text" id="pods2_url" placeholder="https://staff.asy-tk.ru" autocomplete="off">
+        <div class="hint">Без слэша на конце. Это адрес, на который расширение шлёт дайджест по <code>POST /api/v1/sed/snapshot</code>.</div>
+    </div>
+    <div class="field">
+        <label for="pods2_token">Токен pods2 (Bearer)</label>
+        <input type="password" id="pods2_token" placeholder="вставьте токен" autocomplete="off">
+        <div class="hint">Логиньтесь в pods2 → DevTools → Application → Local Storage → ключ <code>token</code>. Скопируйте значение целиком. Токен хранится только в локальном хранилище расширения.</div>
+    </div>
+    <div class="field">
+        <label for="period_min">Период синхронизации (минуты)</label>
+        <input type="number" id="period_min" min="1" max="60" step="1" value="5" style="width: 100px;">
+        <div class="hint">По умолчанию каждые 5 минут. Реже 1 минуты ставить нет смысла — Chrome сам ограничивает alarms.</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin: 0 0 8px; font-size: 14px;">Разделы СЭД</h3>
+    <div class="hint" style="margin-bottom: 8px;">Какие страницы расширение опрашивает. Можно убрать ненужные строки или поправить заголовки. <code>url</code> — путь относительно <code>https://sed.mchs.ru</code>.</div>
+    <table class="sections-table">
+        <thead>
+            <tr>
+                <th class="col-key">Ключ</th>
+                <th class="col-url">URL</th>
+                <th class="col-title">Заголовок</th>
+                <th class="col-act"></th>
+            </tr>
+        </thead>
+        <tbody id="sections-body"></tbody>
+    </table>
+    <div class="actions" style="margin-top: 8px;">
+        <button class="btn-outlined" id="add-section">+ Добавить раздел</button>
+        <button class="btn-outlined" id="reset-sections">Сбросить к дефолту</button>
+    </div>
+</div>
+
+<div class="actions">
+    <button class="btn-primary" id="save-btn">Сохранить</button>
+    <button class="btn-outlined" id="test-btn">Проверить синхронизацию</button>
+</div>
+
+<div id="status" style="display:none;"></div>
+
+<script src="options.js" type="module"></script>
+</body>
+</html>
