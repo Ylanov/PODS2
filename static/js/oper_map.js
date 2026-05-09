@@ -401,6 +401,28 @@ const KIND_LABELS = {
     area:     'местность',
 };
 
+function _suggestToCoords(item) {
+    // Из uri Suggest парсим параметр ll. Формат:
+    //   ymapsbm1://geo?ll=37.620070%2C55.753630&spn=...
+    //   ymapsbm1://geo?ll=37.620070,55.753630&...
+    // ll = "lng,lat" (Яндекс кладёт долготу первой). Это точные координаты
+    // выбранного пользователем объекта — ровно те, на которые Suggest
+    // показал бы маркер в Я.Картах.
+    if (!item || !item.uri) return null;
+    const decoded = decodeURIComponent(item.uri);
+    const m = decoded.match(/[?&]ll=([0-9.\-]+),([0-9.\-]+)/);
+    if (!m) return null;
+    const lng = parseFloat(m[1]);
+    const lat = parseFloat(m[2]);
+    if (!isFinite(lng) || !isFinite(lat)) return null;
+    return {
+        text: item.title || item.address || '',
+        lat,
+        lng,
+        kind: 'house',
+    };
+}
+
 async function _geocodeRaw(q, opts = {}) {
     // Bbox Москва+МО — приоритезирует область, но не отбрасывает результаты
     // совсем за её краем (rspn=1 был слишком строгим, его убрали в backend).
@@ -600,12 +622,18 @@ function _showSuggestDropdown(input, items, onPick) {
             const it = items[idx];
             _hideSuggestDropdown();
             input.value = it.title;
-            // По выбранной подсказке геокодер должен вернуть ровно тот объект.
-            // Если у Suggest есть uri — шлём его (точный запрос). Иначе
-            // fallback на текстовый geocode по title/address.
-            const results = it.uri
-                ? await _geocodeRaw('', { uri: it.uri })
-                : await _geocodeRaw(it.address || it.title);
+            // 1. Самый надёжный путь — координаты прямо из uri Suggest.
+            //    Suggest возвращает uri вида ymapsbm1://geo?ll=lng,lat&...
+            //    с точными координатами выбранного объекта. Геокодер
+            //    по этому uri не всегда понимает что нужно, поэтому
+            //    парсим ll сами — без сетевого запроса и без интерпретации.
+            const direct = _suggestToCoords(it);
+            if (direct) {
+                onPick(direct);
+                return;
+            }
+            // 2. Fallback — текстовый geocode по полному адресу подсказки.
+            const results = await _geocodeRaw(it.address || it.title);
             if (results.length > 0) {
                 onPick(results[0]);
             } else {
