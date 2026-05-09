@@ -256,7 +256,10 @@ const _MARK_LABEL_GENITIVE = {
     V: 'отпуска',
 };
 
-export async function clearMarks({ scheduleId, markType, year, month, apiPath, isReadOnly, reload }) {
+export async function clearMarks({
+    scheduleId, markType, year, month, apiPath, isReadOnly, reload,
+    personId = null, personLabel = null,
+}) {
     if (!scheduleId) return;
     if (isReadOnly && isReadOnly()) {
         window.showSnackbar?.('График утверждён. Сначала разблокируйте.', 'error');
@@ -264,10 +267,20 @@ export async function clearMarks({ scheduleId, markType, year, month, apiPath, i
     }
     const label = _MARK_LABEL_GENITIVE[markType] || 'отметки';
     const mm = String(month).padStart(2, '0');
-    if (!confirm(`Снять все ${label} за ${mm}.${year}?`)) return;
+    const scope = personId
+        ? `у «${personLabel || '?'}»`
+        : 'у всех';
+    if (!confirm(`Снять все ${label} ${scope} за ${mm}.${year}?`)) return;
     try {
-        await api.delete(`${apiPath}?mark_type=${markType}&year=${year}&month=${month}`);
-        window.showSnackbar?.(`${label[0].toUpperCase() + label.slice(1)} очищены`, 'success');
+        const params = new URLSearchParams({
+            mark_type: markType,
+            year:      String(year),
+            month:     String(month),
+        });
+        if (personId) params.set('person_id', String(personId));
+        await api.delete(`${apiPath}?${params.toString()}`);
+        const Cap = label[0].toUpperCase() + label.slice(1);
+        window.showSnackbar?.(`${Cap} очищены ${scope}`, 'success');
         await reload();
     } catch (err) {
         window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');

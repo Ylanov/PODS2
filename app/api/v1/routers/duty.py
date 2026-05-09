@@ -447,13 +447,13 @@ def clear_marks_by_type(
     mark_type:   str = Query(..., min_length=1, max_length=2),
     year:        int = Query(..., ge=2000, le=2100),
     month:       int = Query(..., ge=1, le=12),
+    person_id:   Optional[int] = Query(None),
     db:    Session = Depends(get_db),
     admin: User    = Depends(get_current_active_admin),
 ):
     """
-    Массовое снятие отметок одного типа (например, V — отпуск) за месяц.
-    Используется кнопкой «Очистить отпуска» в UI: один SQL DELETE вместо
-    множества toggle-запросов по каждой дате.
+    Снятие отметок одного типа за месяц. Если задан person_id — только
+    у этого человека (точечно), иначе — массово у всех людей графика.
     """
     from app.models.duty import ALL_MARK_TYPES
     from calendar import monthrange
@@ -467,12 +467,15 @@ def clear_marks_by_type(
         raise HTTPException(status_code=400, detail=f"Недопустимый тип отметки: {mt}")
 
     last = monthrange(year, month)[1]
-    db.query(DutyMark).filter(
+    q = db.query(DutyMark).filter(
         DutyMark.schedule_id == schedule_id,
         DutyMark.mark_type   == mt,
         DutyMark.duty_date   >= date_type(year, month, 1),
         DutyMark.duty_date   <= date_type(year, month, last),
-    ).delete(synchronize_session=False)
+    )
+    if person_id is not None:
+        q = q.filter(DutyMark.person_id == person_id)
+    q.delete(synchronize_session=False)
     db.commit()
 
 

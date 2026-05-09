@@ -550,6 +550,10 @@ function _renderGrid() {
                     <button class="duty-grid__remove-person"
                             data-remove-person="${p.person_id}"
                             title="Убрать из графика">✕</button>
+                    <button class="duty-grid__clear-vac"
+                            data-clear-vac="${p.person_id}"
+                            data-pname="${_esc(p.full_name)}"
+                            title="Снять все отпуска у этого человека за месяц">🏖×</button>
                     `}
                     <div class="duty-grid__name-info">
                         ${rankBadge}
@@ -591,9 +595,24 @@ function _renderGrid() {
     table.onclick = readOnly ? null : async (e) => {
         const cell      = e.target.closest('.duty-grid__cell');
         const removeBtn = e.target.closest('.duty-grid__remove-person');
+        const clearVac  = e.target.closest('.duty-grid__clear-vac');
 
         if (removeBtn) {
             await _removePersonFromSchedule(parseInt(removeBtn.dataset.removePerson));
+            return;
+        }
+        if (clearVac) {
+            await clearMarks({
+                scheduleId:  _currentId,
+                markType:    MARK_VACATION,
+                year:        _year,
+                month:       _month,
+                apiPath:     `/admin/schedules/${_currentId}/marks`,
+                isReadOnly:  _isReadOnly,
+                personId:    parseInt(clearVac.dataset.clearVac, 10),
+                personLabel: clearVac.dataset.pname,
+                reload:      _loadGrid,
+            });
             return;
         }
         if (cell) {

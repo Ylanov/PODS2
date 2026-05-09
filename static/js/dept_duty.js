@@ -585,10 +585,16 @@ function _renderGrid() {
                 ${p.rank ? `<span style="color:var(--md-on-surface-hint); font-size:0.7rem;"> ${esc(p.rank)}</span>` : ''}
             </td>
             ${cells}
-            <td style="text-align:center;">
-                ${readOnly ? '' :
-                    `<button class="btn btn-danger btn-xs dept-duty-remove-person"
-                             data-pid="${p.person_id}" type="button" title="Убрать из графика">✕</button>`}
+            <td style="text-align:center; white-space:nowrap;">
+                ${readOnly ? '' : `
+                    <button class="btn btn-outlined btn-xs dept-duty-clear-vac"
+                            data-pid="${p.person_id}"
+                            data-pname="${esc(p.full_name)}"
+                            type="button"
+                            title="Снять все отпуска у этого человека за месяц">🏖×</button>
+                    <button class="btn btn-danger btn-xs dept-duty-remove-person"
+                            data-pid="${p.person_id}" type="button" title="Убрать из графика">✕</button>
+                `}
             </td>
         </tr>`;
     }).join('')}
@@ -615,6 +621,21 @@ function _renderGrid() {
     }
     table.querySelectorAll('.dept-duty-remove-person').forEach(btn => {
         btn.addEventListener('click', () => _removePerson(parseInt(btn.dataset.pid)));
+    });
+    table.querySelectorAll('.dept-duty-clear-vac').forEach(btn => {
+        btn.addEventListener('click', () => {
+            clearMarks({
+                scheduleId:  _currentId,
+                markType:    MARK_VACATION,
+                year:        _viewYear,
+                month:       _viewMonth,
+                apiPath:     `/dept/schedules/${_currentId}/marks`,
+                isReadOnly:  _isReadOnly,
+                personId:    parseInt(btn.dataset.pid, 10),
+                personLabel: btn.dataset.pname,
+                reload:      _loadMarksAndRender,
+            });
+        });
     });
 }
 
