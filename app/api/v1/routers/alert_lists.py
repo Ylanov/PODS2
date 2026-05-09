@@ -254,6 +254,31 @@ def _get_or_create_position(db: Session, title: str, role_kind: str,
     return pos
 
 
+async def _sync_person_position_title(db: Session, position: AlertPosition) -> Optional[int]:
+    """
+    Обратная связь со справочником людей: когда к должности привязали
+    конкретного Person — переписываем у него Person.position_title в
+    соответствие с AlertPosition.title. Так в Базе людей у Иванова сразу
+    видно «Начальник 5 управления», а не пустое поле.
+
+    Возвращает person_id если был апдейт (для WS broadcast'а), иначе None.
+
+    Не очищаем title если primary_person_id стал None — пользователь мог
+    сам прописать должность вручную, не будем затирать молча.
+    """
+    if not position.primary_person_id:
+        return None
+    person = db.query(Person).filter(Person.id == position.primary_person_id).first()
+    if not person:
+        return None
+    new_title = position.title
+    if person.position_title == new_title:
+        return None
+    person.position_title = new_title
+    db.flush()
+    return person.id
+
+
 # ─── Lists ───────────────────────────────────────────────────────────────────
 
 @router.get("/", response_model=List[ListOut], summary="Два списка оповещения")
@@ -301,9 +326,14 @@ async def create_slot(list_id: int, payload: SlotIn, db: Session = Depends(get_d
 
     slot = AlertSlot(list_id=list_id, position_id=pos.id, sort_order=payload.sort_order or 0)
     db.add(slot)
+    # Если при создании сразу указали primary_person_id — синхронизируем
+    # должность в Базе людей.
+    synced_person_id = await _sync_person_position_title(db, pos)
     db.commit()
     db.refresh(slot)
     await manager.broadcast({"action": "alert_lists_update"})
+    if synced_person_id:
+        await manager.broadcast({"action": "person_update", "person_id": synced_person_id})
     return _slot_out(slot)
 
 
@@ -347,9 +377,17 @@ async def patch_slot(slot_id: int, payload: SlotPatch, db: Session = Depends(get
     if payload.sort_order is not None:
         s.sort_order = payload.sort_order
 
+    # Синхронизируем должность в Базе людей: если поменяли primary_person_id
+    # ИЛИ title — у привязанного Person обновим position_title.
+    synced_person_id = None
+    if payload.primary_person_id_set or payload.title is not None:
+        synced_person_id = await _sync_person_position_title(db, pos)
+
     db.commit()
     db.refresh(s)
     await manager.broadcast({"action": "alert_lists_update"})
+    if synced_person_id:
+        await manager.broadcast({"action": "person_update", "person_id": synced_person_id})
     return _slot_out(s)
 
 
