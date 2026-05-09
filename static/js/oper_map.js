@@ -401,12 +401,20 @@ const KIND_LABELS = {
     area:     'местность',
 };
 
-async function _geocodeRaw(q) {
+async function _geocodeRaw(q, opts = {}) {
     // Bbox Москва+МО — приоритезирует область, но не отбрасывает результаты
     // совсем за её краем (rspn=1 был слишком строгим, его убрали в backend).
-    const bbox = '35.15,54.25~40.20,56.97';
+    // Если передан opts.uri — шлём его, и тогда геокодер вернёт ровно
+    // выбранный пользователем объект (без альтернативных интерпретаций).
+    const params = new URLSearchParams();
+    if (opts.uri) {
+        params.set('uri', opts.uri);
+    } else {
+        params.set('q', q || '');
+        params.set('bbox', '35.15,54.25~40.20,56.97');
+    }
     try {
-        const res = await api.get(`/oper-map/geocode?q=${encodeURIComponent(q)}&bbox=${encodeURIComponent(bbox)}`);
+        const res = await api.get(`/oper-map/geocode?${params.toString()}`);
         return Array.isArray(res?.results) ? res.results : [];
     } catch (err) {
         window.showSnackbar?.(`Геокодер недоступен: ${err?.message || err}`, 'error');
@@ -592,9 +600,12 @@ function _showSuggestDropdown(input, items, onPick) {
             const it = items[idx];
             _hideSuggestDropdown();
             input.value = it.title;
-            // По выбранной подсказке делаем обычный геокодер чтобы получить
-            // координаты — Suggest API их не возвращает.
-            const results = await _geocodeRaw(it.address || it.title);
+            // По выбранной подсказке геокодер должен вернуть ровно тот объект.
+            // Если у Suggest есть uri — шлём его (точный запрос). Иначе
+            // fallback на текстовый geocode по title/address.
+            const results = it.uri
+                ? await _geocodeRaw('', { uri: it.uri })
+                : await _geocodeRaw(it.address || it.title);
             if (results.length > 0) {
                 onPick(results[0]);
             } else {

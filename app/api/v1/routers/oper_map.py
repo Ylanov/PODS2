@@ -271,34 +271,41 @@ async def proxy_tile(z: int, x: int, y: int):
 
 @router.get("/geocode", summary="Прокси Яндекс-геокодера: адрес → координаты")
 async def proxy_geocode(
-    q:    str = Query(..., min_length=2, max_length=500),
+    q:    Optional[str] = Query(default=None, max_length=500),
     bbox: Optional[str] = Query(default=None, description="lng1,lat1~lng2,lat2"),
+    uri:  Optional[str] = Query(default=None, max_length=2000,
+                                description="ymapsbm1://geo?... — точный объект из Suggest"),
 ):
     if not settings.YANDEX_MAPS_API_KEY:
         raise HTTPException(status_code=503, detail="YANDEX_MAPS_API_KEY не задан")
-
-    # Если в запросе нет упоминания Москвы или области — добавляем префикс,
-    # иначе на коротких запросах вроде «Тверская 1» Яндекс может найти
-    # одноимённую улицу в другом регионе. С префиксом результаты заметно
-    # релевантнее.
-    q_lower = q.lower()
-    if not any(w in q_lower for w in ("москва", "московская", "подмосков", "мо ", "мо,")):
-        geocode_q = f"Россия, Москва, {q}"
-    else:
-        geocode_q = q
+    if not q and not uri:
+        raise HTTPException(status_code=400, detail="Нужно передать q или uri")
 
     params = {
         "apikey":  settings.YANDEX_MAPS_API_KEY,
         "format":  "json",
-        "geocode": geocode_q,
         "lang":    "ru_RU",
         "results": "20",
     }
-    # bbox без rspn=1 — Яндекс приоритезирует результаты в этой области,
-    # но не отбрасывает совсем близкие за её границей. С rspn=1 геокодер
-    # часто вообще ничего не возвращал даже на корректные адреса в МО.
-    if bbox:
-        params["bbox"] = bbox
+
+    if uri:
+        # Точный запрос по uri — Suggest возвращает uri конкретного объекта,
+        # геокодер по нему даёт ровно его координаты, без альтернативных
+        # результатов. Самый надёжный путь когда пользователь выбрал из
+        # выпадашки — без него геокодер по тексту мог вернуть другой объект.
+        params["uri"] = uri
+    else:
+        # Если в запросе нет упоминания Москвы/области — добавляем префикс.
+        # На коротких запросах вроде «Тверская 1» Яндекс мог найти улицу
+        # в другом регионе.
+        q_lower = q.lower()
+        if not any(w in q_lower for w in ("москва", "московская", "подмосков", "мо ", "мо,")):
+            params["geocode"] = f"Россия, Москва, {q}"
+        else:
+            params["geocode"] = q
+        # bbox без rspn=1 — приоритет, но не отсекает.
+        if bbox:
+            params["bbox"] = bbox
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get("https://geocode-maps.yandex.ru/1.x/", params=params)
