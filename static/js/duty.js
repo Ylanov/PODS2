@@ -19,6 +19,7 @@ import {
     updatePrintCover,
     postDutyMark,
 } from './duty_ui.js';
+import { openSubstitutionWizard } from './duty_substitution_wizard.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -376,6 +377,10 @@ async function _approveCurrentMonth() {
         'Будет зафиксирован текущий состав и все проставленные отметки. ' +
         'Чтобы изменить — нажмите «✎ Редактировать».'
     )) return;
+    await _doApprove();
+}
+
+async function _doApprove() {
     try {
         _approval = await api.post(
             `/admin/schedules/${_currentId}/approval?year=${_year}&month=${_month}`
@@ -384,6 +389,17 @@ async function _approveCurrentMonth() {
         _renderGrid();
         window.showSnackbar?.('График утверждён', 'success');
     } catch (err) {
+        // Pre-check на сервере: если есть нерешённые конфликты подмен —
+        // открываем wizard. После сохранения он сам зовёт _doApprove повторно.
+        if (err?.status === 409 && err?.detail?.code === 'duty_conflicts_unresolved') {
+            openSubstitutionWizard({
+                conflicts:  err.detail.conflicts || [],
+                scheduleId: _currentId,
+                apiPrefix:  '/admin',
+                onResolved: _doApprove,
+            });
+            return;
+        }
         window.showSnackbar?.(`Ошибка утверждения: ${err?.message || err}`, 'error');
     }
 }

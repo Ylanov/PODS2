@@ -699,6 +699,141 @@ def admin_get_approval_status(
     }
 
 
+def _admin_conflicts_for_month(db: Session, schedule_id: int, year: int, month: int):
+    """
+    Зеркало dept_duty._conflicts_for_month для админ-стороны: дни с >1
+    отметкой 'N' у графика. Используется и в GET /conflicts, и в pre-check
+    утверждения. Если графика kind != 'duty' — конфликтов нет (учётный
+    график не автозаполняет слоты, замещение не имеет смысла).
+    """
+    from app.models.duty import DUTY_KIND_DUTY
+    from calendar import monthrange
+
+    schedule = db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first()
+    if not schedule or schedule.kind != DUTY_KIND_DUTY:
+        return []
+
+    last = monthrange(year, month)[1]
+
+    rows = (
+        db.query(DutyMark, Person)
+        .join(Person, DutyMark.person_id == Person.id)
+        .filter(
+            DutyMark.schedule_id == schedule_id,
+            DutyMark.mark_type   == "N",
+            DutyMark.duty_date   >= date_type(year, month, 1),
+            DutyMark.duty_date   <= date_type(year, month, last),
+        )
+        .order_by(DutyMark.duty_date.asc(), DutyMark.id.asc())
+        .all()
+    )
+
+    by_date: dict = {}
+    for mark, person in rows:
+        by_date.setdefault(mark.duty_date.isoformat(), []).append({
+            "mark_id":   mark.id,
+            "person_id": person.id,
+            "person":    person.full_name,
+            "rank":      person.rank,
+            "is_primary":                    bool(mark.is_primary),
+            "substitute_department":         mark.substitute_department,
+            "substitute_template_group_id":  mark.substitute_template_group_id,
+        })
+
+    result = []
+    for d, marks in sorted(by_date.items()):
+        if len(marks) > 1:
+            primary_count = sum(1 for m in marks if m["is_primary"])
+            unresolved = (
+                primary_count != 1
+                or any(
+                    not m["is_primary"]
+                    and (not m["substitute_department"]
+                         or not m["substitute_template_group_id"])
+                    for m in marks
+                )
+            )
+            result.append({
+                "date":       d,
+                "marks":      marks,
+                "unresolved": unresolved,
+            })
+    return result
+
+
+@router.get("/schedules/{schedule_id}/conflicts",
+            summary="Дни с >1 нарядов в графике (admin, для wizard замещений)")
+def admin_get_schedule_conflicts(
+    schedule_id: int,
+    year:  int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    db:    Session = Depends(get_db),
+    admin: User    = Depends(get_current_active_admin),
+):
+    if not db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first():
+        raise HTTPException(status_code=404, detail="График не найден")
+    return {
+        "conflicts":  _admin_conflicts_for_month(db, schedule_id, year, month),
+        "year":       year,
+        "month":      month,
+    }
+
+
+class AdminMarkDecision(BaseModel):
+    mark_id:    int
+    is_primary: bool
+    substitute_department:        Optional[str] = None
+    substitute_template_group_id: Optional[int] = None
+
+
+class AdminConflictsResolvePayload(BaseModel):
+    decisions: List[AdminMarkDecision]
+
+
+@router.patch("/schedules/{schedule_id}/conflicts",
+              summary="Сохранить решения wizard'а (admin)")
+def admin_resolve_schedule_conflicts(
+    schedule_id: int,
+    payload:     AdminConflictsResolvePayload,
+    db:    Session = Depends(get_db),
+    admin: User    = Depends(get_current_active_admin),
+):
+    if not db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first():
+        raise HTTPException(status_code=404, detail="График не найден")
+
+    if not payload.decisions:
+        return {"updated": 0}
+
+    mark_ids = [d.mark_id for d in payload.decisions]
+    marks = (
+        db.query(DutyMark)
+        .filter(
+            DutyMark.id.in_(mark_ids),
+            DutyMark.schedule_id == schedule_id,
+        )
+        .all()
+    )
+    by_id = {m.id: m for m in marks}
+
+    updated = 0
+    for d in payload.decisions:
+        mark = by_id.get(d.mark_id)
+        if not mark:
+            continue
+        if d.is_primary:
+            mark.is_primary = True
+            mark.substitute_department = None
+            mark.substitute_template_group_id = None
+        else:
+            mark.is_primary = False
+            mark.substitute_department = (d.substitute_department or "").strip() or None
+            mark.substitute_template_group_id = d.substitute_template_group_id
+        updated += 1
+
+    db.commit()
+    return {"updated": updated}
+
+
 @router.post("/schedules/{schedule_id}/approval", status_code=201)
 def admin_approve_schedule_month(
     schedule_id: int,
@@ -707,11 +842,28 @@ def admin_approve_schedule_month(
     db:    Session = Depends(get_db),
     admin: User    = Depends(get_current_active_admin),
 ):
-    """Утвердить admin-график за месяц (snapshot состава + отметок)."""
+    """Утвердить admin-график за месяц (snapshot состава + отметок).
+
+    Pre-check: при наличии нерешённых конфликтов замещений возвращаем
+    409 с тем же контрактом, что и dept-сторона — фронт открывает wizard.
+    """
     schedule = db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="График не найден")
     _validate_month(year, month)
+
+    conflicts = _admin_conflicts_for_month(db, schedule_id, year, month)
+    unresolved = [c for c in conflicts if c["unresolved"]]
+    if unresolved:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code":      "duty_conflicts_unresolved",
+                "message":   "В графике есть дни с несколькими нарядами — нужно "
+                             "указать, кто из них основной, а кто замещает кого-то.",
+                "conflicts": unresolved,
+            },
+        )
 
     try:
         approval = _approve_month(db, schedule_id, year, month, admin.id)
