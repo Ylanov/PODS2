@@ -372,7 +372,7 @@ function _openSubstitutePicker(slot) {
                 <h3 class="al-modal-title">Выбрать заместителя на день</h3>
                 <p class="al-modal-hint">
                     Позиция: <b>${_esc(slot.title)}</b> · ${ROLE_LABELS[slot.role_kind] || slot.role_kind}
-                    ${root ? `<br>Фильтр по должности: <code>${_esc(root)}</code>` : ''}
+                    ${root ? `<br>Сортировка: те, у кого должность содержит «<code>${_esc(root)}</code>», показаны выше.` : ''}
                 </p>
                 <input id="al-subst-search" type="text" placeholder="Поиск по ФИО…" />
                 <div id="al-subst-list" class="al-subst-list"></div>

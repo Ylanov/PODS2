@@ -789,18 +789,38 @@ def export_alert_list_docx(
 # ─── Поиск кандидатов на зама ────────────────────────────────────────────────
 
 @router.get("/persons/search", response_model=List[_PersonRef],
-            summary="Поиск Person для модалки выбора зама")
+            summary="Поиск Person для модалки выбора (primary / зам)")
 def search_persons(
     q:    str = Query("", max_length=200),
-    role: Optional[str] = Query(default=None, description="upr/otd/cnc — фильтр по корню должности"),
+    role: Optional[str] = Query(default=None, description="upr/otd/cnc — для подсказки, не фильтр"),
     root: Optional[str] = Query(default=None, max_length=200,
-                                description="корень должности для фильтра role=upr/otd"),
+                                description="корень должности — РЕЗУЛЬТАТЫ С ИМ ВЫШЕ, но не отсекаем"),
     db:   Session = Depends(get_db),
 ):
+    """
+    Возвращает активных людей, отсортированных так:
+      1. Совпадение position_title по `root` (если задан) — наверху;
+      2. Дальше — по ФИО.
+
+    Раньше для upr/otd фильтр был ЖЁСТКИМ (position_title ILIKE %root%),
+    из-за чего у юзера с пустыми position_title в Базе людей выпадашка
+    оказывалась пустой и выбрать вообще никого было нельзя. Теперь это
+    только сортировка, не отсечение — пользователь видит всех и может
+    выбрать. Когда position_title заполнятся (через alert_lists их
+    автозаполняет new-77), сортировка сама собой станет полезной.
+    """
     qry = db.query(Person).filter(Person.fired_at.is_(None))
-    if role in ("upr", "otd") and root:
-        qry = qry.filter(Person.position_title.ilike(f"%{root}%"))
     if q:
         qry = qry.filter(Person.full_name.ilike(f"%{q}%"))
-    rows = qry.order_by(Person.full_name.asc()).limit(40).all()
+    rows = qry.order_by(Person.full_name.asc()).limit(80).all()
+
+    # Сортировка-приоритет: совпавшие по root наверх. role=cnc — без
+    # boost'а, для центра ищем кого угодно.
+    if role in ("upr", "otd") and root:
+        root_l = root.lower()
+        rows.sort(key=lambda p: (
+            0 if (p.position_title or "").lower().find(root_l) != -1 else 1,
+            p.full_name.lower(),
+        ))
+
     return [_person_ref(p) for p in rows if p]
