@@ -381,3 +381,90 @@
     .notif-dropdown { width: calc(100vw - 32px); right: -8px; }
     .notif-center   { max-height: none; }
 }
+
+/* ── Кнопка «Почта · СЭД» в шапке: повторяет .notif-header-btn,
+   но иконка и dropdown заполнены секциями писем из СЭД. */
+
+.sed-section {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.sed-section:last-child { border-bottom: none; }
+
+.sed-section__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.sed-section__title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    text-decoration: none;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sed-section__title:hover { color: var(--md-primary); text-decoration: underline; }
+
+.sed-section__count {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+    min-width: 22px;
+    text-align: center;
+}
+
+.sed-section__items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sed-item {
+    padding: 4px 6px;
+    border-radius: var(--md-radius-sm);
+    transition: background 120ms;
+}
+.sed-item:hover { background: var(--md-surface-container); }
+
+.sed-item__title {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--md-on-surface);
+    text-decoration: none;
+    line-height: 1.3;
+}
+.sed-item__title:hover { color: var(--md-primary); }
+
+.sed-item__files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+}
+.sed-file {
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--md-surface-container);
+    color: var(--md-on-surface-variant);
+    text-decoration: none;
+    border: 1px solid var(--md-outline-variant);
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sed-file:hover {
+    background: var(--md-primary-light);
+    color: var(--md-primary-dark);
+    border-color: var(--md-primary);
+}

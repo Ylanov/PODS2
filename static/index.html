@@ -55,6 +55,43 @@
                 <span id="conflicts-header-dot" class="notif-header-btn__dot hidden">0</span>
             </button>
 
+            <!-- Кнопка «Почта» (СЭД-дайджест) — видна только пользователям
+                 c permission 'sed_inbox' (admin пропускается автоматически).
+                 Расширение в браузере пользователя присылает дайджест с
+                 sed.mchs.ru, мы показываем счётчик и выпадающую панель. -->
+            <div style="position:relative; margin-right:6px;">
+                <button id="sed-header-btn" class="notif-header-btn hidden"
+                        type="button" title="Почта (СЭД)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="5" width="18" height="14" rx="2"/>
+                        <path d="M3 7l9 6 9-6"/>
+                    </svg>
+                    <span id="sed-header-dot" class="notif-header-btn__dot hidden">0</span>
+                </button>
+                <div id="sed-header-dropdown" class="notif-dropdown hidden">
+                    <div class="notif-center__header">
+                        <span class="notif-center__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="5" width="18" height="14" rx="2"/>
+                                <path d="M3 7l9 6 9-6"/>
+                            </svg>
+                            Почта · СЭД
+                        </span>
+                        <a href="https://sed.mchs.ru/" target="_blank" rel="noopener noreferrer"
+                           class="notif-center__mark-all" id="sed-open-link">
+                            Открыть СЭД ↗
+                        </a>
+                    </div>
+                    <div id="sed-header-list" class="notif-center__list"></div>
+                    <div id="sed-header-meta"
+                         style="padding:6px 12px; font-size:0.7rem;
+                                color:var(--md-on-surface-hint);
+                                border-top:1px solid var(--md-outline-variant);"></div>
+                </div>
+            </div>
+
             <!-- Колокольчик уведомлений — всегда в header,
                  активируется после логина через window.currentUser -->
             <div style="position:relative;">

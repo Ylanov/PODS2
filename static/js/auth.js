@@ -153,6 +153,10 @@ async function _doInitSession() {
         combatCalc.initCombatCalc(true);
         dashboard.initDashboard();
 
+        // Кнопка «Почта · СЭД» — для админа всегда видна, для остальных
+        // только если есть permission 'sed_inbox' (проверка внутри модуля).
+        import('./sed_inbox.js').then(m => m.initSedInbox?.()).catch(() => {});
+
     // ─── ЛОГИКА ДЛЯ УПРАВЛЕНИЯ ───────────────────────────────────────────────
     } else {
         showView('department-view');
@@ -179,6 +183,13 @@ async function _doInitSession() {
         department.listenForUpdates();
         if (perms.has('combat')) combatCalc.initCombatCalc(false);
         if (perms.has('duty'))   await deptDuty.loadDeptDutyData();
+
+        // Кнопка «Почта · СЭД» — модуль сам решит, показывать ли (зависит
+        // от permission). Для управления это обычно не нужно, но если
+        // конкретный username получил sed_inbox — увидит.
+        if (perms.has('sed_inbox')) {
+            import('./sed_inbox.js').then(m => m.initSedInbox?.()).catch(() => {});
+        }
     }
 }
 
@@ -203,6 +214,11 @@ export function logout() {
     // Останавливаем баннер «Окно подачи» на странице графиков управления
     import('./dept_duty.js')
         .then(m => m.stopDeptDutyWindowBanner?.())
+        .catch(() => { /* игнорируем */ });
+
+    // Прячем кнопку «Почта · СЭД» и сбрасываем кеш снимка
+    import('./sed_inbox.js')
+        .then(m => m.stopSedInbox?.())
         .catch(() => { /* игнорируем */ });
 
     showView('login-view');

@@ -86,6 +86,13 @@ function connect() {
                 window._refreshNotifications?.();
             }
 
+            // Обновился снимок СЭД-дайджеста — пересчитать бейдж
+            if (data.action === 'sed_snapshot_updated') {
+                import('./sed_inbox.js')
+                    .then(m => m.onSedWsUpdate?.())
+                    .catch(() => {});
+            }
+
         } catch (error) {
             console.error('❌ WS JSON parse error:', error);
         }

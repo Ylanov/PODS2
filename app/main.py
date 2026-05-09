@@ -25,6 +25,7 @@ from app.api.v1.routers import settings as settings_router
 from app.api.v1.routers import dept_duty
 from app.api.v1.routers import duty_window
 from app.api.v1.routers import dashboard
+from app.api.v1.routers import sed
 from app.api.v1.routers import tasks
 from app.api.v1.routers import audit as audit_module
 from app.api.v1.routers import holidays as holidays_module
@@ -150,6 +151,7 @@ app.include_router(duty.router,            prefix="/api/v1/admin",   tags=["Гр
 app.include_router(dashboard.router,       prefix="/api/v1/admin",   tags=["Дашборд"])
 app.include_router(dept_duty.router,       prefix="/api/v1/dept",    tags=["Графики наряда (управление)"])
 app.include_router(duty_window.router,     prefix="/api/v1/duty",    tags=["Окно подачи графиков"])
+app.include_router(sed.router,             prefix="/api/v1/sed",     tags=["СЭД-дайджест"])
 app.include_router(tasks.router,           prefix="/api/v1/tasks",   tags=["Календарь задач"])
 
 # Аудит и уведомления.
