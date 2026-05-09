@@ -15,7 +15,7 @@ init_db() через Base.metadata.create_all() мог уже создать е�
 from typing import Sequence, Union
 
 from alembic import op
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 import sqlalchemy as sa
 
 
@@ -30,9 +30,38 @@ def _has_table(name: str) -> bool:
     return name in inspect(bind).get_table_names()
 
 
+def _orphan_type_exists(name: str) -> bool:
+    """
+    Postgres каждой таблице сопутствует одноимённый composite type. Если
+    предыдущая попытка миграции упала после CREATE TYPE, но до COMMIT —
+    тип может «зависнуть» без таблицы, и следующий CREATE TABLE упадёт
+    с UniqueViolation на pg_type_typname_nsp_index. Возвращаем True, если
+    в pg_type есть наш typname БЕЗ соответствующей relation.
+    """
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        return False
+    row = bind.execute(text("""
+        SELECT 1
+        FROM pg_type t
+        WHERE t.typname = :n
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_class c
+              WHERE c.relname = t.typname AND c.relkind = 'r'
+          )
+        LIMIT 1
+    """), {"n": name}).first()
+    return bool(row)
+
+
 def upgrade() -> None:
     if _has_table("sed_inbox_snapshots"):
         return
+    # Подметаем orphan-тип, оставшийся от прерванной миграции — иначе
+    # CREATE TABLE упадёт по pg_type_typname_nsp_index.
+    if _orphan_type_exists("sed_inbox_snapshots"):
+        op.execute("DROP TYPE IF EXISTS sed_inbox_snapshots CASCADE")
+
     op.create_table(
         "sed_inbox_snapshots",
         sa.Column("id",            sa.Integer(),  primary_key=True),
