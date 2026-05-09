@@ -1594,12 +1594,11 @@ tr:hover .duty-grid__remove-person {
 
 .subst-row__placement {
     display: flex;
+    flex-direction: column;
     gap: 4px;
-    flex-wrap: wrap;
 }
-.subst-row__placement select {
-    flex: 1;
-    min-width: 80px;
+.subst-row__placement select,
+.subst-targets select {
     padding: 3px 6px;
     font-size: 0.76rem;
     background: var(--md-surface);
@@ -1607,9 +1606,56 @@ tr:hover .duty-grid__remove-person {
     border-radius: 4px;
 }
 
+.subst-targets {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.subst-target-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 4px;
+    align-items: center;
+}
+.subst-target-row select { min-width: 0; }
+.subst-target-row .t-remove {
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    padding: 0;
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface-variant);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.subst-target-row .t-remove:hover:not(:disabled) {
+    background: var(--md-error-container, #ffe4e4);
+    color: var(--md-on-error-container, #b00020);
+}
+.subst-target-row .t-remove:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+.subst-empty {
+    font-size: 0.76rem;
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+    padding: 2px 0;
+}
+.subst-add-target {
+    align-self: flex-start;
+}
+
 @media (max-width: 700px) {
     .subst-row {
         grid-template-columns: 1fr;
         gap: 4px;
     }
+    .subst-target-row {
+        grid-template-columns: 1fr 1fr;
+    }
+    .subst-target-row .t-tpl { grid-column: 1 / 3; }
+    .subst-target-row .t-remove { grid-column: 2; justify-self: end; }
 }
