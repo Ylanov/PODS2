@@ -74,11 +74,23 @@ function _renderShell(root) {
             </div>
             <button id="al-add-slot" class="btn btn-outlined btn-sm" type="button">+ позиция</button>
             <button id="al-seed"     class="btn btn-outlined btn-sm" type="button" title="Заполнить стандартными позициями (управления, отделы, службы)">📋 Шаблон</button>
-            <button id="al-sync"     class="al-tool-action al-tool-action--accent" type="button" title="Прописать должности в Базе людей по текущим привязкам в оповещении">🔄 Синхронизация должностей</button>
             <button id="al-print"    class="btn btn-filled   btn-sm" type="button" title="Скачать список на день в Word">📄 Печать на день</button>
+        </div>
+        <!-- Отдельная строка действий обслуживания: чтобы редко-используемые
+             но важные кнопки не терялись в основном toolbar. -->
+        <div class="al-toolbar-secondary">
+            <span class="al-toolbar-secondary__label">Обслуживание:</span>
+            <button id="al-sync" class="al-tool-action al-tool-action--accent" type="button"
+                    title="Прописать должности в Базе людей по текущим привязкам в оповещении">
+                🔄 Синхронизация должностей
+            </button>
         </div>
         <div id="al-grid-wrap" class="al-grid-wrap"></div>
     `;
+    // Диагностическая отметка для подтверждения что отрисовался свежий код.
+    // Выводится один раз при init — если в Console пусто или старая версия,
+    // значит браузер закешировал предыдущий alert_lists.js (Ctrl+Shift+R).
+    console.log('[alert_lists] shell rendered (build new-87, sync button id=al-sync)');
 }
 
 
