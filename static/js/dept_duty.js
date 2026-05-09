@@ -7,7 +7,9 @@
 
 import { api }         from './api.js';
 import {
-    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
+    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE,
+    MARK_TRIP, MARK_HOSPITAL, ABSENT_MARK_TYPES,
+    MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate,
     groupMarks, computeSummary, extractVacationRanges,
     sortByRank, computeDutyZones,
@@ -796,7 +798,7 @@ function _renderGrid() {
             const s = monthDays.indexOf(r.start_iso);
             const e = monthDays.indexOf(r.end_iso);
             for (let i = s; i <= e; i++) {
-                vacMap.set(monthDays[i], { isFirst: i === s, length: r.days });
+                vacMap.set(monthDays[i], { isFirst: i === s, length: r.days, type: r.mark_type });
             }
         }
 
@@ -821,9 +823,11 @@ function _renderGrid() {
             let inner = '';
             if (vac) {
                 if (vac.isFirst) {
-                    inner = `<div class="duty-vacation-bar"
+                    const labels = { V: 'ОТПУСК', T: 'КОМАНДИРОВКА', H: 'ГОСПИТАЛЬ' };
+                    const label = labels[vac.type] || 'ОТПУСК';
+                    inner = `<div class="duty-vacation-bar duty-vacation-bar--${vac.type}"
                                   style="width: calc(${vac.length * 100}% + ${vac.length - 1}px);"
-                                  title="Отпуск: ${vac.length} дн.">ОТПУСК</div>`;
+                                  title="${label.charAt(0) + label.slice(1).toLowerCase()}: ${vac.length} дн.">${label}</div>`;
                 }
             } else if (mark) {
                 inner = `<span class="duty-mark duty-mark--${mark.mark_type}"
@@ -903,23 +907,30 @@ function _renderModeSwitcher() {
         onModeChange:    (newMode) => {
             _currentMode   = newMode;
             _vacationStart = null;
-            if (newMode === MARK_VACATION) {
-                window.showSnackbar?.('Режим «Отпуск»: кликните первую и последнюю дату диапазона', 'info');
+            if (ABSENT_MARK_TYPES.includes(newMode)) {
+                const labels = { V: 'Отпуск', T: 'Командировка', H: 'Госпиталь' };
+                window.showSnackbar?.(
+                    `Режим «${labels[newMode]}»: кликните первую и последнюю дату диапазона`,
+                    'info',
+                );
             }
         },
     });
 }
 
 async function _onCellClick(date, personId, cellEl) {
-    if (_currentMode === MARK_VACATION) {
-        if (_vacationStart && _vacationStart.personId === personId) {
+    if (ABSENT_MARK_TYPES.includes(_currentMode)) {
+        if (_vacationStart
+            && _vacationStart.personId === personId
+            && _vacationStart.mode === _currentMode) {
             const startDate = _vacationStart.date <= date ? _vacationStart.date : date;
             const endDate   = _vacationStart.date <= date ? date : _vacationStart.date;
+            const mode = _vacationStart.mode;
             _vacationStart = null;
-            await _applyVacationRange(personId, startDate, endDate);
+            await _applyVacationRange(personId, startDate, endDate, mode);
             return;
         }
-        _vacationStart = { personId, date };
+        _vacationStart = { personId, date, mode: _currentMode };
         cellEl.style.outline = '2px dashed #059669';
         window.showSnackbar?.(`Начало: ${date}. Кликните на конец диапазона.`, 'info');
         return;
@@ -927,7 +938,7 @@ async function _onCellClick(date, personId, cellEl) {
     await _toggleMark(date, personId, _currentMode);
 }
 
-async function _applyVacationRange(personId, startIso, endIso) {
+async function _applyVacationRange(personId, startIso, endIso, markType) {
     const s = new Date(startIso + 'T00:00:00');
     const e = new Date(endIso   + 'T00:00:00');
     const ops = [];
@@ -935,33 +946,35 @@ async function _applyVacationRange(personId, startIso, endIso) {
     while (cur <= e) {
         const iso = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
         const existing = _marks.find(m => m.person_id === personId && m.duty_date === iso);
-        if (!existing || existing.mark_type !== MARK_VACATION) ops.push(iso);
+        if (!existing || existing.mark_type !== markType) ops.push(iso);
         cur.setDate(cur.getDate() + 1);
     }
     try {
         for (const iso of ops) {
             await api.post(`/dept/schedules/${_currentId}/marks`, {
-                person_id: personId, duty_date: iso, mark_type: MARK_VACATION,
+                person_id: personId, duty_date: iso, mark_type: markType,
             });
         }
         await _loadMarksAndRender();
-        window.showSnackbar?.(`Отпуск поставлен (${ops.length} дн.)`, 'success');
+        const label = MARK_LABEL[markType] || markType;
+        window.showSnackbar?.(`${label} поставлен (${ops.length} дн.)`, 'success');
     } catch (err) {
-        window.showSnackbar?.('Ошибка постановки отпуска', 'error');
+        window.showSnackbar?.(`Ошибка постановки «${MARK_LABEL[markType] || markType}»`, 'error');
         await _loadMarksAndRender();
     }
 }
 
 async function _toggleMark(date, personId, markType = MARK_DUTY) {
     if (!_currentId) return;
-    // Защита: нельзя ставить наряд на день отпуска. Сначала снять отпуск.
+    // Защита: нельзя ставить наряд на день отсутствия (V/T/H).
     if (markType === MARK_DUTY) {
         const existing = _marks.find(
             m => m.person_id === personId && m.duty_date === date
         );
-        if (existing && existing.mark_type === MARK_VACATION) {
+        if (existing && ABSENT_MARK_TYPES.includes(existing.mark_type)) {
+            const label = (MARK_LABEL[existing.mark_type] || existing.mark_type).toLowerCase();
             window.showSnackbar?.(
-                'На день отпуска нельзя ставить наряд. Сначала снимите отпуск.',
+                `На день «${label}» нельзя ставить наряд. Сначала снимите отметку.`,
                 'error',
             );
             return;

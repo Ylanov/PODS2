@@ -532,7 +532,7 @@ async def toggle_my_mark(
     if not person:
         raise HTTPException(status_code=404, detail="Человек не найден")
 
-    from app.models.duty import ALL_MARK_TYPES, MARK_DUTY, MARK_VACATION
+    from app.models.duty import ALL_MARK_TYPES, MARK_DUTY, ABSENT_MARK_TYPES
     mark_type = (payload.mark_type or MARK_DUTY).upper()
     if mark_type not in ALL_MARK_TYPES:
         raise HTTPException(status_code=400, detail=f"Недопустимый тип отметки: {mark_type}")
@@ -544,17 +544,19 @@ async def toggle_my_mark(
         DutyMark.duty_date   == payload.duty_date,
     ).first()
 
-    # Защита: нельзя ставить наряд на день, где уже стоит отпуск.
-    # Смена V→N невозможна без явного снятия отпуска (клик по той же
-    # клетке в режиме O снимет V, после чего можно будет ставить N).
+    # Защита: нельзя ставить наряд на день отсутствия (отпуск/командировка/
+    # госпиталь). Смена возможна только через явное снятие отметки.
     if (
         mark_type == MARK_DUTY
         and existing is not None
-        and existing.mark_type == MARK_VACATION
+        and existing.mark_type in ABSENT_MARK_TYPES
     ):
+        absent_label = {
+            "V": "отпуска", "T": "командировки", "H": "госпиталя",
+        }.get(existing.mark_type, "отсутствия")
         raise HTTPException(
             status_code=409,
-            detail="На день отпуска нельзя ставить наряд. Сначала снимите отпуск.",
+            detail=f"На день {absent_label} нельзя ставить наряд. Сначала снимите отметку.",
         )
 
     # Валидация интервала: запрет соседних дней (delta=1), предупреждение

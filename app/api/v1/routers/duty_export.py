@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.duty import (
     DutySchedule, DutySchedulePerson, DutyMark,
     MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE,
+    MARK_TRIP, MARK_HOSPITAL,
 )
 from app.api.v1.routers.export import (
     _set_cell_border, _set_cell_shading, _cell_text, _thin_border,
@@ -53,6 +54,8 @@ _FILL_DUTY     = "1E293B"   # тёмный графит — наряд
 _FILL_RESERVE  = "3B82F6"   # синий — резерв
 _FILL_LEAVE    = "D97706"   # янтарь — увольнение
 _FILL_VACATION = "9DD9C5"   # бледно-зелёный — отпуск
+_FILL_TRIP     = "C7B8FF"   # бледно-фиолетовый — командировка
+_FILL_HOSPITAL = "FFB4B4"   # бледно-розовый — госпиталь
 _FILL_WEEKEND  = "F1F5F9"   # светло-серый — выходные
 _FILL_HEADER   = "E5E7EB"   # серый — шапка таблицы
 
@@ -193,6 +196,10 @@ def _build_table(doc: Document,
                 color, text = _FILL_LEAVE,    "У"
             elif mt == MARK_VACATION:
                 color, text = _FILL_VACATION, "О"
+            elif mt == MARK_TRIP:
+                color, text = _FILL_TRIP,     "К"   # Командировка
+            elif mt == MARK_HOSPITAL:
+                color, text = _FILL_HOSPITAL, "Г"   # Госпиталь
             elif is_weekend:
                 color = _FILL_WEEKEND
 

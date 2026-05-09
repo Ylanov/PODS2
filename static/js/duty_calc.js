@@ -29,6 +29,12 @@ export const MARK_DUTY     = 'N';
 export const MARK_LEAVE    = 'U';
 export const MARK_VACATION = 'V';
 export const MARK_RESERVE  = 'R';   // UI: «РЗ», отдельный счётчик, без переработки
+export const MARK_TRIP     = 'T';   // Командировка — рендерится полосой как отпуск, своим цветом
+export const MARK_HOSPITAL = 'H';   // Госпиталь — то же самое, своим цветом
+
+// «Полосовые» отметки — занимают непрерывный диапазон, рендерятся одной
+// полосой с подписью. На эти дни автозаполнение и наряды недоступны.
+export const ABSENT_MARK_TYPES = [MARK_VACATION, MARK_TRIP, MARK_HOSPITAL];
 
 // ─── Иерархия воинских званий ─────────────────────────────────────────────
 // От высшего к низшему. Используется для автосортировки в графиках наряда:
@@ -175,8 +181,9 @@ export function groupMarks(marks) {
 // holidaysMap: Map<iso, {title, is_last_day}>
 export function computeSummary(personMarksByDate, holidaysMap) {
     let duty = 0, overtime = 0, leave = 0, vacation = 0, reserve = 0;
+    let trip = 0, hospital = 0;
     if (!personMarksByDate) {
-        return { duty, overtime, leave, vacation, reserve };
+        return { duty, overtime, leave, vacation, reserve, trip, hospital };
     }
     for (const [iso, info] of personMarksByDate) {
         if (info.mark_type === MARK_DUTY) {
@@ -188,9 +195,13 @@ export function computeSummary(personMarksByDate, holidaysMap) {
             vacation += 1;
         } else if (info.mark_type === MARK_RESERVE) {
             reserve += 1;
+        } else if (info.mark_type === MARK_TRIP) {
+            trip += 1;
+        } else if (info.mark_type === MARK_HOSPITAL) {
+            hospital += 1;
         }
     }
-    return { duty, overtime, leave, vacation, reserve };
+    return { duty, overtime, leave, vacation, reserve, trip, hospital };
 }
 
 // ─── Зоны рядом с существующими нарядами (подсветка ДО клика) ─────────────
@@ -228,8 +239,9 @@ export function computeDutyZones(personMarksByDate, monthDays) {
 }
 
 
-// ─── Непрерывные диапазоны отпуска для одного человека ────────────────────
-// Возвращает массив {start_iso, end_iso, days} для отрисовки "Отпуск" полосой.
+// ─── Непрерывные диапазоны полосовых отметок (отпуск/командировка/госпиталь)
+// Возвращает массив {start_iso, end_iso, days, mark_type} для отрисовки полосой.
+// Полосы одного типа склеиваются; смежные дни разных типов — две отдельные полосы.
 // monthDays: массив iso-строк в порядке возрастания (все дни отображаемого месяца).
 export function extractVacationRanges(personMarksByDate, monthDays) {
     const ranges = [];
@@ -237,21 +249,24 @@ export function extractVacationRanges(personMarksByDate, monthDays) {
 
     let curStart = null;
     let curEnd   = null;
+    let curType  = null;
 
     const flush = () => {
         if (curStart) {
             const days = 1 + (monthDays.indexOf(curEnd) - monthDays.indexOf(curStart));
-            ranges.push({ start_iso: curStart, end_iso: curEnd, days });
+            ranges.push({ start_iso: curStart, end_iso: curEnd, days, mark_type: curType });
         }
         curStart = null;
         curEnd   = null;
+        curType  = null;
     };
 
     for (const iso of monthDays) {
         const m = personMarksByDate.get(iso);
-        const isVac = m && m.mark_type === MARK_VACATION;
-        if (isVac) {
-            if (!curStart) curStart = iso;
+        const t = m && ABSENT_MARK_TYPES.includes(m.mark_type) ? m.mark_type : null;
+        if (t) {
+            if (curType !== t) flush();    // тип сменился — закрыли старую полосу
+            if (!curStart) { curStart = iso; curType = t; }
             curEnd = iso;
         } else {
             flush();
@@ -265,8 +280,10 @@ export function extractVacationRanges(personMarksByDate, monthDays) {
 export const MARK_LETTER = {
     [MARK_DUTY]:     'Н',
     [MARK_LEAVE]:    'У',
-    [MARK_VACATION]: 'О',   // используется только для одиночных дней; полоса "Отпуск" рендерится отдельно
+    [MARK_VACATION]: 'О',   // одиночные дни; полоса "Отпуск" рендерится отдельно
     [MARK_RESERVE]:  'РЗ',  // две буквы — стилизация в .duty-mark--R снижает font-size
+    [MARK_TRIP]:     'К',   // одиночные дни; полоса «Командировка» отдельно
+    [MARK_HOSPITAL]: 'Г',   // одиночные дни; полоса «Госпиталь» отдельно
 };
 
 export const MARK_LABEL = {
@@ -274,4 +291,6 @@ export const MARK_LABEL = {
     [MARK_LEAVE]:    'Увольнение',
     [MARK_VACATION]: 'Отпуск',
     [MARK_RESERVE]:  'Резерв',
+    [MARK_TRIP]:     'Командировка',
+    [MARK_HOSPITAL]: 'Госпиталь',
 };

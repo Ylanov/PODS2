@@ -32,7 +32,13 @@ MARK_DUTY     = "N"   # Наряд
 MARK_LEAVE    = "U"   # Увольнение
 MARK_VACATION = "V"   # Отпуск (один день)
 MARK_RESERVE  = "R"   # Резерв (UI: «РЗ», свой счётчик, без переработки)
-ALL_MARK_TYPES = (MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE)
+MARK_TRIP     = "T"   # Командировка — недоступен на день, рендерится полосой как отпуск
+MARK_HOSPITAL = "H"   # Госпиталь — то же самое, своим цветом
+ALL_MARK_TYPES = (MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_TRIP, MARK_HOSPITAL)
+# «Полосовые» отметки — занимают непрерывный диапазон, рендерятся одной
+# полосой с подписью. Логика недоступности человека на эти дни одинакова
+# для всех трёх (отпуск/командировка/госпиталь).
+ABSENT_MARK_TYPES = (MARK_VACATION, MARK_TRIP, MARK_HOSPITAL)
 
 
 # Тип графика наряда (DutySchedule.kind):

@@ -647,6 +647,17 @@ tr:hover .duty-grid__remove-person {
     border-color: #bfdbfe;
     color: #1e3a8a;
 }
+/* Командировка — фиолетовый, госпиталь — розовый. Той же насыщенности что у chip-резерва. */
+.duty-summary-card__chip--trip {
+    background: #ede9fe;
+    border-color: #ddd6fe;
+    color: #5b21b6;
+}
+.duty-summary-card__chip--hospital {
+    background: #ffe4e6;
+    border-color: #fecaca;
+    color: #9f1239;
+}
 
 /* Hint below grid */
 .duty-grid-hint {
@@ -1060,6 +1071,8 @@ tr:hover .duty-grid__remove-person {
     font-size: 0.62rem;
     letter-spacing: -0.05em;
 }
+.duty-mark--T { background: #7c3aed; }   /* фиолетовый — Командировка (одиночный, К) */
+.duty-mark--H { background: #e11d48; }   /* малиновый — Госпиталь (одиночный, Г) */
 
 /* Hover на ячейку — показываем что клик сработает */
 .duty-grid tbody td {
@@ -1107,6 +1120,26 @@ tr:hover .duty-grid__remove-person {
     white-space: nowrap;
     z-index: 2;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Командировка — фиолетовая полоса. */
+.duty-vacation-bar--T {
+    background: linear-gradient(90deg,
+                rgba(124, 58, 237, 0.22),
+                rgba(124, 58, 237, 0.34),
+                rgba(124, 58, 237, 0.22)) !important;
+    border-color: rgba(124, 58, 237, 0.55) !important;
+    color: #4c1d95 !important;
+}
+
+/* Госпиталь — розовая полоса. */
+.duty-vacation-bar--H {
+    background: linear-gradient(90deg,
+                rgba(225, 29, 72, 0.22),
+                rgba(225, 29, 72, 0.34),
+                rgba(225, 29, 72, 0.22)) !important;
+    border-color: rgba(225, 29, 72, 0.55) !important;
+    color: #881337 !important;
 }
 
 /* Чтобы vacation-bar мог перекрыть соседние td (width: calc(N*100%+...))

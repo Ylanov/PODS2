@@ -141,6 +141,8 @@ export function renderSummaryBlock(blockId, sortedPersons, marksByPerson, holida
                 <span class="duty-summary-card__chip duty-summary-card__chip--hours" title="Часов переработки">Часы: ${sum.overtime}</span>
                 <span class="duty-summary-card__chip" title="Увольнений / дней отпуска">У/О: ${sum.leave}/${sum.vacation}</span>
                 <span class="duty-summary-card__chip duty-summary-card__chip--reserve" title="Резервов">Р: ${sum.reserve}</span>
+                ${sum.trip     ? `<span class="duty-summary-card__chip duty-summary-card__chip--trip"     title="Дней командировки">К: ${sum.trip}</span>`     : ''}
+                ${sum.hospital ? `<span class="duty-summary-card__chip duty-summary-card__chip--hospital" title="Дней госпиталя">Г: ${sum.hospital}</span>` : ''}
             </div>
         `;
     }).join('');
@@ -196,6 +198,12 @@ export function renderModeSwitcher({ toolbarSelector, currentMode, onModeChange 
         </button>
         <button class="${cls('V')}" data-mark="V" type="button" title="Отпуск — кликните по первой дате, затем по последней">
             <span class="duty-mode-btn__letter" data-letter="О"></span>Отпуск
+        </button>
+        <button class="${cls('T')}" data-mark="T" type="button" title="Командировка — диапазон, как отпуск">
+            <span class="duty-mode-btn__letter" data-letter="К"></span>Командировка
+        </button>
+        <button class="${cls('H')}" data-mark="H" type="button" title="Госпиталь — диапазон, как отпуск">
+            <span class="duty-mode-btn__letter" data-letter="Г"></span>Госпиталь
         </button>
     `;
     group.addEventListener('click', (e) => {

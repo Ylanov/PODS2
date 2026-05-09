@@ -5,7 +5,9 @@
 
 import { api } from './api.js';
 import {
-    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE, MARK_LETTER, MARK_LABEL,
+    MARK_DUTY, MARK_LEAVE, MARK_VACATION, MARK_RESERVE,
+    MARK_TRIP, MARK_HOSPITAL, ABSENT_MARK_TYPES,
+    MARK_LETTER, MARK_LABEL,
     getHolidaysMap, hoursForDate, isWeekendOrHoliday,
     groupMarks, computeSummary, extractVacationRanges,
     sortByRank, computeDutyZones,
@@ -32,7 +34,7 @@ let _month          = new Date().getMonth() + 1;   // 1-based
 let _positions      = [];
 let _holidays       = new Map();
 let _currentMode    = MARK_DUTY;   // активный режим: N / U / V (vacation start)
-let _vacationStart  = null;        // personId — ждём вторую дату для диапазона
+let _vacationStart  = null;        // {personId, date, mode} — ждём вторую дату для диапазона V/T/H
 // Статус утверждения (_currentId, _year, _month). null → ещё не загружен.
 let _approval       = null;
 
@@ -640,7 +642,7 @@ function _renderGrid() {
         // соседних дней (strict) и «через сутки» (warn) в пустых ячейках.
         const dutyZones = computeDutyZones(personMarks, monthDays);
 
-        // Map iso → range info (only if vacation day)
+        // Map iso → range info (для V/T/H — отпуск/командировка/госпиталь)
         const vacMap = new Map();
         for (const r of vacRanges) {
             const s = monthDays.indexOf(r.start_iso);
@@ -649,6 +651,7 @@ function _renderGrid() {
                 vacMap.set(monthDays[i], {
                     isFirst: i === s,
                     length:  r.days,
+                    type:    r.mark_type,
                 });
             }
         }
@@ -677,16 +680,15 @@ function _renderGrid() {
 
             let inner = '';
             if (vac) {
-                // Полоса отпуска рендерится только в первой ячейке диапазона
-                // через абсолютное позиционирование на N ячеек подряд.
+                // Полоса отсутствия (отпуск/командировка/госпиталь) рендерится
+                // только в первой ячейке диапазона; цвет и подпись — по типу.
                 if (vac.isFirst) {
-                    // Ширина в % = число дней × 100% + промежутки. Проще:
-                    // используем colspan-эмуляцию через абсолют. Позволим
-                    // ей выйти за пределы ячейки — flexible для визуала.
-                    inner = `<div class="duty-vacation-bar"
+                    const labels = { V: 'ОТПУСК', T: 'КОМАНДИРОВКА', H: 'ГОСПИТАЛЬ' };
+                    const label = labels[vac.type] || 'ОТПУСК';
+                    inner = `<div class="duty-vacation-bar duty-vacation-bar--${vac.type}"
                                   style="width: calc(${vac.length * 100}% + ${vac.length - 1}px);"
-                                  title="Отпуск: ${vac.length} дн.">
-                                 ОТПУСК
+                                  title="${label.charAt(0) + label.slice(1).toLowerCase()}: ${vac.length} дн.">
+                                 ${label}
                              </div>`;
                 }
             } else if (mark) {
@@ -804,26 +806,32 @@ function _renderModeSwitcher() {
         onModeChange:    (newMode) => {
             _currentMode   = newMode;
             _vacationStart = null;
-            if (newMode === MARK_VACATION) {
-                window.showSnackbar?.('Режим «Отпуск»: кликните на первую дату диапазона, затем на последнюю', 'info');
+            if (ABSENT_MARK_TYPES.includes(newMode)) {
+                const labels = { V: 'Отпуск', T: 'Командировка', H: 'Госпиталь' };
+                window.showSnackbar?.(
+                    `Режим «${labels[newMode]}»: кликните на первую дату диапазона, затем на последнюю`,
+                    'info',
+                );
             }
         },
     });
 }
 
 async function _onCellClick(personId, dateStr, cellEl, isShift) {
-    // В режиме отпуска — двухступенчатый выбор диапазона
-    if (_currentMode === MARK_VACATION) {
-        if (_vacationStart && _vacationStart.personId === personId) {
-            // Вторая точка выбрана — ставим диапазон
+    // V / T / H — двухступенчатый выбор диапазона. Один режим = одна
+    // полосовая отметка; смена режима между кликами сбрасывает «начало».
+    if (ABSENT_MARK_TYPES.includes(_currentMode)) {
+        if (_vacationStart
+            && _vacationStart.personId === personId
+            && _vacationStart.mode === _currentMode) {
             const startDate = _vacationStart.date <= dateStr ? _vacationStart.date : dateStr;
             const endDate   = _vacationStart.date <= dateStr ? dateStr : _vacationStart.date;
+            const mode = _vacationStart.mode;
             _vacationStart = null;
-            await _applyVacationRange(personId, startDate, endDate);
+            await _applyVacationRange(personId, startDate, endDate, mode);
             return;
         }
-        // Первая точка — запомнили
-        _vacationStart = { personId, date: dateStr };
+        _vacationStart = { personId, date: dateStr, mode: _currentMode };
         cellEl.style.outline = '2px dashed #059669';
         window.showSnackbar?.(`Начало: ${dateStr}. Кликните на конец диапазона.`, 'info');
         return;
@@ -833,19 +841,18 @@ async function _onCellClick(personId, dateStr, cellEl, isShift) {
     await _toggleMark(personId, dateStr, _currentMode);
 }
 
-async function _applyVacationRange(personId, startIso, endIso) {
+async function _applyVacationRange(personId, startIso, endIso, markType) {
     // Посылаем по одному дню — бэкенд с toggle-логикой либо поставит,
-    // либо (если уже отпуск) снимет. Для "заполнения диапазона" не снимаем:
-    // сначала читаем что в этих днях и отправляем только недостающие.
+    // либо (если уже та же отметка) снимет. Для "заполнения диапазона"
+    // НЕ снимаем: читаем что в этих днях и отправляем только недостающие.
     const s = new Date(startIso + 'T00:00:00');
     const e = new Date(endIso   + 'T00:00:00');
     const ops = [];
     const cur = new Date(s);
     while (cur <= e) {
         const iso = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
-        // Не трогаем дни где уже стоит V — они уже отмечены
         const existing = _currentMarks.find(m => m.person_id === personId && m.duty_date === iso);
-        if (!existing || existing.mark_type !== MARK_VACATION) {
+        if (!existing || existing.mark_type !== markType) {
             ops.push(iso);
         }
         cur.setDate(cur.getDate() + 1);
@@ -855,28 +862,30 @@ async function _applyVacationRange(personId, startIso, endIso) {
             await api.post(`/admin/schedules/${_currentId}/marks`, {
                 person_id: personId,
                 duty_date: iso,
-                mark_type: MARK_VACATION,
+                mark_type: markType,
             });
         }
         await _loadGrid();
-        window.showSnackbar?.(`Отпуск поставлен (${ops.length} дн.)`, 'success');
+        const label = (MARK_LABEL[markType] || markType).toLowerCase();
+        window.showSnackbar?.(`${label.charAt(0).toUpperCase() + label.slice(1)} поставлен (${ops.length} дн.)`, 'success');
     } catch (err) {
-        console.error('[duty] vacation range:', err);
-        window.showSnackbar?.('Ошибка постановки отпуска', 'error');
+        console.error('[duty] absent range:', err);
+        window.showSnackbar?.(`Ошибка постановки «${MARK_LABEL[markType] || markType}»`, 'error');
         await _loadGrid();
     }
 }
 
 async function _toggleMark(personId, dateStr, markType = MARK_DUTY) {
-    // Защита: нельзя ставить наряд на день, где у человека отпуск.
-    // Сначала надо снять/изменить отпуск, потом уже ставить наряд.
+    // Защита: нельзя ставить наряд на день, где уже стоит отпуск/
+    // командировка/госпиталь. Сначала надо снять полосовую отметку.
     if (markType === MARK_DUTY) {
         const existing = _currentMarks.find(
             m => m.person_id === personId && m.duty_date === dateStr
         );
-        if (existing && existing.mark_type === MARK_VACATION) {
+        if (existing && ABSENT_MARK_TYPES.includes(existing.mark_type)) {
+            const label = (MARK_LABEL[existing.mark_type] || existing.mark_type).toLowerCase();
             window.showSnackbar?.(
-                'На день отпуска нельзя ставить наряд. Сначала снимите отпуск.',
+                `На день «${label}» нельзя ставить наряд. Сначала снимите отметку.`,
                 'error',
             );
             return;
