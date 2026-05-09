@@ -11,14 +11,15 @@ Create Date: 2026-05-09 12:00:00.000000
 - [42, 17, …] → автозаполнение слотов работает только для тех событий,
                 чей event.source_template_id входит в массив
 
-Идемпотентная: проверяем колонку через inspector, чтобы init_db() через
-Base.metadata.create_all() уже мог поставить её на чистой БД.
+Идемпотентная через PostgreSQL-нативный ADD COLUMN IF NOT EXISTS.
+Раньше использовался inspect(), но в редких случаях (напр. под Docker
+после неполного предыдущего прогона) inspector мог не увидеть свежий
+ALTER TABLE и допустить дублирующее ADD COLUMN — IF NOT EXISTS этот
+край закрывает без шансов на сюрприз.
 """
 from typing import Sequence, Union
 
 from alembic import op
-from sqlalchemy import inspect
-import sqlalchemy as sa
 
 
 revision: str = "k5l6m7n8o9p0"
@@ -27,20 +28,15 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on:    Union[str, Sequence[str], None] = None
 
 
-def _has_column(table: str, column: str) -> bool:
-    bind = op.get_bind()
-    cols = {c["name"] for c in inspect(bind).get_columns(table)}
-    return column in cols
-
-
 def upgrade() -> None:
-    if not _has_column("duty_schedules", "applicable_template_ids"):
-        op.add_column(
-            "duty_schedules",
-            sa.Column("applicable_template_ids", sa.Text(), nullable=True),
-        )
+    op.execute("""
+        ALTER TABLE duty_schedules
+        ADD COLUMN IF NOT EXISTS applicable_template_ids TEXT
+    """)
 
 
 def downgrade() -> None:
-    if _has_column("duty_schedules", "applicable_template_ids"):
-        op.drop_column("duty_schedules", "applicable_template_ids")
+    op.execute("""
+        ALTER TABLE duty_schedules
+        DROP COLUMN IF EXISTS applicable_template_ids
+    """)

@@ -21,8 +21,6 @@ Base.metadata.create_all() уже создаёт колонки на новой 
 from typing import Sequence, Union
 
 from alembic import op
-from sqlalchemy import inspect
-import sqlalchemy as sa
 
 
 revision: str = "i3j4k5l6m7n8"
@@ -31,29 +29,17 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on:    Union[str, Sequence[str], None] = None
 
 
-def _has_column(table: str, column: str) -> bool:
-    bind = op.get_bind()
-    cols = {c["name"] for c in inspect(bind).get_columns(table)}
-    return column in cols
-
-
 def upgrade() -> None:
-    if not _has_column("groups", "time_offset"):
-        op.add_column(
-            "groups",
-            sa.Column("time_offset", sa.String(),
-                      nullable=False, server_default=""),
-        )
-    if not _has_column("groups", "duty_day_offset"):
-        op.add_column(
-            "groups",
-            sa.Column("duty_day_offset", sa.Integer(),
-                      nullable=False, server_default="0"),
-        )
+    op.execute("""
+        ALTER TABLE groups
+        ADD COLUMN IF NOT EXISTS time_offset VARCHAR NOT NULL DEFAULT ''
+    """)
+    op.execute("""
+        ALTER TABLE groups
+        ADD COLUMN IF NOT EXISTS duty_day_offset INTEGER NOT NULL DEFAULT 0
+    """)
 
 
 def downgrade() -> None:
-    if _has_column("groups", "duty_day_offset"):
-        op.drop_column("groups", "duty_day_offset")
-    if _has_column("groups", "time_offset"):
-        op.drop_column("groups", "time_offset")
+    op.execute("ALTER TABLE groups DROP COLUMN IF EXISTS duty_day_offset")
+    op.execute("ALTER TABLE groups DROP COLUMN IF EXISTS time_offset")
