@@ -255,13 +255,19 @@ class EventUpdatePayload(BaseModel):
 
 # ─── Вспомогательная функция: наряд для даты ─────────────────────────────────
 
-def _get_duty_map_for_date(db: Session, target_date) -> dict:
+def _get_duty_map_for_date(db: Session, target_date, *, event=None) -> dict:
     """
     Возвращает {position_id: Person} для заданной даты.
 
     Берёт DutyMark с типом «наряд» (N) за эту дату у которых в графике задана
     должность. Отметки 'V' (отпуск), 'U' (увольнение) и 'R' (резерв) не считаются
     нарядом и в слоты не подставляются.
+
+    Если задан event — учитываем ограничение DutySchedule.applicable_template_ids:
+      - график без фильтра (NULL / [])  → применяется ко всем (как раньше);
+      - график с фильтром                → применяется только если
+                                            event.source_template_id есть в нём.
+
     Если на одну должность несколько человек — берётся последний (по id).
     """
     rows = (
@@ -279,6 +285,8 @@ def _get_duty_map_for_date(db: Session, target_date) -> dict:
 
     duty_map: dict = {}
     for mark, schedule, person in rows:
+        if event is not None and not schedule.applies_to_event(event):
+            continue
         duty_map[schedule.position_id] = person
 
     return duty_map
@@ -657,17 +665,6 @@ async def instantiate_template(
 
         weekday_str = WEEKDAYS[target_date.weekday()]
 
-        # Карты «кто в наряде» по дням наряда — лениво кэшируем для каждого
-        # уникального duty_day_offset, чтобы не делать запрос на каждую группу.
-        duty_maps: dict[int, dict] = {}
-
-        def _duty_map(offset: int) -> dict:
-            if offset not in duty_maps:
-                duty_maps[offset] = _get_duty_map_for_date(
-                    db, target_date + timedelta(days=offset),
-                )
-            return duty_maps[offset]
-
         new_event = Event(
             title=f"{template.title} ({target_date.strftime('%d.%m.%Y')}, {weekday_str})",
             date=target_date,
@@ -678,6 +675,19 @@ async def instantiate_template(
         )
         db.add(new_event)
         db.flush()
+
+        # Карты «кто в наряде» по дням наряда — лениво кэшируем для каждого
+        # уникального duty_day_offset. event передаём, чтобы графики с
+        # ограничением applicable_template_ids фильтровались по template.id.
+        duty_maps: dict[int, dict] = {}
+
+        def _duty_map(offset: int) -> dict:
+            if offset not in duty_maps:
+                duty_maps[offset] = _get_duty_map_for_date(
+                    db, target_date + timedelta(days=offset),
+                    event=new_event,
+                )
+            return duty_maps[offset]
 
         for group in groups:
             new_group = Group(
@@ -876,7 +886,7 @@ async def add_slot_to_group(
         if event and event.date:
             offset = int(getattr(group, "duty_day_offset", 0) or 0)
             target = event.date + timedelta(days=offset)
-            duty_map = _get_duty_map_for_date(db, target)
+            duty_map = _get_duty_map_for_date(db, target, event=event)
             person_on_duty = duty_map.get(slot_in.position_id)
 
     new_slot = Slot(
@@ -1119,7 +1129,7 @@ async def update_slot(
         if event and event.date:
             offset = int(getattr(slot.group, "duty_day_offset", 0) or 0)
             target = event.date + timedelta(days=offset)
-            duty_map = _get_duty_map_for_date(db, target)
+            duty_map = _get_duty_map_for_date(db, target, event=event)
             person_on_duty = duty_map.get(new_position_id)
             if person_on_duty:
                 slot.full_name = person_on_duty.full_name

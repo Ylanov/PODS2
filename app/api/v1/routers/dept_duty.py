@@ -87,9 +87,18 @@ class DeptScheduleResponse(BaseModel):
     position_id:   Optional[int]
     position_name: Optional[str]
     owner:         Optional[str]
+    # Если пусто — график применяется ко всем спискам с такой position
+    # (бэк-совместимое поведение). Если задан список template-id —
+    # автозаполнение работает только для событий из этих шаблонов.
+    applicable_template_ids: List[int] = []
 
     class Config:
         from_attributes = True
+
+
+class DeptScheduleTemplatesPayload(BaseModel):
+    """PATCH /schedules/{id}/applicable-templates — массив template-id."""
+    template_ids: List[int] = []
 
 
 class DeptPersonInScheduleResponse(BaseModel):
@@ -114,6 +123,25 @@ class DeptMarkPayload(BaseModel):
     # force=True — обойти предупреждение «через сутки» (дельта=2). Запрет
     # для соседних дней (дельта=1) обойти нельзя.
     force: bool = False
+
+@router.get("/templates",
+            summary="Список шаблонов-событий для привязки графика наряда")
+def list_templates_for_filter(
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user),
+):
+    """
+    Возвращает плоский список template-event'ов (id + title) — нужен
+    модалке «Применять только к шаблонам» в UI графиков нарядов.
+    """
+    rows = (
+        db.query(Event.id, Event.title)
+        .filter(Event.is_template == True)   # noqa: E712
+        .order_by(Event.title.asc())
+        .all()
+    )
+    return [{"id": r.id, "title": r.title} for r in rows]
+
 
 @router.get("/positions", summary="Получить список должностей для выпадающего меню")
 def get_dept_positions(
@@ -150,6 +178,7 @@ def list_my_schedules(
             position_id=s.position_id,
             position_name=pos_name,
             owner=s.owner,
+            applicable_template_ids=s.get_applicable_template_ids(),
         ))
     return result
 
@@ -181,6 +210,50 @@ async def create_my_schedule(
         position_id=s.position_id,
         position_name=s.position_name,
         owner=s.owner,
+        applicable_template_ids=s.get_applicable_template_ids(),
+    )
+
+
+@router.patch("/schedules/{schedule_id}/applicable-templates",
+              response_model=DeptScheduleResponse,
+              summary="Привязать график к конкретным шаблонам списков (или снять привязку)")
+async def update_schedule_applicable_templates(
+    schedule_id: int,
+    payload:     DeptScheduleTemplatesPayload,
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user_in_window),
+):
+    """
+    Управление перечнем шаблонов, к которым применяется автозаполнение
+    этого графика наряда. Пустой список → применяется ко всем (default).
+    """
+    s = _check_owner(db, schedule_id, user.username)
+
+    # Валидируем переданные id: каждый должен быть существующим Event
+    # с is_template=True. Несуществующие — отбрасываем.
+    if payload.template_ids:
+        valid_ids = {
+            row.id for row in
+            db.query(Event.id).filter(
+                Event.id.in_(payload.template_ids),
+                Event.is_template == True,   # noqa: E712
+            ).all()
+        }
+        cleaned = [tid for tid in payload.template_ids if tid in valid_ids]
+    else:
+        cleaned = []
+
+    s.set_applicable_template_ids(cleaned)
+    db.commit()
+    db.refresh(s)
+
+    pos_name = s.position_name or (s.position.name if s.position else None)
+    return DeptScheduleResponse(
+        id=s.id, title=s.title,
+        position_id=s.position_id,
+        position_name=pos_name,
+        owner=s.owner,
+        applicable_template_ids=s.get_applicable_template_ids(),
     )
 
 
@@ -423,6 +496,12 @@ async def toggle_my_mark(
         )
 
         for event in events_in_window:
+            # Если у графика стоит фильтр applicable_template_ids — событие
+            # должно быть инстансом из подходящего шаблона. Без фильтра
+            # применяется ко всем (старая семантика).
+            if not schedule.applies_to_event(event):
+                continue
+
             groups = db.query(Group).filter(Group.event_id == event.id).all()
             for group in groups:
                 offset = int(getattr(group, "duty_day_offset", 0) or 0)

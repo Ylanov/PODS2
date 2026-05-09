@@ -16,8 +16,10 @@ DutyMark            — отметка «в наряде» (человек × д
 
 from datetime import datetime, timezone
 
+import json
+
 from sqlalchemy import (
-    Column, Integer, String, Date, ForeignKey, Boolean,
+    Column, Integer, String, Date, ForeignKey, Boolean, Text,
     DateTime, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -52,11 +54,50 @@ class DutySchedule(Base):
     position_name = Column(String, nullable=True)
     owner = Column(String, nullable=True, index=True)
 
+    # Опциональный фильтр: к каким template-event'ам применять автозаполнение.
+    # Хранится как JSON-массив id (template event'ов). Семантика:
+    #   NULL или []  → график применяется ко всем спискам с такой position
+    #                  (бэк-совместимое поведение по умолчанию)
+    #   [42, 17, …]  → только к спискам, у которых event.source_template_id
+    #                  присутствует в этом массиве
+    applicable_template_ids = Column(Text, nullable=True)
+
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+    def get_applicable_template_ids(self) -> list[int]:
+        raw = self.applicable_template_ids
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+            return [int(x) for x in data if isinstance(x, (int, str)) and str(x).isdigit()]
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return []
+
+    def set_applicable_template_ids(self, ids: list[int]) -> None:
+        clean = sorted({int(x) for x in (ids or []) if x})
+        self.applicable_template_ids = json.dumps(clean) if clean else None
+
+    def applies_to_event(self, event) -> bool:
+        """
+        Применим ли этот график при автозаполнении слотов в данном event'е.
+        Возвращает True если:
+          - у графика нет фильтра (применяется ко всем);
+          - либо event.source_template_id присутствует в applicable_template_ids.
+        """
+        ids = self.get_applicable_template_ids()
+        if not ids:
+            return True
+        src = getattr(event, "source_template_id", None)
+        if src is None:
+            # Список вручную создан, не из шаблона — фильтр по шаблонам
+            # не имеет смысла, считаем что не подпадает.
+            return False
+        return int(src) in ids
 
     # ── Relationships ─────────────────────────────────────────────────────────
     position = relationship(
