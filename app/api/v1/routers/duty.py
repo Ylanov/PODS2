@@ -399,7 +399,6 @@ async def toggle_mark(
             existing.is_primary = True
             existing.substitute_department = None
             existing.substitute_template_group_id = None
-            existing.substitutes_json = None
             db.commit()
             logger.debug(f"Changed mark type: person={person.full_name} date={payload.duty_date} → {mark_type}")
             # Автозаполнение делаем только для MARK_DUTY (см. ниже)
@@ -731,7 +730,6 @@ def _admin_conflicts_for_month(db: Session, schedule_id: int, year: int, month: 
 
     by_date: dict = {}
     for mark, person in rows:
-        targets = mark.get_substitutes()
         by_date.setdefault(mark.duty_date.isoformat(), []).append({
             "mark_id":   mark.id,
             "person_id": person.id,
@@ -740,7 +738,6 @@ def _admin_conflicts_for_month(db: Session, schedule_id: int, year: int, month: 
             "is_primary":                    bool(mark.is_primary),
             "substitute_department":         mark.substitute_department,
             "substitute_template_group_id":  mark.substitute_template_group_id,
-            "substitutes":                   targets,
         })
 
     result = []
@@ -750,7 +747,9 @@ def _admin_conflicts_for_month(db: Session, schedule_id: int, year: int, month: 
             unresolved = (
                 primary_count != 1
                 or any(
-                    not m["is_primary"] and not m["substitutes"]
+                    not m["is_primary"]
+                    and (not m["substitute_department"]
+                         or not m["substitute_template_group_id"])
                     for m in marks
                 )
             )
@@ -780,19 +779,11 @@ def admin_get_schedule_conflicts(
     }
 
 
-class AdminSubstituteTarget(BaseModel):
-    department:        str
-    template_group_id: int
-
-
 class AdminMarkDecision(BaseModel):
     mark_id:    int
     is_primary: bool
-    # legacy одиночные поля (fallback если фронт ещё не обновлён)
     substitute_department:        Optional[str] = None
     substitute_template_group_id: Optional[int] = None
-    # новый формат — массив целей замещения
-    substitutes: Optional[List[AdminSubstituteTarget]] = None
 
 
 class AdminConflictsResolvePayload(BaseModel):
@@ -831,24 +822,12 @@ def admin_resolve_schedule_conflicts(
             continue
         if d.is_primary:
             mark.is_primary = True
-            mark.set_substitutes([])
+            mark.substitute_department = None
+            mark.substitute_template_group_id = None
         else:
             mark.is_primary = False
-            if d.substitutes:
-                mark.set_substitutes([
-                    {
-                        "department":        t.department,
-                        "template_group_id": t.template_group_id,
-                    }
-                    for t in d.substitutes
-                ])
-            elif d.substitute_department and d.substitute_template_group_id:
-                mark.set_substitutes([{
-                    "department":        d.substitute_department,
-                    "template_group_id": d.substitute_template_group_id,
-                }])
-            else:
-                mark.set_substitutes([])
+            mark.substitute_department = (d.substitute_department or "").strip() or None
+            mark.substitute_template_group_id = d.substitute_template_group_id
         updated += 1
 
     db.commit()

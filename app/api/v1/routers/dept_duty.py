@@ -578,7 +578,6 @@ async def toggle_my_mark(
         existing.is_primary = True
         existing.substitute_department = None
         existing.substitute_template_group_id = None
-        existing.substitutes_json = None
         db.commit()
         if mark_type != MARK_DUTY:
             return {"action": "changed", "mark_type": mark_type, "filled_slots_count": 0}
@@ -843,18 +842,14 @@ def _conflicts_for_month(db: Session, schedule_id: int, year: int, month: int):
     # Группируем по дате
     by_date: dict = {}
     for mark, person in rows:
-        targets = mark.get_substitutes()
         by_date.setdefault(mark.duty_date.isoformat(), []).append({
             "mark_id":   mark.id,
             "person_id": person.id,
             "person":    person.full_name,
             "rank":      person.rank,
             "is_primary":                    bool(mark.is_primary),
-            # legacy поля (для бэк-совместимости фронта; новый код смотрит substitutes)
             "substitute_department":         mark.substitute_department,
             "substitute_template_group_id":  mark.substitute_template_group_id,
-            # массив целей замещения — основной формат теперь
-            "substitutes":                   targets,
         })
 
     # Возвращаем только дни с >1 наряда
@@ -865,7 +860,9 @@ def _conflicts_for_month(db: Session, schedule_id: int, year: int, month: int):
             unresolved = (
                 primary_count != 1
                 or any(
-                    not m["is_primary"] and not m["substitutes"]
+                    not m["is_primary"]
+                    and (not m["substitute_department"]
+                         or not m["substitute_template_group_id"])
                     for m in marks
                 )
             )
@@ -894,21 +891,11 @@ def get_schedule_conflicts(
     }
 
 
-class DeptSubstituteTarget(BaseModel):
-    department:        str
-    template_group_id: int
-
-
 class DeptMarkDecision(BaseModel):
     mark_id:    int
     is_primary: bool
-    # legacy одиночные поля (если фронт ещё не обновлён) — используются
-    # как fallback, когда substitutes не передан
     substitute_department:        Optional[str] = None
     substitute_template_group_id: Optional[int] = None
-    # новый формат: массив целей замещения; одна отметка может покрывать
-    # несколько мест в разных шаблонах/группах
-    substitutes: Optional[List[DeptSubstituteTarget]] = None
 
 
 class DeptConflictsResolvePayload(BaseModel):
@@ -946,25 +933,12 @@ def resolve_schedule_conflicts(
             continue   # mark не наш или удалён — пропускаем
         if d.is_primary:
             mark.is_primary = True
-            mark.set_substitutes([])
+            mark.substitute_department = None
+            mark.substitute_template_group_id = None
         else:
             mark.is_primary = False
-            if d.substitutes:
-                mark.set_substitutes([
-                    {
-                        "department":        t.department,
-                        "template_group_id": t.template_group_id,
-                    }
-                    for t in d.substitutes
-                ])
-            elif d.substitute_department and d.substitute_template_group_id:
-                # legacy одиночная цель
-                mark.set_substitutes([{
-                    "department":        d.substitute_department,
-                    "template_group_id": d.substitute_template_group_id,
-                }])
-            else:
-                mark.set_substitutes([])
+            mark.substitute_department = (d.substitute_department or "").strip() or None
+            mark.substitute_template_group_id = d.substitute_template_group_id
         updated += 1
 
     db.commit()

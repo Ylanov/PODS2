@@ -5,15 +5,11 @@
 // — для каждого конфликтного дня админ/dept-юзер указывает кто primary,
 // а кто куда замещает.
 //
-// Один наряд может покрывать несколько мест (разные шаблоны / разные
-// группы), поэтому у каждого замещающего — массив целей: «куда»: квота +
-// шаблон + группа. Кнопка «+ добавить место» расширяет список.
-//
 // Используется и из dept_duty.js, и из duty.js (admin).
 //
 // API:
 //   openSubstitutionWizard({
-//       conflicts:    [{date, marks: [{mark_id, person, rank, is_primary, substitutes, ...}], unresolved}, ...],
+//       conflicts:    [{date, marks: [{mark_id, person, rank, is_primary, ...}], unresolved}, ...],
 //       scheduleId:   int,
 //       apiPrefix:    '/dept' | '/admin',
 //       onResolved:   () => void  // вызывается после PATCH /conflicts успешно
@@ -29,14 +25,6 @@ function _esc(s) {
     return String(s ?? '')
         .replace(/&/g, '&amp;').replace(/</g, '&lt;')
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function _newTarget(t = {}) {
-    return {
-        dept:     t.dept     ?? '',
-        tpl_id:   t.tpl_id   ?? '',
-        group_id: t.group_id ?? '',
-    };
 }
 
 export async function openSubstitutionWizard({
@@ -59,58 +47,30 @@ export async function openSubstitutionWizard({
         return;
     }
 
-    // Префетч групп всех шаблонов: нужна карта group_id → tpl_id, чтобы
-    // подставить правильный шаблон в селект для уже сохранённых targets.
     const groupsByTpl = new Map();
-    const tplIdByGroupId = new Map();
-    await Promise.all(templates.map(async t => {
+    async function _loadTplGroups(tplId) {
+        if (groupsByTpl.has(tplId)) return groupsByTpl.get(tplId);
         try {
-            const groups = await api.get(`/dept/templates/${t.id}/groups`);
-            groupsByTpl.set(t.id, groups);
-            for (const g of groups) tplIdByGroupId.set(g.id, t.id);
+            const groups = await api.get(`/dept/templates/${tplId}/groups`);
+            groupsByTpl.set(tplId, groups);
+            return groups;
         } catch {
-            groupsByTpl.set(t.id, []);
+            return [];
         }
-    }));
-    function _loadTplGroups(tplId) {
-        return groupsByTpl.get(parseInt(tplId, 10)) || [];
     }
 
-    // Решения по mark_id: targets — массив целей замещения
+    // Решения по mark_id
     const decisions = new Map();
     for (const day of conflicts) {
         for (const m of day.marks) {
-            const targets = [];
-            const arr = Array.isArray(m.substitutes) ? m.substitutes : [];
-            for (const t of arr) {
-                const gid  = t.template_group_id;
-                const dept = t.department || '';
-                if (gid && dept) {
-                    targets.push(_newTarget({
-                        dept,
-                        tpl_id: tplIdByGroupId.get(gid) || '',
-                        group_id: gid,
-                    }));
-                }
-            }
-            // Fallback: legacy одиночные поля (на случай если бэк вернул
-            // старый формат ответа без substitutes)
-            if (targets.length === 0 && m.substitute_department && m.substitute_template_group_id) {
-                targets.push(_newTarget({
-                    dept:     m.substitute_department,
-                    tpl_id:   tplIdByGroupId.get(m.substitute_template_group_id) || '',
-                    group_id: m.substitute_template_group_id,
-                }));
-            }
             decisions.set(m.mark_id, {
                 is_primary: m.is_primary,
-                targets,
+                dept:       m.substitute_department || '',
+                tpl_id:     '',   // tpl_id уточняется при сохранении из group_id
+                group_id:   m.substitute_template_group_id || '',
             });
         }
     }
-
-    // Авто-режим хранит «список мест» который применится ко всем не-primary
-    const autoTargets = [_newTarget()];
 
     document.getElementById('duty-subst-wizard')?.remove();
     const modal = document.createElement('div');
@@ -121,7 +81,7 @@ export async function openSubstitutionWizard({
     `;
     modal.innerHTML = `
         <div style="background:var(--md-surface,#fff); border-radius:var(--md-radius-lg,14px);
-                    max-width:820px; width:100%; max-height:90vh;
+                    max-width:780px; width:100%; max-height:90vh;
                     display:flex; flex-direction:column;
                     box-shadow:0 20px 60px rgba(0,0,0,0.25);">
             <div style="padding:14px 18px; border-bottom:1px solid var(--md-outline-variant);">
@@ -130,22 +90,34 @@ export async function openSubstitutionWizard({
                 </h3>
                 <p style="margin:6px 0 0; font-size:0.82rem; color:var(--md-on-surface-variant); line-height:1.4;">
                     Дней с >1 нарядом: <b>${conflicts.length}</b>. Для каждого дня укажите,
-                    кто идёт <i>по своей должности</i>, а кто <i>замещает</i>. У замещающего
-                    может быть <b>несколько мест</b> в разных шаблонах/группах — добавляйте кнопкой «+ место».
+                    кто идёт <i>по своей должности</i> (этот заполнит штатные слоты), а кто
+                    <i>замещает</i> на конкретной квоте и группе. Для скорости — кнопка «Авто»
+                    делает первого по порядку primary, для остальных — единое правило.
                 </p>
             </div>
             <div style="padding:10px 14px; border-bottom:1px solid var(--md-outline-variant);
-                        background:var(--md-surface-variant);">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        background:var(--md-surface-variant); display:flex; gap:8px; flex-wrap:wrap;
+                        align-items:flex-end;">
+                <div style="flex:1; min-width:200px;">
                     <label style="font-size:0.74rem; font-weight:600; color:var(--md-on-surface-variant);
                                   text-transform:uppercase; letter-spacing:0.04em;">
-                        Авто-режим: места для всех «вторых»
+                        Авто-режим: куда идут «вторые»
                     </label>
-                    <button id="auto-apply" class="btn btn-outlined btn-sm" type="button">⚡ Применить ко всем</button>
+                    <div style="display:flex; gap:6px; margin-top:4px; flex-wrap:wrap;">
+                        <select id="auto-dept" style="flex:1; min-width:140px; padding:5px;">
+                            <option value="">— квота —</option>
+                            ${departments.map(d => `<option value="${_esc(d)}">${_esc(d)}</option>`).join('')}
+                        </select>
+                        <select id="auto-tpl" style="flex:1; min-width:140px; padding:5px;">
+                            <option value="">— шаблон —</option>
+                            ${templates.map(t => `<option value="${t.id}">${_esc(t.title)}</option>`).join('')}
+                        </select>
+                        <select id="auto-group" style="flex:1; min-width:140px; padding:5px;" disabled>
+                            <option value="">— группа —</option>
+                        </select>
+                    </div>
                 </div>
-                <div id="auto-targets" class="subst-targets"></div>
-                <button id="auto-add" class="btn btn-text btn-sm" type="button"
-                        style="margin-top:4px;">+ место</button>
+                <button id="auto-apply" class="btn btn-outlined btn-sm" type="button">⚡ Применить ко всем</button>
             </div>
             <div id="subst-list" style="flex:1; overflow-y:auto; padding:10px 14px;"></div>
             <div style="display:flex; gap:8px; justify-content:flex-end;
@@ -159,98 +131,18 @@ export async function openSubstitutionWizard({
     document.body.appendChild(modal);
 
     const listEl = modal.querySelector('#subst-list');
-    const autoEl = modal.querySelector('#auto-targets');
 
-    // ── Универсальная отрисовка ряда «цель замещения» ─────────────────────
-    function _renderTargetRow(t, idx, options) {
-        // options.canRemove: можно ли удалить эту строку (если targets >1)
-        const tplId = t.tpl_id;
-        const groups = tplId ? _loadTplGroups(tplId) : [];
-        const groupOpts = '<option value="">— группа —</option>'
-            + groups.map(g =>
-                `<option value="${g.id}" ${String(g.id) === String(t.group_id) ? 'selected' : ''}>${_esc(g.name)}${g.time_offset ? ` (${_esc(g.time_offset)})` : ''}</option>`
-            ).join('');
-        return `
-            <div class="subst-target-row" data-idx="${idx}">
-                <select class="t-dept" data-field="dept">
-                    <option value="">— квота —</option>
-                    ${departments.map(d =>
-                        `<option value="${_esc(d)}" ${d === t.dept ? 'selected' : ''}>${_esc(d)}</option>`
-                    ).join('')}
-                </select>
-                <select class="t-tpl" data-field="tpl">
-                    <option value="">— шаблон —</option>
-                    ${templates.map(tt =>
-                        `<option value="${tt.id}" ${String(tt.id) === String(tplId) ? 'selected' : ''}>${_esc(tt.title)}</option>`
-                    ).join('')}
-                </select>
-                <select class="t-group" data-field="group" ${tplId ? '' : 'disabled'}>
-                    ${groupOpts}
-                </select>
-                <button type="button" class="t-remove" title="Убрать место" ${options.canRemove ? '' : 'disabled'}>×</button>
-            </div>
-        `;
-    }
-
-    function _bindTargetRowEvents(container, targets, onRemove) {
-        // onRemove вызывается только когда нужно перерисовать список целей
-        // (после удаления строки). Простые изменения select-ов не требуют
-        // re-render: они только обновляют state и зависимый groupSel.
-        container.querySelectorAll('.subst-target-row').forEach(row => {
-            const idx = parseInt(row.dataset.idx, 10);
-            const t = targets[idx];
-            const deptSel  = row.querySelector('.t-dept');
-            const tplSel   = row.querySelector('.t-tpl');
-            const groupSel = row.querySelector('.t-group');
-            const rmBtn    = row.querySelector('.t-remove');
-
-            deptSel?.addEventListener('change',  () => { t.dept = deptSel.value || ''; });
-            tplSel?.addEventListener('change', () => {
-                t.tpl_id = tplSel.value || '';
-                t.group_id = '';
-                if (t.tpl_id) {
-                    const gs = _loadTplGroups(t.tpl_id);
-                    groupSel.innerHTML = '<option value="">— группа —</option>'
-                        + gs.map(g =>
-                            `<option value="${g.id}">${_esc(g.name)}${g.time_offset ? ` (${_esc(g.time_offset)})` : ''}</option>`
-                        ).join('');
-                    groupSel.disabled = false;
-                } else {
-                    groupSel.innerHTML = '<option value="">— группа —</option>';
-                    groupSel.disabled = true;
-                }
-            });
-            groupSel?.addEventListener('change', () => { t.group_id = groupSel.value || ''; });
-            rmBtn?.addEventListener('click', () => {
-                if (targets.length <= 1) return;
-                targets.splice(idx, 1);
-                onRemove?.();
-            });
-        });
-    }
-
-    // ── Авто-режим: панель с множественными целями ───────────────────────
-    function _renderAuto() {
-        autoEl.innerHTML = autoTargets
-            .map((t, i) => _renderTargetRow(t, i, { canRemove: autoTargets.length > 1 }))
-            .join('');
-        _bindTargetRowEvents(autoEl, autoTargets, _renderAuto);
-    }
-
-    modal.querySelector('#auto-add').addEventListener('click', () => {
-        autoTargets.push(_newTarget());
-        _renderAuto();
-    });
-
-    // ── Список конфликтных дней / марков ─────────────────────────────────
-    function _renderRow(mark) {
+    async function _renderRow(day, mark) {
         const dec = decisions.get(mark.mark_id);
+        const tplId = dec.tpl_id;
+        let groupOpts = '<option value="">— группа —</option>';
+        if (tplId) {
+            const groups = await _loadTplGroups(parseInt(tplId, 10));
+            groupOpts += groups.map(g =>
+                `<option value="${g.id}" ${String(g.id) === String(dec.group_id) ? 'selected' : ''}>${_esc(g.name)}${g.time_offset ? ` (${_esc(g.time_offset)})` : ''}</option>`
+            ).join('');
+        }
         const isPrim = dec.is_primary;
-        const targetsHtml = dec.targets.length === 0
-            ? '<div class="subst-empty">— места не указаны (добавьте)</div>'
-            : dec.targets
-                .map((t, i) => _renderTargetRow(t, i, { canRemove: dec.targets.length > 1 }))
-                .join('');
         return `
             <div class="subst-row" data-mark="${mark.mark_id}">
                 <div class="subst-row__person">
@@ -266,22 +158,38 @@ export async function openSubstitutionWizard({
                     <span>Замещает</span>
                 </label>
                 <div class="subst-row__placement" ${isPrim ? 'style="opacity:0.4; pointer-events:none;"' : ''}>
-                    <div class="subst-targets">${targetsHtml}</div>
-                    <button type="button" class="subst-add-target btn btn-text btn-sm">+ место</button>
+                    <select class="subst-dept" data-field="dept">
+                        <option value="">— квота —</option>
+                        ${departments.map(d =>
+                            `<option value="${_esc(d)}" ${d === dec.dept ? 'selected' : ''}>${_esc(d)}</option>`
+                        ).join('')}
+                    </select>
+                    <select class="subst-tpl" data-field="tpl">
+                        <option value="">— шаблон —</option>
+                        ${templates.map(t =>
+                            `<option value="${t.id}" ${String(t.id) === String(tplId) ? 'selected' : ''}>${_esc(t.title)}</option>`
+                        ).join('')}
+                    </select>
+                    <select class="subst-group" data-field="group" ${tplId ? '' : 'disabled'}>
+                        ${groupOpts}
+                    </select>
                 </div>
             </div>
         `;
     }
 
-    function _renderAll() {
-        listEl.innerHTML = conflicts.map(day => `
-            <div class="subst-day">
-                <h4 class="subst-day__title">${_esc(day.date)} · ${day.marks.length} наряда</h4>
-                <div class="subst-day__rows">
-                    ${day.marks.map(m => _renderRow(m)).join('')}
+    async function _renderAll() {
+        const sections = await Promise.all(
+            conflicts.map(async day => `
+                <div class="subst-day">
+                    <h4 class="subst-day__title">${_esc(day.date)} · ${day.marks.length} наряда</h4>
+                    <div class="subst-day__rows">
+                        ${(await Promise.all(day.marks.map(m => _renderRow(day, m)))).join('')}
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            `)
+        );
+        listEl.innerHTML = sections.join('');
         _bindRowEvents();
     }
 
@@ -294,34 +202,60 @@ export async function openSubstitutionWizard({
                 r.addEventListener('change', () => {
                     const v = row.querySelector(`input[name="prim-${markId}"]:checked`)?.value;
                     dec.is_primary = (v === 'primary');
-                    if (!dec.is_primary && dec.targets.length === 0) {
-                        dec.targets.push(_newTarget());
+                    const placement = row.querySelector('.subst-row__placement');
+                    if (placement) {
+                        placement.style.opacity = dec.is_primary ? '0.4' : '';
+                        placement.style.pointerEvents = dec.is_primary ? 'none' : '';
                     }
-                    _renderAll();
                 });
             });
 
-            const placement = row.querySelector('.subst-row__placement');
-            const targetsBox = placement?.querySelector('.subst-targets');
-            if (targetsBox) {
-                _bindTargetRowEvents(targetsBox, dec.targets, _renderAll);
-            }
+            const deptSel  = row.querySelector('.subst-dept');
+            const tplSel   = row.querySelector('.subst-tpl');
+            const groupSel = row.querySelector('.subst-group');
 
-            row.querySelector('.subst-add-target')?.addEventListener('click', () => {
-                dec.targets.push(_newTarget());
-                _renderAll();
+            deptSel?.addEventListener('change',  () => { dec.dept = deptSel.value || ''; });
+            tplSel?.addEventListener('change', async () => {
+                dec.tpl_id = tplSel.value || '';
+                dec.group_id = '';
+                groupSel.innerHTML = '<option value="">— группа —</option>';
+                if (dec.tpl_id) {
+                    const groups = await _loadTplGroups(parseInt(dec.tpl_id, 10));
+                    groupSel.innerHTML += groups.map(g =>
+                        `<option value="${g.id}">${_esc(g.name)}${g.time_offset ? ` (${_esc(g.time_offset)})` : ''}</option>`
+                    ).join('');
+                    groupSel.disabled = false;
+                } else {
+                    groupSel.disabled = true;
+                }
             });
+            groupSel?.addEventListener('change', () => { dec.group_id = groupSel.value || ''; });
         });
     }
 
-    _renderAuto();
-    _renderAll();
+    await _renderAll();
 
-    // ── Применение авто-режима ───────────────────────────────────────────
-    modal.querySelector('#auto-apply').addEventListener('click', () => {
-        const cleanAuto = autoTargets.filter(t => t.dept && t.tpl_id && t.group_id);
-        if (cleanAuto.length === 0) {
-            window.showSnackbar?.('Заполните хотя бы одно место в авто-режиме (квота + шаблон + группа)', 'error');
+    const autoTpl   = modal.querySelector('#auto-tpl');
+    const autoGroup = modal.querySelector('#auto-group');
+    autoTpl.addEventListener('change', async () => {
+        autoGroup.innerHTML = '<option value="">— группа —</option>';
+        if (autoTpl.value) {
+            const groups = await _loadTplGroups(parseInt(autoTpl.value, 10));
+            autoGroup.innerHTML += groups.map(g =>
+                `<option value="${g.id}">${_esc(g.name)}${g.time_offset ? ` (${_esc(g.time_offset)})` : ''}</option>`
+            ).join('');
+            autoGroup.disabled = false;
+        } else {
+            autoGroup.disabled = true;
+        }
+    });
+
+    modal.querySelector('#auto-apply').addEventListener('click', async () => {
+        const dept    = modal.querySelector('#auto-dept').value;
+        const tplId   = modal.querySelector('#auto-tpl').value;
+        const groupId = modal.querySelector('#auto-group').value;
+        if (!dept || !tplId || !groupId) {
+            window.showSnackbar?.('Заполните квоту, шаблон и группу для авто-режима', 'error');
             return;
         }
         for (const day of conflicts) {
@@ -329,21 +263,24 @@ export async function openSubstitutionWizard({
                 const dec = decisions.get(m.mark_id);
                 if (i === 0) {
                     dec.is_primary = true;
-                    dec.targets = [];
+                    dec.dept = '';
+                    dec.tpl_id = '';
+                    dec.group_id = '';
                 } else {
                     dec.is_primary = false;
-                    dec.targets = cleanAuto.map(t => _newTarget(t));
+                    dec.dept = dept;
+                    dec.tpl_id = tplId;
+                    dec.group_id = groupId;
                 }
             });
         }
-        _renderAll();
-        window.showSnackbar?.(`Применено: ${cleanAuto.length} ${cleanAuto.length === 1 ? 'место' : 'мест'} ко всем дням`, 'info');
+        await _renderAll();
+        window.showSnackbar?.('Авто-правило применено ко всем дням', 'info');
     });
 
     modal.querySelector('#subst-cancel').addEventListener('click', () => modal.remove());
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 
-    // ── Сохранение ───────────────────────────────────────────────────────
     modal.querySelector('#subst-save').addEventListener('click', async () => {
         for (const day of conflicts) {
             const primaryCount = day.marks.filter(m => decisions.get(m.mark_id).is_primary).length;
@@ -353,28 +290,20 @@ export async function openSubstitutionWizard({
             }
             for (const m of day.marks) {
                 const d = decisions.get(m.mark_id);
-                if (d.is_primary) continue;
-                const valid = d.targets.filter(t => t.dept && t.group_id);
-                if (valid.length === 0) {
-                    window.showSnackbar?.(`${day.date}: для «${m.person}» укажите хотя бы одно место (квота + группа)`, 'error');
+                if (!d.is_primary && (!d.dept || !d.group_id)) {
+                    window.showSnackbar?.(`${day.date}: для замещающего «${m.person}» укажите квоту и группу`, 'error');
                     return;
                 }
             }
         }
 
         const payload = {
-            decisions: Array.from(decisions.entries()).map(([mark_id, d]) => {
-                if (d.is_primary) {
-                    return { mark_id, is_primary: true, substitutes: [] };
-                }
-                const subs = d.targets
-                    .filter(t => t.dept && t.group_id)
-                    .map(t => ({
-                        department:        t.dept,
-                        template_group_id: parseInt(t.group_id, 10),
-                    }));
-                return { mark_id, is_primary: false, substitutes: subs };
-            }),
+            decisions: Array.from(decisions.entries()).map(([mark_id, d]) => ({
+                mark_id,
+                is_primary: d.is_primary,
+                substitute_department:        d.is_primary ? null : d.dept,
+                substitute_template_group_id: d.is_primary ? null : parseInt(d.group_id, 10),
+            })),
         };
 
         try {
