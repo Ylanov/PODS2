@@ -400,11 +400,23 @@
                                 </button>
                             </div>
 
-                            <!-- Поиск человека (автокомплит через fio_autocomplete.js) -->
+                            <!-- Поиск человека (автокомплит через fio_autocomplete.js).
+                                 Накопительный режим: каждый выбор кладётся в
+                                 очередь-чипы, и одной кнопкой «Добавить (N)»
+                                 все выбранные записываются в график одним
+                                 махом. Удобно для создания нового графика. -->
                             <div id="dept-duty-person-search-wrap" class="duty-person-search hidden">
                                 <input type="text" id="dept-duty-person-search-input"
-                                       placeholder="Поиск по ФИО…" autocomplete="off"
+                                       placeholder="Поиск по ФИО, выбирайте по очереди…" autocomplete="off"
                                        class="duty-person-search__input">
+                                <div id="dept-duty-person-queue" class="duty-person-queue"></div>
+                                <div class="duty-person-queue__actions">
+                                    <button id="dept-duty-person-queue-add"
+                                            class="btn btn-success btn-sm hidden"
+                                            type="button">+ Добавить (0)</button>
+                                    <button id="dept-duty-person-queue-cancel"
+                                            class="btn btn-text btn-sm" type="button">Отмена</button>
+                                </div>
                             </div>
 
                             <!-- Шапка для печати (видна только при Ctrl+P).

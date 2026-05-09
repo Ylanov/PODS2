@@ -240,6 +240,59 @@
     outline: none;
 }
 
+/* Накопительная очередь добавляемых людей (chips). Появляется
+   между input'ом и кнопкой «Добавить (N)». */
+.duty-person-queue {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--md-surface);
+    border-top: 1px solid var(--md-outline-variant);
+    min-height: 0;
+}
+.duty-person-queue:empty { display: none; }
+
+.duty-person-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 2px 8px;
+    background: var(--md-primary-light);
+    color: var(--md-on-surface);
+    border-radius: var(--md-radius-sm);
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+.duty-person-chip small {
+    color: var(--md-on-surface-hint);
+    font-size: 0.7rem;
+}
+.duty-person-chip__x {
+    width: 18px; height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--md-on-surface-hint);
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1;
+    padding: 0;
+    font-size: 1rem;
+}
+.duty-person-chip__x:hover {
+    background: rgba(184,84,80,0.12);
+    color: var(--md-error);
+}
+
+.duty-person-queue__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 6px 8px;
+    border-top: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-variant);
+}
+
 .duty-person-results {
     border-top: 1px solid var(--md-outline-variant);
     max-height: 200px;

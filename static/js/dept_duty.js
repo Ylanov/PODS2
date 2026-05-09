@@ -112,6 +112,21 @@ function _bindUI() {
     document.getElementById('dept-duty-add-person-btn')
         ?.addEventListener('click', _showPersonSearch);
 
+    document.getElementById('dept-duty-person-queue-add')
+        ?.addEventListener('click', _commitPendingQueue);
+    document.getElementById('dept-duty-person-queue-cancel')
+        ?.addEventListener('click', _hidePersonSearch);
+    document.getElementById('dept-duty-person-queue')
+        ?.addEventListener('click', (e) => {
+            const x = e.target.closest('button[data-q-idx]');
+            if (!x) return;
+            const idx = parseInt(x.dataset.qIdx, 10);
+            if (Number.isFinite(idx)) {
+                _pendingPersons.splice(idx, 1);
+                _renderPendingQueue();
+            }
+        });
+
     _attachPersonSearch();
 
     document.getElementById('dept-duty-approve-btn')
@@ -402,15 +417,56 @@ async function _loadPersons() {
     }
 }
 
-// Тонкий обёрток над общим duty_ui.attachPersonSearch — фиксирует
-// dept-специфичные параметры. keepOpenOnSelect — multi-add: форма не
-// закрывается после выбора, можно добавлять людей подряд.
+// Накопительная очередь людей для добавления одним нажатием.
+// Это поле изолировано — пересоздаётся при открытии формы.
+let _pendingPersons = [];   // [{id, full_name, rank}]
+
+function _renderPendingQueue() {
+    const queue = document.getElementById('dept-duty-person-queue');
+    const addBtn = document.getElementById('dept-duty-person-queue-add');
+    if (!queue || !addBtn) return;
+    if (_pendingPersons.length === 0) {
+        queue.innerHTML = '';
+        addBtn.classList.add('hidden');
+        return;
+    }
+    queue.innerHTML = _pendingPersons.map((p, idx) => `
+        <span class="duty-person-chip" title="${esc(p.full_name)}">
+            ${esc(p.full_name)}
+            ${p.rank ? `<small>· ${esc(p.rank)}</small>` : ''}
+            <button class="duty-person-chip__x" type="button" data-q-idx="${idx}" title="Убрать">×</button>
+        </span>`).join('');
+    addBtn.classList.remove('hidden');
+    addBtn.textContent = `+ Добавить (${_pendingPersons.length})`;
+}
+
+// Тонкий обёрток над duty_ui.attachPersonSearch — кладёт выбранного
+// человека в очередь, не отправляя POST сразу. Дубль (по id или ФИО)
+// отбрасывается.
 function _attachPersonSearch() {
     attachPersonSearch({
         inputId:          'dept-duty-person-search-input',
         emptyHint:        'Не найдено в базе управления',
         keepOpenOnSelect: true,
-        onSelect:         (person) => _addPerson(person.id),
+        onSelect:         (person) => {
+            const norm = (s) => String(s || '').trim().toLocaleLowerCase('ru-RU');
+            const dup = _pendingPersons.some(
+                p => p.id === person.id || norm(p.full_name) === norm(person.full_name),
+            );
+            if (dup) {
+                window.showSnackbar?.('Этот человек уже в очереди', 'info');
+                return;
+            }
+            _pendingPersons.push({
+                id:        person.id,
+                full_name: person.full_name,
+                rank:      person.rank || '',
+            });
+            _renderPendingQueue();
+            const inp = document.getElementById('dept-duty-person-search-input');
+            if (inp) inp.value = '';
+            inp?.focus();
+        },
     });
 }
 
@@ -419,8 +475,44 @@ function _showPersonSearch() {
     const input = document.getElementById('dept-duty-person-search-input');
     wrap?.classList.remove('hidden');
     if (input) input.value = '';
+    _pendingPersons = [];
+    _renderPendingQueue();
     _attachPersonSearch();
     input?.focus();
+}
+
+function _hidePersonSearch() {
+    document.getElementById('dept-duty-person-search-wrap')?.classList.add('hidden');
+    _pendingPersons = [];
+    _renderPendingQueue();
+}
+
+// Применяет всю очередь: POST'ит каждого человека через addPersonToSchedule
+// с keepFormOpen:true (не закрывает форму на каждом отдельно). После всех —
+// закрывает форму и обновляет грид. 409-конфликты собираются в общий
+// snackbar, не валят остальное добавление.
+async function _commitPendingQueue() {
+    if (_pendingPersons.length === 0) return;
+    const queue = [..._pendingPersons];
+    let added = 0, alreadyIn = 0, failed = 0;
+    for (const p of queue) {
+        try {
+            await api.post(`/dept/schedules/${_currentId}/persons`, { person_id: p.id });
+            added += 1;
+        } catch (err) {
+            if (err?.status === 409) alreadyIn += 1;
+            else                     failed    += 1;
+        }
+    }
+    _pendingPersons = [];
+    _renderPendingQueue();
+    _hidePersonSearch();
+    await _loadMarksAndRender();
+    const parts = [];
+    if (added)     parts.push(`добавлено ${added}`);
+    if (alreadyIn) parts.push(`уже было ${alreadyIn}`);
+    if (failed)    parts.push(`ошибок ${failed}`);
+    window.showSnackbar?.(parts.join(', ') || 'Готово', failed ? 'error' : 'success');
 }
 
 async function _addPerson(personId) {
