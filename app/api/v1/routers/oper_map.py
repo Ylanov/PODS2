@@ -45,7 +45,16 @@ from app.models.oper_map import OperMapSettings, OperMapZone
 
 
 logger = logging.getLogger(__name__)
+
+# CRUD данных (settings + zones) и API геокодера/маршрута — под permission.
 router = APIRouter(dependencies=[Depends(require_permission("oper_map"))])
+
+# Прокси статических ресурсов (тайлы Яндекса + vendor Leaflet) — публичные.
+# Причина: <script>, <link>, <img> не передают Bearer-токен из localStorage,
+# поэтому при require_permission браузер получает 401 и Leaflet не грузится.
+# Сами ресурсы публичные (Leaflet — open-source, тайлы — общедоступная карта),
+# секретный API-ключ Яндекса остаётся на бэке и в браузер не уходит.
+public_router = APIRouter()
 
 
 # ─── Pydantic ────────────────────────────────────────────────────────────────
@@ -212,7 +221,7 @@ def _tile_cache_path(z: int, x: int, y: int) -> Optional[Path]:
     return p
 
 
-@router.get("/tile/{z}/{x}/{y}.png", summary="Прокси для тайлов Яндекс.Карт")
+@public_router.get("/tile/{z}/{x}/{y}.png", summary="Прокси для тайлов Яндекс.Карт")
 async def proxy_tile(z: int, x: int, y: int):
     if not settings.YANDEX_MAPS_API_KEY:
         raise HTTPException(
@@ -335,7 +344,7 @@ _VENDOR_MIME = {
 }
 
 
-@router.get("/vendor/{name}", summary="Прокси для статики Leaflet (через CDN→диск кеш)")
+@public_router.get("/vendor/{name}", summary="Прокси для статики Leaflet (через CDN→диск кеш)")
 async def proxy_vendor(name: str):
     upstream = _VENDOR_FILES.get(name)
     if not upstream:

@@ -154,6 +154,7 @@ app.include_router(dept_duty.router,       prefix="/api/v1/dept",    tags=["Гр
 app.include_router(duty_window.router,     prefix="/api/v1/duty",    tags=["Окно подачи графиков"])
 app.include_router(sed.router,             prefix="/api/v1/sed",     tags=["СЭД-дайджест"])
 app.include_router(oper_map.router,        prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного"])
+app.include_router(oper_map.public_router, prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного (публичные прокси)"])
 app.include_router(tasks.router,           prefix="/api/v1/tasks",   tags=["Календарь задач"])
 
 # Аудит и уведомления.
