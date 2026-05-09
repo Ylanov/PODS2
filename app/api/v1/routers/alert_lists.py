@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import require_permission
+from app.core.websockets import manager
 from app.db.database import get_db
 from app.models.alert_list import (
     AlertList, AlertSlot, AlertMark,
@@ -151,7 +152,7 @@ def list_slots(list_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{list_id}/slots", response_model=SlotOut, status_code=201,
              summary="Добавить слот в список")
-def create_slot(list_id: int, payload: SlotIn, db: Session = Depends(get_db)):
+async def create_slot(list_id: int, payload: SlotIn, db: Session = Depends(get_db)):
     if not db.query(AlertList).filter(AlertList.id == list_id).first():
         raise HTTPException(status_code=404, detail="Список не найден")
     if payload.role_kind not in ALL_ALERT_ROLES:
@@ -170,11 +171,12 @@ def create_slot(list_id: int, payload: SlotIn, db: Session = Depends(get_db)):
     db.add(slot)
     db.commit()
     db.refresh(slot)
+    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
     return _slot_out(slot)
 
 
 @router.patch("/slots/{slot_id}", response_model=SlotOut, summary="Изменить слот")
-def patch_slot(slot_id: int, payload: SlotPatch, db: Session = Depends(get_db)):
+async def patch_slot(slot_id: int, payload: SlotPatch, db: Session = Depends(get_db)):
     s = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Слот не найден")
@@ -193,16 +195,43 @@ def patch_slot(slot_id: int, payload: SlotPatch, db: Session = Depends(get_db)):
         s.primary_person_id = payload.primary_person_id
     db.commit()
     db.refresh(s)
+    await manager.broadcast({"action": "alert_lists_update", "list_id": s.list_id})
     return _slot_out(s)
 
 
 @router.delete("/slots/{slot_id}", status_code=204, summary="Удалить слот")
-def delete_slot(slot_id: int, db: Session = Depends(get_db)):
+async def delete_slot(slot_id: int, db: Session = Depends(get_db)):
     s = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Слот не найден")
+    list_id = s.list_id
     db.delete(s)
     db.commit()
+    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
+
+
+class ReorderPayload(BaseModel):
+    """Новый порядок: массив slot_id в нужной последовательности."""
+    slot_ids: List[int]
+
+
+@router.put("/{list_id}/slots/reorder", summary="Переупорядочить слоты списка (drag-n-drop)")
+async def reorder_slots(list_id: int, payload: ReorderPayload, db: Session = Depends(get_db)):
+    if not db.query(AlertList).filter(AlertList.id == list_id).first():
+        raise HTTPException(status_code=404, detail="Список не найден")
+    rows = (
+        db.query(AlertSlot)
+        .filter(AlertSlot.list_id == list_id, AlertSlot.id.in_(payload.slot_ids))
+        .all()
+    )
+    by_id = {s.id: s for s in rows}
+    for idx, sid in enumerate(payload.slot_ids):
+        s = by_id.get(sid)
+        if s:
+            s.sort_order = idx
+    db.commit()
+    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
+    return {"updated": len(by_id)}
 
 
 # ─── Marks ───────────────────────────────────────────────────────────────────
@@ -233,7 +262,7 @@ def list_marks(
 
 @router.put("/slots/{slot_id}/marks/{mark_date}", response_model=MarkOut,
             summary="Поставить/обновить отметку (N/O/V) на день")
-def upsert_mark(
+async def upsert_mark(
     slot_id:   int,
     mark_date: date_type,
     payload:   MarkIn,
@@ -279,12 +308,13 @@ def upsert_mark(
         db.add(mark)
     db.commit()
     db.refresh(mark)
+    await manager.broadcast({"action": "alert_lists_update", "list_id": slot.list_id})
     return _mark_out(mark)
 
 
 @router.delete("/slots/{slot_id}/marks/{mark_date}", status_code=204,
                summary="Снять отметку")
-def delete_mark(
+async def delete_mark(
     slot_id:   int,
     mark_date: date_type,
     db:        Session = Depends(get_db),
@@ -296,8 +326,115 @@ def delete_mark(
     )
     if not mark:
         return
+    slot = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
+    list_id = slot.list_id if slot else None
     db.delete(mark)
     db.commit()
+    if list_id:
+        await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
+
+
+# ─── Экспорт в Word на конкретный день ───────────────────────────────────────
+
+@router.get("/{list_id}/export-docx", summary="Экспорт списка на конкретный день в .docx")
+def export_alert_list_docx(
+    list_id: int,
+    on_date: date_type = Query(..., description="День, на который формируется список"),
+    db:      Session = Depends(get_db),
+):
+    """
+    Формирует Word-документ: для каждой позиции списка — кто фактически
+    «дежурит» на эту дату (с учётом V→зам), плюс отметка (Наряд / Ответственный
+    / Отпуск). Удобно распечатать перед обзвоном.
+    """
+    from io import BytesIO
+    from urllib.parse import quote
+    from fastapi.responses import StreamingResponse
+    from docx import Document
+    from docx.shared import Pt, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    alert_list = db.query(AlertList).filter(AlertList.id == list_id).first()
+    if not alert_list:
+        raise HTTPException(status_code=404, detail="Список не найден")
+
+    slots = (
+        db.query(AlertSlot)
+        .filter(AlertSlot.list_id == list_id)
+        .order_by(AlertSlot.sort_order.asc(), AlertSlot.id.asc())
+        .all()
+    )
+    marks = (
+        db.query(AlertMark)
+        .filter(
+            AlertMark.slot_id.in_([s.id for s in slots]) if slots else False,
+            AlertMark.mark_date == on_date,
+        )
+        .all()
+    ) if slots else []
+    marks_by_slot = {m.slot_id: m for m in marks}
+
+    MARK_TITLES = {"N": "Наряд", "O": "Ответственный", "V": "Отпуск"}
+
+    doc = Document()
+    section = doc.sections[0]
+    section.left_margin   = Cm(1.5)
+    section.right_margin  = Cm(1.5)
+    section.top_margin    = Cm(1.0)
+    section.bottom_margin = Cm(1.0)
+
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = title.add_run(f"{alert_list.name}\nна {on_date.strftime('%d.%m.%Y')}")
+    run.bold = True
+    run.font.size = Pt(14)
+
+    table = doc.add_table(rows=1, cols=4)
+    table.style = "Light Grid Accent 1"
+    hdr = table.rows[0].cells
+    hdr[0].text = "№"
+    hdr[1].text = "Должность"
+    hdr[2].text = "ФИО"
+    hdr[3].text = "Отметка"
+    for c in hdr:
+        for para in c.paragraphs:
+            for run in para.runs:
+                run.bold = True
+
+    for idx, slot in enumerate(slots, start=1):
+        mark = marks_by_slot.get(slot.id)
+        # Кто фактически в строке: если V и есть зам — зам, иначе primary.
+        who = None
+        suffix = ""
+        if mark and mark.mark_type == "V" and mark.substitute_person:
+            who = mark.substitute_person
+            suffix = " (замещает)"
+        elif slot.primary_person:
+            who = slot.primary_person
+        full_name = who.full_name if who else "—"
+        rank      = (who.rank + " ") if who and who.rank else ""
+
+        mark_label = MARK_TITLES.get(mark.mark_type, "") if mark else ""
+
+        row = table.add_row().cells
+        row[0].text = str(idx)
+        row[1].text = slot.title
+        row[2].text = f"{rank}{full_name}{suffix}"
+        row[3].text = mark_label
+
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    filename = f"{alert_list.name.replace(' ', '_')}_{on_date.strftime('%Y-%m-%d')}.docx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}",
+        },
+    )
 
 
 # ─── Поиск кандидатов на зама ────────────────────────────────────────────────

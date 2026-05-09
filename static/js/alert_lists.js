@@ -76,6 +76,7 @@ function _renderShell(root) {
                 <button class="al-mode-btn" data-mode="clear" type="button">— снять</button>
             </div>
             <button id="al-add-slot" class="btn btn-outlined btn-sm" type="button">+ позиция</button>
+            <button id="al-print"    class="btn btn-filled   btn-sm" type="button" title="Скачать список на день в Word">📄 Печать на день</button>
         </div>
         <div id="al-grid-wrap" class="al-grid-wrap"></div>
     `;
@@ -139,9 +140,10 @@ function _renderGrid() {
         const titleHtml = primary
             ? `${_esc(slot.title)}<br><small>${_esc(primary.full_name)}</small>`
             : `${_esc(slot.title)}<br><small style="color:var(--md-on-surface-hint); font-style:italic;">— не назначен</small>`;
-        html += `<tr data-slot-id="${slot.id}">
-            <td class="al-slot-title" data-slot-edit="${slot.id}" title="Кликните чтобы изменить">
-                ${titleHtml}
+        html += `<tr data-slot-id="${slot.id}" draggable="true">
+            <td class="al-slot-title" title="Перетащите чтобы изменить порядок · клик по тексту откроет редактор">
+                <span class="al-drag-handle">⋮⋮</span>
+                <span class="al-slot-title__text" data-slot-edit="${slot.id}">${titleHtml}</span>
             </td>`;
         for (let d = 1; d <= days; d++) {
             const dateStr = _dateStr(_viewYear, _viewMonth, d);
@@ -163,6 +165,65 @@ function _renderGrid() {
             cell.dataset.date,
         ));
     });
+    _attachDragAndDrop(wrap);
+}
+
+
+// ─── Drag-n-drop сортировка строк ────────────────────────────────────────
+
+let _dragSrcRow = null;
+
+function _attachDragAndDrop(wrap) {
+    const rows = wrap.querySelectorAll('tr[data-slot-id]');
+    rows.forEach(row => {
+        row.addEventListener('dragstart', (e) => {
+            _dragSrcRow = row;
+            row.classList.add('al-row-dragging');
+            // некоторым браузерам нужен setData чтобы dragstart прошёл
+            try { e.dataTransfer.setData('text/plain', row.dataset.slotId); } catch { /* noop */ }
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        row.addEventListener('dragend', () => {
+            _dragSrcRow = null;
+            wrap.querySelectorAll('.al-row-dragging, .al-row-drop-target')
+                .forEach(r => r.classList.remove('al-row-dragging', 'al-row-drop-target'));
+        });
+        row.addEventListener('dragover', (e) => {
+            if (!_dragSrcRow || _dragSrcRow === row) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            row.classList.add('al-row-drop-target');
+        });
+        row.addEventListener('dragleave', () => {
+            row.classList.remove('al-row-drop-target');
+        });
+        row.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            row.classList.remove('al-row-drop-target');
+            if (!_dragSrcRow || _dragSrcRow === row) return;
+            const srcId = parseInt(_dragSrcRow.dataset.slotId, 10);
+            const dstId = parseInt(row.dataset.slotId, 10);
+            await _reorderSlots(srcId, dstId);
+        });
+    });
+}
+
+async function _reorderSlots(srcId, dstId) {
+    // Локально переставляем, потом отправляем массив id в новом порядке.
+    const srcIdx = _slots.findIndex(s => s.id === srcId);
+    const dstIdx = _slots.findIndex(s => s.id === dstId);
+    if (srcIdx === -1 || dstIdx === -1) return;
+    const [moved] = _slots.splice(srcIdx, 1);
+    _slots.splice(dstIdx, 0, moved);
+    _renderGrid();   // оптимистично
+    try {
+        await api.put(`/alert-lists/${_activeList}/slots/reorder`, {
+            slot_ids: _slots.map(s => s.id),
+        });
+    } catch (err) {
+        window.showSnackbar?.(`Не удалось сохранить порядок: ${err?.message || err}`, 'error');
+        await _loadAndRender();   // откатываем
+    }
 }
 
 
@@ -530,6 +591,7 @@ export async function initAlertLists(rootId) {
         });
     });
     document.getElementById('al-add-slot').addEventListener('click', _addSlot);
+    document.getElementById('al-print').addEventListener('click', _printDay);
 
     await _loadLists();
     _renderListTabs();
@@ -540,4 +602,42 @@ export async function initAlertLists(rootId) {
 
 export async function reloadAlertLists() {
     await _loadAndRender();
+}
+
+// Вызывается из websockets.js при action='alert_lists_update'.
+// Перезагружаем сетку только если сейчас открыта вкладка списков
+// оповещения и изменения коснулись активного списка (или вообще
+// неизвестно какого — list_id может не приходить).
+export async function onAlertListsWsUpdate(listId) {
+    const panel = document.getElementById('dept-alert-lists-panel');
+    if (!panel || panel.classList.contains('hidden')) return;
+    if (listId && listId !== _activeList) return;   // другой список — нас не касается
+    await _loadAndRender();
+}
+
+
+// ─── Печать на день ──────────────────────────────────────────────────────
+
+async function _printDay() {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const dateStr = prompt('На какую дату печатать (ГГГГ-ММ-ДД)?', todayStr);
+    if (!dateStr) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        window.showSnackbar?.('Дата должна быть в формате ГГГГ-ММ-ДД', 'error');
+        return;
+    }
+    try {
+        const blob = await api.download(`/alert-lists/${_activeList}/export-docx?on_date=${dateStr}`);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `alert_list_${_activeList}_${dateStr}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка экспорта: ${err?.message || err}`, 'error');
+    }
 }

@@ -93,6 +93,15 @@ function connect() {
                     .catch(() => {});
             }
 
+            // Кто-то в системе поменял слот/отметку в списках оповещения —
+            // если у нас вкладка alert_lists открыта, перезагружаем сетку.
+            if (data.action === 'alert_lists_update') {
+                console.log('📩 WS message [alert_lists_update]:', data);
+                import('./alert_lists.js')
+                    .then(m => m.onAlertListsWsUpdate?.(data.list_id))
+                    .catch(() => {});
+            }
+
         } catch (error) {
             console.error('❌ WS JSON parse error:', error);
         }
