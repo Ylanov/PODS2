@@ -22,7 +22,7 @@ from app.models.audit import AuditLog  # noqa: F401
 from app.models.auth_tokens import RefreshToken  # noqa: F401
 from app.models.task import Task  # noqa: F401
 from app.models.oper_map import OperMapSettings, OperMapZone  # noqa: F401
-from app.models.alert_list import AlertList, AlertSlot, AlertMark  # noqa: F401
+from app.models.alert_list import AlertList, AlertPosition, AlertSlot, AlertMark  # noqa: F401
 
 
 # =========================

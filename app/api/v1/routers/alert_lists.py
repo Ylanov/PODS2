@@ -2,21 +2,43 @@
 """
 Списки оповещения (вкладка под permission='alert_lists').
 
-Контракт UI:
-  • два списка (id=1, id=2) — сидируются миграцией, не создаются и не удаляются
-  • в каждом — N слотов (позиций); admin/permitted может править их состав
-  • на каждый слот — отметки на дни месяца (N/O/V); при V обязательно
-    указан substitute_person_id (выбор зама делает пользователь вручную)
+Структура:
+  AlertList     — два списка (id=1, id=2). Сидируются миграцией.
+  AlertPosition — словарь должностей с одним ФИО на каждую (общее для
+                  всех списков). Title уникален.
+  AlertSlot     — привязка должности к списку. Один слот = одна должность
+                  в одном списке. UNIQUE (list_id, position_id).
+  AlertMark     — отметка на день для должности. Видна в любом списке
+                  где должность есть. UNIQUE (position_id, mark_date).
+
+Что значит «общее ФИО»:
+  В списке 1 и в списке 2 есть «Начальник 5 управления». Это одна и
+  та же AlertPosition. Меняешь у неё primary_person_id — отображается
+  в обоих списках. Ставишь V (отпуск) — то же самое.
+
+Что свободно у каждого списка:
+  Какие должности входят (можно держать в списке 1 — управления, в
+  списке 2 — отделы). Порядок (sort_order у AlertSlot). Полный
+  состав AlertSlot редактируется через UI («+ позиция», «📋 Шаблон»,
+  drag-n-drop, «Удалить позицию»).
 
 Эндпоинты:
-  GET    /api/v1/alert-lists/                                — два списка
-  GET    /api/v1/alert-lists/{list_id}/slots                 — слоты списка
-  POST   /api/v1/alert-lists/{list_id}/slots                 — добавить слот
-  PATCH  /api/v1/alert-lists/slots/{slot_id}                 — править слот
-  DELETE /api/v1/alert-lists/slots/{slot_id}                 — удалить слот
-  GET    /api/v1/alert-lists/{list_id}/marks?year=&month=    — все отметки за месяц
-  PUT    /api/v1/alert-lists/slots/{slot_id}/marks/{date}    — поставить/обновить отметку
-  DELETE /api/v1/alert-lists/slots/{slot_id}:marks/{date}    — снять отметку
+  GET    /alert-lists/                                      — два списка
+  GET    /alert-lists/{list_id}/slots                       — слоты списка с join'ом на position
+  POST   /alert-lists/{list_id}/slots                       — добавить позицию в список
+                                                              (создаёт AlertPosition если нет, AlertSlot)
+  PATCH  /alert-lists/slots/{slot_id}                       — править (title/role/primary → AlertPosition;
+                                                              sort_order → AlertSlot)
+  DELETE /alert-lists/slots/{slot_id}                       — удалить только slot из списка
+                                                              (AlertPosition останется)
+  PUT    /alert-lists/{list_id}/slots/reorder               — drag-n-drop
+  POST   /alert-lists/{list_id}/slots/seed                  — заполнить шаблоном
+  GET    /alert-lists/{list_id}/marks?year=&month=          — отметки за месяц
+  PUT    /alert-lists/slots/{slot_id}/marks/{date}          — поставить отметку
+                                                              (на position, видна везде)
+  DELETE /alert-lists/slots/{slot_id}/marks/{date}          — снять отметку
+  GET    /alert-lists/{list_id}/export-docx?on_date=        — Word на день
+  GET    /alert-lists/persons/search                        — для модалки выбора зама
 """
 
 import logging
@@ -32,7 +54,7 @@ from app.api.dependencies import require_permission
 from app.core.websockets import manager
 from app.db.database import get_db
 from app.models.alert_list import (
-    AlertList, AlertSlot, AlertMark,
+    AlertList, AlertPosition, AlertSlot, AlertMark,
     ALL_ALERT_MARK_TYPES, ALERT_MARK_VACATION,
     ALL_ALERT_ROLES,
 )
@@ -44,11 +66,6 @@ router = APIRouter(dependencies=[Depends(require_permission("alert_lists"))])
 
 
 # ─── Шаблон позиций по умолчанию ─────────────────────────────────────────────
-# Стандартный набор должностей центра. Применяется через POST /seed —
-# одним кликом фронт может создать всё это в пустом списке. Уже существующие
-# позиции (по совпадению title) пропускаются, чтобы повторный seed работал
-# идемпотентно. Группы упорядочены: руководство ЦЕНТРА → УПРАВЛЕНИЯ →
-# ОТДЕЛЫ И СЛУЖБЫ; sort_order проставляется в порядке массива.
 DEFAULT_SLOT_TEMPLATES: list[dict] = [
     # Руководство центра
     {"title": "Первый зам. НЦ",                                "role_kind": "cnc"},
@@ -116,11 +133,17 @@ class ListOut(BaseModel):
 
 
 class SlotOut(BaseModel):
-    id:         int
-    list_id:    int
-    title:      str
-    role_kind:  str
-    sort_order: int
+    """
+    Slot отдаётся фронту с разворотом полей AlertPosition в плоскую
+    структуру — UI как был, ничего менять не нужно. position_id отдаём
+    отдельно, потому что фронт может пригодиться (для marks-логики).
+    """
+    id:          int
+    list_id:     int
+    position_id: int
+    title:       str
+    role_kind:   str
+    sort_order:  int
     primary_person: Optional[_PersonRef] = None
 
 
@@ -135,11 +158,15 @@ class SlotPatch(BaseModel):
     title:             Optional[str] = Field(default=None, min_length=1, max_length=200)
     role_kind:         Optional[str] = None
     sort_order:        Optional[int] = None
-    primary_person_id: Optional[int] = None   # None = разорвать привязку
-    primary_person_id_set: bool = False       # маркер «поле передано» — иначе не трогаем
+    primary_person_id: Optional[int] = None
+    primary_person_id_set: bool = False
 
 
 class MarkOut(BaseModel):
+    """
+    slot_id оставлен в выдаче для бэк-совместимости фронта (он строит
+    Map по этому ключу). Бэкенд по slot_id → position_id и работает.
+    """
     slot_id:   int
     mark_date: date_type
     mark_type: str
@@ -151,37 +178,65 @@ class MarkIn(BaseModel):
     substitute_person_id: Optional[int] = None
 
 
+class ReorderPayload(BaseModel):
+    slot_ids: List[int]
+
+
+class SeedPayload(BaseModel):
+    pass
+
+
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _person_ref(p: Optional[Person]) -> Optional[_PersonRef]:
     if not p:
         return None
     return _PersonRef(
-        id=p.id,
-        full_name=p.full_name,
-        rank=p.rank,
-        position_title=p.position_title,
+        id=p.id, full_name=p.full_name, rank=p.rank, position_title=p.position_title,
     )
 
 
 def _slot_out(s: AlertSlot) -> SlotOut:
+    pos = s.position
     return SlotOut(
         id=s.id,
         list_id=s.list_id,
-        title=s.title,
-        role_kind=s.role_kind,
+        position_id=pos.id,
+        title=pos.title,
+        role_kind=pos.role_kind,
         sort_order=s.sort_order,
-        primary_person=_person_ref(s.primary_person),
+        primary_person=_person_ref(pos.primary_person),
     )
 
 
-def _mark_out(m: AlertMark) -> MarkOut:
+def _mark_out(slot_id: int, m: AlertMark) -> MarkOut:
     return MarkOut(
-        slot_id=m.slot_id,
+        slot_id=slot_id,
         mark_date=m.mark_date,
         mark_type=m.mark_type,
         substitute_person=_person_ref(m.substitute_person),
     )
+
+
+def _get_or_create_position(db: Session, title: str, role_kind: str,
+                            primary_person_id: Optional[int]) -> AlertPosition:
+    """
+    Найти AlertPosition по title или создать новую. role_kind /
+    primary_person_id применяются только при создании; при существующей —
+    не перезаписываем (если нужно изменить — через PATCH /slots/{id}).
+    """
+    title = title.strip()
+    pos = db.query(AlertPosition).filter(AlertPosition.title == title).first()
+    if pos:
+        return pos
+    pos = AlertPosition(
+        title=title,
+        role_kind=role_kind,
+        primary_person_id=primary_person_id,
+    )
+    db.add(pos)
+    db.flush()
+    return pos
 
 
 # ─── Lists ───────────────────────────────────────────────────────────────────
@@ -209,7 +264,7 @@ def list_slots(list_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{list_id}/slots", response_model=SlotOut, status_code=201,
-             summary="Добавить слот в список")
+             summary="Добавить позицию в список")
 async def create_slot(list_id: int, payload: SlotIn, db: Session = Depends(get_db)):
     if not db.query(AlertList).filter(AlertList.id == list_id).first():
         raise HTTPException(status_code=404, detail="Список не найден")
@@ -217,117 +272,81 @@ async def create_slot(list_id: int, payload: SlotIn, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail=f"role_kind должен быть один из {ALL_ALERT_ROLES}")
     if payload.primary_person_id is not None:
         if not db.query(Person).filter(Person.id == payload.primary_person_id).first():
-            raise HTTPException(status_code=400, detail="primary_person_id не найден в Базе людей")
+            raise HTTPException(status_code=400, detail="primary_person_id не найден")
 
-    slot = AlertSlot(
-        list_id=list_id,
-        title=payload.title.strip(),
-        role_kind=payload.role_kind,
-        sort_order=payload.sort_order or 0,
-        primary_person_id=payload.primary_person_id,
+    pos = _get_or_create_position(db, payload.title, payload.role_kind, payload.primary_person_id)
+    # Если такая позиция уже есть в этом списке — отказ.
+    exists = (
+        db.query(AlertSlot)
+        .filter(AlertSlot.list_id == list_id, AlertSlot.position_id == pos.id)
+        .first()
     )
+    if exists:
+        raise HTTPException(status_code=409, detail="Эта должность уже есть в списке")
+
+    slot = AlertSlot(list_id=list_id, position_id=pos.id, sort_order=payload.sort_order or 0)
     db.add(slot)
     db.commit()
     db.refresh(slot)
-    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
+    await manager.broadcast({"action": "alert_lists_update"})
     return _slot_out(slot)
 
 
-@router.patch("/slots/{slot_id}", response_model=SlotOut, summary="Изменить слот")
+@router.patch("/slots/{slot_id}", response_model=SlotOut,
+              summary="Изменить позицию (title/role/primary — общее; sort_order — у слота)")
 async def patch_slot(slot_id: int, payload: SlotPatch, db: Session = Depends(get_db)):
     s = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Слот не найден")
+    pos = s.position
+
+    # title/role_kind/primary_person_id — это поля AlertPosition. Изменения
+    # отразятся во всех списках где эта позиция присутствует.
     if payload.title is not None:
-        s.title = payload.title.strip()
+        new_title = payload.title.strip()
+        if new_title != pos.title:
+            # Если такой title уже есть у другой позиции — нельзя
+            # (нарушит UNIQUE). UI должен валидировать заранее.
+            other = db.query(AlertPosition).filter(
+                AlertPosition.title == new_title,
+                AlertPosition.id    != pos.id,
+            ).first()
+            if other:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Должность с таким названием уже существует. "
+                           "Используйте её или придумайте другое имя.",
+                )
+            pos.title = new_title
     if payload.role_kind is not None:
         if payload.role_kind not in ALL_ALERT_ROLES:
             raise HTTPException(status_code=400, detail=f"role_kind должен быть один из {ALL_ALERT_ROLES}")
-        s.role_kind = payload.role_kind
-    if payload.sort_order is not None:
-        s.sort_order = payload.sort_order
+        pos.role_kind = payload.role_kind
     if payload.primary_person_id_set:
         if payload.primary_person_id is not None:
             if not db.query(Person).filter(Person.id == payload.primary_person_id).first():
                 raise HTTPException(status_code=400, detail="primary_person_id не найден")
-        s.primary_person_id = payload.primary_person_id
+        pos.primary_person_id = payload.primary_person_id
+
+    # sort_order — у самого AlertSlot, локально для списка.
+    if payload.sort_order is not None:
+        s.sort_order = payload.sort_order
+
     db.commit()
     db.refresh(s)
-    await manager.broadcast({"action": "alert_lists_update", "list_id": s.list_id})
+    await manager.broadcast({"action": "alert_lists_update"})
     return _slot_out(s)
 
 
-@router.delete("/slots/{slot_id}", status_code=204, summary="Удалить слот")
+@router.delete("/slots/{slot_id}", status_code=204,
+               summary="Удалить позицию из списка (AlertPosition не трогается)")
 async def delete_slot(slot_id: int, db: Session = Depends(get_db)):
     s = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Слот не найден")
-    list_id = s.list_id
     db.delete(s)
     db.commit()
-    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
-
-
-class ReorderPayload(BaseModel):
-    """Новый порядок: массив slot_id в нужной последовательности."""
-    slot_ids: List[int]
-
-
-class SeedPayload(BaseModel):
-    """Применить шаблон стандартных позиций. Существующие пропускаются."""
-    pass
-
-
-@router.get("/template/preview", response_model=List[dict],
-            summary="Получить шаблон стандартных позиций (для preview)")
-def template_preview():
-    return DEFAULT_SLOT_TEMPLATES
-
-
-@router.post("/{list_id}/slots/seed",
-             summary="Заполнить список стандартными позициями (idempotent)")
-async def seed_slots(list_id: int, payload: SeedPayload, db: Session = Depends(get_db)):
-    """
-    Создаёт в указанном списке все позиции из DEFAULT_SLOT_TEMPLATES,
-    которые в нём ещё отсутствуют (по совпадению title — case-sensitive).
-    Уже существующие — не трогаем.
-
-    Порядок sort_order — продолжается от текущего максимума, чтобы новые
-    позиции легли в конец и не перемешали ручные правки.
-    """
-    if not db.query(AlertList).filter(AlertList.id == list_id).first():
-        raise HTTPException(status_code=404, detail="Список не найден")
-
-    existing_titles = {
-        s.title for s in db.query(AlertSlot.title).filter(AlertSlot.list_id == list_id).all()
-    }
-    max_order = (
-        db.query(AlertSlot.sort_order)
-        .filter(AlertSlot.list_id == list_id)
-        .order_by(AlertSlot.sort_order.desc())
-        .first()
-    )
-    next_order = (max_order[0] + 1) if max_order else 0
-
-    created = 0
-    skipped = 0
-    for tpl in DEFAULT_SLOT_TEMPLATES:
-        if tpl["title"] in existing_titles:
-            skipped += 1
-            continue
-        slot = AlertSlot(
-            list_id=list_id,
-            title=tpl["title"],
-            role_kind=tpl["role_kind"],
-            sort_order=next_order,
-        )
-        db.add(slot)
-        next_order += 1
-        created += 1
-
-    db.commit()
-    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
-    return {"created": created, "skipped": skipped, "total": created + skipped}
+    await manager.broadcast({"action": "alert_lists_update"})
 
 
 @router.put("/{list_id}/slots/reorder", summary="Переупорядочить слоты списка (drag-n-drop)")
@@ -349,6 +368,57 @@ async def reorder_slots(list_id: int, payload: ReorderPayload, db: Session = Dep
     return {"updated": len(by_id)}
 
 
+# ─── Шаблон ──────────────────────────────────────────────────────────────────
+
+@router.get("/template/preview", summary="Шаблон стандартных позиций")
+def template_preview():
+    return DEFAULT_SLOT_TEMPLATES
+
+
+@router.post("/{list_id}/slots/seed",
+             summary="Заполнить список стандартными позициями (idempotent)")
+async def seed_slots(list_id: int, payload: SeedPayload, db: Session = Depends(get_db)):
+    """
+    Для каждой записи шаблона:
+      • если AlertPosition с таким title нет — создаём
+      • если в этом списке этой position_id ещё нет — добавляем AlertSlot
+      • иначе — пропускаем
+
+    sort_order у новых слотов продолжается от текущего max.
+    """
+    if not db.query(AlertList).filter(AlertList.id == list_id).first():
+        raise HTTPException(status_code=404, detail="Список не найден")
+
+    existing_position_ids = {
+        row[0] for row in
+        db.query(AlertSlot.position_id).filter(AlertSlot.list_id == list_id).all()
+    }
+    max_order = (
+        db.query(AlertSlot.sort_order)
+        .filter(AlertSlot.list_id == list_id)
+        .order_by(AlertSlot.sort_order.desc())
+        .first()
+    )
+    next_order = (max_order[0] + 1) if max_order else 0
+
+    created = 0
+    skipped = 0
+    for tpl in DEFAULT_SLOT_TEMPLATES:
+        pos = _get_or_create_position(db, tpl["title"], tpl["role_kind"], None)
+        if pos.id in existing_position_ids:
+            skipped += 1
+            continue
+        slot = AlertSlot(list_id=list_id, position_id=pos.id, sort_order=next_order)
+        db.add(slot)
+        existing_position_ids.add(pos.id)
+        next_order += 1
+        created += 1
+
+    db.commit()
+    await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
+    return {"created": created, "skipped": skipped, "total": created + skipped}
+
+
 # ─── Marks ───────────────────────────────────────────────────────────────────
 
 @router.get("/{list_id}/marks", response_model=List[MarkOut],
@@ -362,9 +432,11 @@ def list_marks(
     if not db.query(AlertList).filter(AlertList.id == list_id).first():
         raise HTTPException(status_code=404, detail="Список не найден")
     last = monthrange(year, month)[1]
+    # Отметки общие на position. Нам нужно отдать их «по слотам этого
+    # списка» — фронт работает с slot_id. Делаем join.
     rows = (
-        db.query(AlertMark)
-        .join(AlertSlot, AlertMark.slot_id == AlertSlot.id)
+        db.query(AlertSlot.id, AlertMark)
+        .join(AlertMark, AlertMark.position_id == AlertSlot.position_id)
         .filter(
             AlertSlot.list_id == list_id,
             AlertMark.mark_date >= date_type(year, month, 1),
@@ -372,11 +444,11 @@ def list_marks(
         )
         .all()
     )
-    return [_mark_out(m) for m in rows]
+    return [_mark_out(slot_id, m) for slot_id, m in rows]
 
 
 @router.put("/slots/{slot_id}/marks/{mark_date}", response_model=MarkOut,
-            summary="Поставить/обновить отметку (N/O/V) на день")
+            summary="Поставить/обновить отметку (на ДОЛЖНОСТЬ — видна в обоих списках)")
 async def upsert_mark(
     slot_id:   int,
     mark_date: date_type,
@@ -386,11 +458,11 @@ async def upsert_mark(
     slot = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
     if not slot:
         raise HTTPException(status_code=404, detail="Слот не найден")
+    position_id = slot.position_id
+
     if payload.mark_type not in ALL_ALERT_MARK_TYPES:
         raise HTTPException(status_code=400, detail=f"mark_type должен быть один из {ALL_ALERT_MARK_TYPES}")
 
-    # Для V — substitute_person_id обязателен (UI спрашивает зама прежде
-    # чем дать поставить отпуск).
     if payload.mark_type == ALERT_MARK_VACATION:
         if not payload.substitute_person_id:
             raise HTTPException(
@@ -401,12 +473,11 @@ async def upsert_mark(
             raise HTTPException(status_code=400, detail="substitute_person_id не найден")
         sub_id = payload.substitute_person_id
     else:
-        # N/O — substitute_person_id не нужен, обнуляем если был.
         sub_id = None
 
     existing = (
         db.query(AlertMark)
-        .filter(AlertMark.slot_id == slot_id, AlertMark.mark_date == mark_date)
+        .filter(AlertMark.position_id == position_id, AlertMark.mark_date == mark_date)
         .first()
     )
     if existing:
@@ -415,7 +486,7 @@ async def upsert_mark(
         mark = existing
     else:
         mark = AlertMark(
-            slot_id=slot_id,
+            position_id=position_id,
             mark_date=mark_date,
             mark_type=payload.mark_type,
             substitute_person_id=sub_id,
@@ -423,8 +494,8 @@ async def upsert_mark(
         db.add(mark)
     db.commit()
     db.refresh(mark)
-    await manager.broadcast({"action": "alert_lists_update", "list_id": slot.list_id})
-    return _mark_out(mark)
+    await manager.broadcast({"action": "alert_lists_update"})
+    return _mark_out(slot_id, mark)
 
 
 @router.delete("/slots/{slot_id}/marks/{mark_date}", status_code=204,
@@ -434,19 +505,20 @@ async def delete_mark(
     mark_date: date_type,
     db:        Session = Depends(get_db),
 ):
+    slot = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
+    if not slot:
+        return
     mark = (
         db.query(AlertMark)
-        .filter(AlertMark.slot_id == slot_id, AlertMark.mark_date == mark_date)
+        .filter(AlertMark.position_id == slot.position_id,
+                AlertMark.mark_date  == mark_date)
         .first()
     )
     if not mark:
         return
-    slot = db.query(AlertSlot).filter(AlertSlot.id == slot_id).first()
-    list_id = slot.list_id if slot else None
     db.delete(mark)
     db.commit()
-    if list_id:
-        await manager.broadcast({"action": "alert_lists_update", "list_id": list_id})
+    await manager.broadcast({"action": "alert_lists_update"})
 
 
 # ─── Экспорт в Word на конкретный день ───────────────────────────────────────
@@ -457,11 +529,6 @@ def export_alert_list_docx(
     on_date: date_type = Query(..., description="День, на который формируется список"),
     db:      Session = Depends(get_db),
 ):
-    """
-    Формирует Word-документ: для каждой позиции списка — кто фактически
-    «дежурит» на эту дату (с учётом V→зам), плюс отметка (Наряд / Ответственный
-    / Отпуск). Удобно распечатать перед обзвоном.
-    """
     from io import BytesIO
     from urllib.parse import quote
     from fastapi.responses import StreamingResponse
@@ -479,15 +546,19 @@ def export_alert_list_docx(
         .order_by(AlertSlot.sort_order.asc(), AlertSlot.id.asc())
         .all()
     )
-    marks = (
-        db.query(AlertMark)
-        .filter(
-            AlertMark.slot_id.in_([s.id for s in slots]) if slots else False,
-            AlertMark.mark_date == on_date,
+
+    position_ids = [s.position_id for s in slots]
+    marks = []
+    if position_ids:
+        marks = (
+            db.query(AlertMark)
+            .filter(
+                AlertMark.position_id.in_(position_ids),
+                AlertMark.mark_date == on_date,
+            )
+            .all()
         )
-        .all()
-    ) if slots else []
-    marks_by_slot = {m.slot_id: m for m in marks}
+    marks_by_position = {m.position_id: m for m in marks}
 
     MARK_TITLES = {"N": "Наряд", "O": "Ответственный", "V": "Отпуск"}
 
@@ -517,15 +588,15 @@ def export_alert_list_docx(
                 run.bold = True
 
     for idx, slot in enumerate(slots, start=1):
-        mark = marks_by_slot.get(slot.id)
-        # Кто фактически в строке: если V и есть зам — зам, иначе primary.
+        pos = slot.position
+        mark = marks_by_position.get(pos.id)
         who = None
         suffix = ""
         if mark and mark.mark_type == "V" and mark.substitute_person:
             who = mark.substitute_person
             suffix = " (замещает)"
-        elif slot.primary_person:
-            who = slot.primary_person
+        elif pos.primary_person:
+            who = pos.primary_person
         full_name = who.full_name if who else "—"
         rank      = (who.rank + " ") if who and who.rank else ""
 
@@ -533,7 +604,7 @@ def export_alert_list_docx(
 
         row = table.add_row().cells
         row[0].text = str(idx)
-        row[1].text = slot.title
+        row[1].text = pos.title
         row[2].text = f"{rank}{full_name}{suffix}"
         row[3].text = mark_label
 
@@ -563,14 +634,6 @@ def search_persons(
                                 description="корень должности для фильтра role=upr/otd"),
     db:   Session = Depends(get_db),
 ):
-    """
-    Возвращает кандидатов на роль зама. Логика фильтра:
-      role=cnc          — без ограничения, ищем по q среди всех активных
-      role=upr / otd    — Person.position_title ICONTAINS root (например root='5 упр'
-                          → подберёт «Зам. начальника 5 упр»). q дополняет фильтр.
-
-    Не учитываем уволенных (fired_at IS NULL).
-    """
     qry = db.query(Person).filter(Person.fired_at.is_(None))
     if role in ("upr", "otd") and root:
         qry = qry.filter(Person.position_title.ilike(f"%{root}%"))

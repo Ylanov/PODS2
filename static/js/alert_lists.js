@@ -445,6 +445,11 @@ async function _openSlotEditor(slotId) {
     modal.innerHTML = `
         <div class="al-modal-card">
             <h3 class="al-modal-title">Редактирование позиции</h3>
+            <p class="al-modal-hint">
+                Название/тип/ФИО — общие для обоих списков. Если эта должность
+                есть и в другом списке, изменения применятся и там.
+                Удаление позиции убирает её только из текущего списка.
+            </p>
             <label class="al-field">
                 Название
                 <input id="al-slot-title" type="text" value="${_esc(slot.title)}" />
@@ -470,7 +475,7 @@ async function _openSlotEditor(slotId) {
                 </div>
             </label>
             <div class="al-modal-actions">
-                <button id="al-slot-del"    class="btn btn-danger   btn-sm" type="button">Удалить позицию</button>
+                <button id="al-slot-del"    class="btn btn-danger   btn-sm" type="button" title="Удалить позицию из текущего списка (в другом останется если была)">Удалить из списка</button>
                 <div style="flex:1"></div>
                 <button id="al-slot-cancel" class="btn btn-outlined btn-sm" type="button">Отмена</button>
                 <button id="al-slot-save"   class="btn btn-success  btn-sm" type="button">Сохранить</button>
@@ -505,7 +510,12 @@ async function _openSlotEditor(slotId) {
     });
 
     modal.querySelector('#al-slot-del').addEventListener('click', async () => {
-        if (!confirm(`Удалить позицию «${slot.title}»? Все её отметки тоже удалятся.`)) return;
+        const listName = _lists.find(l => l.id === _activeList)?.name || 'этого списка';
+        if (!confirm(
+            `Удалить позицию «${slot.title}» из «${listName}»?\n\n` +
+            `Сама должность с её ФИО и отметками сохранится — если она есть ` +
+            `и в другом списке, там она останется на месте.`
+        )) return;
         try {
             await api.delete(`/alert-lists/slots/${slot.id}`);
             close();
@@ -540,11 +550,11 @@ async function _seedFromTemplate() {
     const existing = _slots.length;
     const msg = existing > 0
         ? `Дополнить список «${_lists.find(l => l.id === _activeList)?.name}» стандартными позициями?\n\n` +
-          `В шаблоне ${totalTpl} позиций. Уже существующие (${existing}) пропустятся, ` +
-          `новые добавятся в конец. После — назначите ФИО кликом по строке.`
+          `В шаблоне ${totalTpl} позиций. Уже существующие в этом списке пропустятся, ` +
+          `новые добавятся в конец.`
         : `Заполнить список «${_lists.find(l => l.id === _activeList)?.name}» стандартными позициями?\n\n` +
           `Будет создано до ${totalTpl} позиций (управления, отделы, службы, руководство центра). ` +
-          `Затем останется только привязать ФИО к каждой строке.`;
+          `Если в другом списке уже есть позиции с этими названиями — ФИО подтянутся автоматически (одна должность — одно ФИО на оба списка).`;
     if (!confirm(msg)) return;
     try {
         const res = await api.post(`/alert-lists/${_activeList}/slots/seed`, {});

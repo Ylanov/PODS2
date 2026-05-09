@@ -1,13 +1,22 @@
 # app/models/alert_list.py
 """
-Списки оповещения — два общих списка (id=1, id=2) с привязкой
-к Базе людей. Колонки таблицы — слоты (должности типа «Начальник 5 упр»),
-строки — дни месяца. В каждой ячейке — отметка (N наряд / O ответственный
-/ V отпуск) + опциональный ручной заместитель (для V — фиксируется
-после диалога «выбрать зама»).
+Списки оповещения. Структура:
 
-Все данные общие — кто угодно с permission='alert_lists' видит и
-редактирует одно и то же.
+  AlertList     — два общих списка (id=1, id=2). Сидируются миграцией.
+  AlertPosition — словарь должностей (Начальник 5 упр / ЗНЦ / …) с
+                  единственным ФИО на каждую. ФИО общее на всех — если
+                  изменили в одном списке, отражается во всех, потому что
+                  привязка идёт через AlertPosition.
+  AlertSlot     — размещение должности в конкретном списке. У каждого
+                  AlertSlot свой sort_order; одна и та же AlertPosition
+                  может попасть и в список 1, и в список 2 (один раз в
+                  каждом — UNIQUE list_id+position_id).
+  AlertMark     — отметка (N/O/V) на день для AlertPosition.
+                  Привязана к должности, а не к слоту → видна в обоих
+                  списках где должность присутствует. Так и нужно: если
+                  человек в отпуске, он недоступен по любому списку.
+
+Все данные общие у всех с permission='alert_lists'.
 """
 
 from sqlalchemy import (
@@ -17,16 +26,16 @@ from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 
-# Допустимые типы отметки в ячейке.
-ALERT_MARK_DUTY      = "N"   # наряд
-ALERT_MARK_RESP      = "O"   # ответственный
-ALERT_MARK_VACATION  = "V"   # отпуск (требует ручной выбор зама)
+# Допустимые типы отметки.
+ALERT_MARK_DUTY      = "N"
+ALERT_MARK_RESP      = "O"
+ALERT_MARK_VACATION  = "V"
 ALL_ALERT_MARK_TYPES = (ALERT_MARK_DUTY, ALERT_MARK_RESP, ALERT_MARK_VACATION)
 
-# Тип позиции — нужен только для фильтра в модалке выбора зама.
-ALERT_ROLE_UPR = "upr"   # управление  → зам только из того же управления
-ALERT_ROLE_OTD = "otd"   # отдел       → зам только из того же отдела
-ALERT_ROLE_CNC = "cnc"   # центр (ЗНЦ) → зам кто угодно из руководящего состава
+# Тип позиции — для фильтра в модалке выбора зама.
+ALERT_ROLE_UPR = "upr"   # управление
+ALERT_ROLE_OTD = "otd"   # отдел
+ALERT_ROLE_CNC = "cnc"   # центр (ЗНЦ)
 ALL_ALERT_ROLES = (ALERT_ROLE_UPR, ALERT_ROLE_OTD, ALERT_ROLE_CNC)
 
 
@@ -38,36 +47,22 @@ class AlertList(Base):
     id   = Column(Integer, primary_key=True)
     name = Column(String(100), nullable=False)
 
-    slots = relationship(
-        "AlertSlot",
-        back_populates="alert_list",
-        order_by="AlertSlot.sort_order, AlertSlot.id",
-        cascade="all, delete-orphan",
-    )
 
-
-class AlertSlot(Base):
+class AlertPosition(Base):
     """
-    Одна позиция в списке оповещения — соответствует должности
-    («Начальник 5 упр», «ЗНЦ по воспитательной работе», …).
+    Должность («Начальник 5 упр», «ЗНЦ по воспитательной работе», …).
+    Title уникален — две позиции с одним именем не допускаются (вся
+    логика «одно ФИО — везде» строится на этом).
 
-    primary_person_id — кого считать основным. ON DELETE SET NULL,
-    чтобы при удалении человека из базы слот не падал, а просто
-    помечался как «не назначен».
+    primary_person_id ON DELETE SET NULL — при удалении человека из
+    Базы людей позиция остаётся, просто становится «не назначена».
     """
 
-    __tablename__ = "alert_slots"
+    __tablename__ = "alert_positions"
 
-    id           = Column(Integer, primary_key=True, index=True)
-    list_id      = Column(
-        Integer,
-        ForeignKey("alert_lists.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    title        = Column(String(200), nullable=False)
-    role_kind    = Column(String(10),  nullable=False, default=ALERT_ROLE_UPR)
-    sort_order   = Column(Integer,     nullable=False, default=0)
+    id                = Column(Integer, primary_key=True, index=True)
+    title             = Column(String(200), nullable=False, unique=True)
+    role_kind         = Column(String(10),  nullable=False, default=ALERT_ROLE_UPR)
     primary_person_id = Column(
         Integer,
         ForeignKey("persons.id", ondelete="SET NULL"),
@@ -75,30 +70,55 @@ class AlertSlot(Base):
         index=True,
     )
 
-    alert_list      = relationship("AlertList", back_populates="slots")
-    primary_person  = relationship("Person", foreign_keys=[primary_person_id], lazy="joined")
+    primary_person = relationship("Person", lazy="joined")
+
+
+class AlertSlot(Base):
+    """
+    Привязка должности к списку. У каждого свой sort_order — порядок
+    позиций в списке независим от других списков. UNIQUE (list_id, position_id):
+    одна должность не может быть дважды в одном списке.
+    """
+
+    __tablename__ = "alert_slots"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    list_id     = Column(
+        Integer,
+        ForeignKey("alert_lists.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    position_id = Column(
+        Integer,
+        ForeignKey("alert_positions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    sort_order  = Column(Integer, nullable=False, default=0)
+
+    position = relationship("AlertPosition", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("list_id", "position_id", name="uq_alert_slots_list_position"),
+    )
 
 
 class AlertMark(Base):
     """
-    Отметка на конкретный день для конкретного слота.
-
-    UNIQUE (slot_id, mark_date) — только одна отметка на ячейку.
-    substitute_person_id заполняется только при mark_type=V (отпуск),
-    остальным типам он не нужен.
+    Отметка на конкретный день для конкретной ДОЛЖНОСТИ. Видна в любом
+    списке где эта должность присутствует. UNIQUE (position_id, mark_date)
+    — только одна отметка на ячейку.
     """
 
     __tablename__ = "alert_marks"
 
-    id        = Column(Integer, primary_key=True, index=True)
-    slot_id   = Column(
+    id          = Column(Integer, primary_key=True, index=True)
+    position_id = Column(
         Integer,
-        ForeignKey("alert_slots.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        ForeignKey("alert_positions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
     )
-    mark_date = Column(Date, nullable=False, index=True)
-    mark_type = Column(String(2), nullable=False)
+    mark_date            = Column(Date, nullable=False, index=True)
+    mark_type            = Column(String(2), nullable=False)
     substitute_person_id = Column(
         Integer,
         ForeignKey("persons.id", ondelete="SET NULL"),
@@ -108,5 +128,5 @@ class AlertMark(Base):
     substitute_person = relationship("Person", foreign_keys=[substitute_person_id], lazy="joined")
 
     __table_args__ = (
-        UniqueConstraint("slot_id", "mark_date", name="uq_alert_marks_slot_date"),
+        UniqueConstraint("position_id", "mark_date", name="uq_alert_marks_position_date"),
     )
