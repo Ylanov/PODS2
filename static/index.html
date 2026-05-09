@@ -320,6 +320,23 @@
                             <!-- Форма создания (скрытая) -->
                             <div id="dept-duty-create-form" class="duty-create-form hidden">
                                 <div class="field">
+                                    <label class="field-label">Тип графика</label>
+                                    <div class="duty-kind-radio">
+                                        <label>
+                                            <input type="radio" name="dept-duty-create-kind"
+                                                   value="duty" checked>
+                                            <span>Наряд</span>
+                                            <small>автозаполняет слоты в списках</small>
+                                        </label>
+                                        <label>
+                                            <input type="radio" name="dept-duty-create-kind"
+                                                   value="amg_duty">
+                                            <span>Дежурство в АМГ</span>
+                                            <small>учётный график, не автозаполняет</small>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="field" style="margin-top:8px;">
                                     <label class="field-label" for="dept-duty-create-position">Должность</label>
                                     <select id="dept-duty-create-position" style="width:100%;"></select>
                                 </div>

@@ -79,6 +79,8 @@ class DeptScheduleCreate(BaseModel):
     title:         str           = Field(..., min_length=1, max_length=300, strip_whitespace=True)
     position_id:   Optional[int] = None
     position_name: Optional[str] = None
+    # 'duty' (default) или 'amg_duty' — см. константы DUTY_KIND_* в models/duty.py
+    kind:          str           = "duty"
 
 
 class DeptScheduleResponse(BaseModel):
@@ -91,6 +93,9 @@ class DeptScheduleResponse(BaseModel):
     # (бэк-совместимое поведение). Если задан список template-id —
     # автозаполнение работает только для событий из этих шаблонов.
     applicable_template_ids: List[int] = []
+    # Тип графика: 'duty' (наряд, default) или 'amg_duty' (дежурство АМГ).
+    # У 'amg_duty' автозаполнение слотов в списках выключено.
+    kind:          str           = "duty"
 
     class Config:
         from_attributes = True
@@ -99,6 +104,11 @@ class DeptScheduleResponse(BaseModel):
 class DeptScheduleTemplatesPayload(BaseModel):
     """PATCH /schedules/{id}/applicable-templates — массив template-id."""
     template_ids: List[int] = []
+
+
+class DeptScheduleKindPayload(BaseModel):
+    """PATCH /schedules/{id}/kind — переключить тип графика."""
+    kind: str = Field(..., description="'duty' или 'amg_duty'")
 
 
 class DeptPersonInScheduleResponse(BaseModel):
@@ -179,6 +189,7 @@ def list_my_schedules(
             position_name=pos_name,
             owner=s.owner,
             applicable_template_ids=s.get_applicable_template_ids(),
+            kind=getattr(s, "kind", "duty") or "duty",
         ))
     return result
 
@@ -191,16 +202,25 @@ async def create_my_schedule(
 ):
     """Создать график. owner автоматически = текущий пользователь."""
     from app.models.event import Position
+    from app.models.duty  import ALL_DUTY_KINDS, DUTY_KIND_DUTY
     pos_name = payload.position_name
     if not pos_name and payload.position_id:
         pos = db.query(Position).filter(Position.id == payload.position_id).first()
         pos_name = pos.name if pos else None
+
+    kind = (payload.kind or DUTY_KIND_DUTY).strip()
+    if kind not in ALL_DUTY_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Недопустимый kind: {kind}. Допустимо: {', '.join(ALL_DUTY_KINDS)}",
+        )
 
     s = DutySchedule(
         title=payload.title,
         position_id=payload.position_id,
         position_name=pos_name,
         owner=user.username,           # ← изоляция по управлению
+        kind=kind,
     )
     db.add(s)
     db.commit()
@@ -211,6 +231,42 @@ async def create_my_schedule(
         position_name=s.position_name,
         owner=s.owner,
         applicable_template_ids=s.get_applicable_template_ids(),
+        kind=getattr(s, "kind", DUTY_KIND_DUTY) or DUTY_KIND_DUTY,
+    )
+
+
+@router.patch("/schedules/{schedule_id}/kind",
+              response_model=DeptScheduleResponse,
+              summary="Переключить тип графика (наряд / дежурство АМГ)")
+async def update_schedule_kind(
+    schedule_id: int,
+    payload:     DeptScheduleKindPayload,
+    db:   Session = Depends(get_db),
+    user: User    = Depends(get_current_department_user_in_window),
+):
+    from app.models.duty import ALL_DUTY_KINDS
+
+    s = _check_owner(db, schedule_id, user.username)
+
+    kind = (payload.kind or "").strip()
+    if kind not in ALL_DUTY_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Недопустимый kind: {kind}. Допустимо: {', '.join(ALL_DUTY_KINDS)}",
+        )
+
+    s.kind = kind
+    db.commit()
+    db.refresh(s)
+
+    pos_name = s.position_name or (s.position.name if s.position else None)
+    return DeptScheduleResponse(
+        id=s.id, title=s.title,
+        position_id=s.position_id,
+        position_name=pos_name,
+        owner=s.owner,
+        applicable_template_ids=s.get_applicable_template_ids(),
+        kind=s.kind,
     )
 
 
@@ -254,6 +310,7 @@ async def update_schedule_applicable_templates(
         position_name=pos_name,
         owner=s.owner,
         applicable_template_ids=s.get_applicable_template_ids(),
+        kind=getattr(s, "kind", "duty") or "duty",
     )
 
 
@@ -472,6 +529,14 @@ async def toggle_my_mark(
     if mark_type != MARK_DUTY:
         db.commit()
         return {"action": "created", "mark_type": mark_type, "filled_slots_count": 0}
+
+    # Графики типа «Дежурство в АМГ» — учётные. Отметку наряда мы записали,
+    # но слоты в списках НИКОГДА не подставляем. Это разделение real-нарядов
+    # и дежурств — по требованию ИБ.
+    from app.models.duty import DUTY_KIND_DUTY
+    if schedule.kind != DUTY_KIND_DUTY:
+        db.commit()
+        return {"action": "marked", "filled_slots_count": 0, "affected_events": []}
 
     # ── Автозаполнение — только слоты СВОЕГО управления ──────────────────────
     fill_count = 0

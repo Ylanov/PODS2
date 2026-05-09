@@ -63,6 +63,7 @@ class ScheduleCreate(BaseModel):
     title:         str           = Field(..., min_length=1, max_length=300, strip_whitespace=True)
     position_id:   Optional[int] = None
     position_name: Optional[str] = None
+    kind:          str           = "duty"   # 'duty' | 'amg_duty'
 
 
 class ScheduleResponse(BaseModel):
@@ -70,9 +71,14 @@ class ScheduleResponse(BaseModel):
     title:         str
     position_id:   Optional[int]
     position_name: Optional[str]
+    kind:          str           = "duty"
 
     class Config:
         from_attributes = True
+
+
+class ScheduleKindPayload(BaseModel):
+    kind: str = Field(..., description="'duty' или 'amg_duty'")
 
 
 class PersonInScheduleResponse(BaseModel):
@@ -120,6 +126,7 @@ def list_schedules(
         result.append(ScheduleResponse(
             id=s.id, title=s.title,
             position_id=s.position_id, position_name=pos_name,
+            kind=getattr(s, "kind", "duty") or "duty",
         ))
     return result
 
@@ -130,23 +137,64 @@ async def create_schedule(
     db:      Session = Depends(get_db),
     admin:   User    = Depends(get_current_active_admin),
 ):
+    from app.models.duty import ALL_DUTY_KINDS, DUTY_KIND_DUTY
     pos_name = payload.position_name
     if not pos_name and payload.position_id:
         pos = db.query(Position).filter(Position.id == payload.position_id).first()
         pos_name = pos.name if pos else None
 
+    kind = (payload.kind or DUTY_KIND_DUTY).strip()
+    if kind not in ALL_DUTY_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Недопустимый kind: {kind}. Допустимо: {', '.join(ALL_DUTY_KINDS)}",
+        )
+
     s = DutySchedule(
         title=payload.title,
         position_id=payload.position_id,
         position_name=pos_name,
+        kind=kind,
     )
     db.add(s)
     db.commit()
     db.refresh(s)
-    logger.debug(f"Created schedule id={s.id} title='{s.title}' position_id={s.position_id}")
+    logger.debug(f"Created schedule id={s.id} title='{s.title}' position_id={s.position_id} kind={kind}")
     return ScheduleResponse(
         id=s.id, title=s.title,
         position_id=s.position_id, position_name=s.position_name,
+        kind=s.kind,
+    )
+
+
+@router.patch("/schedules/{schedule_id}/kind", response_model=ScheduleResponse)
+async def update_schedule_kind(
+    schedule_id: int,
+    payload:     ScheduleKindPayload,
+    db:    Session = Depends(get_db),
+    admin: User    = Depends(get_current_active_admin),
+):
+    from app.models.duty import ALL_DUTY_KINDS
+
+    s = db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="График не найден")
+
+    kind = (payload.kind or "").strip()
+    if kind not in ALL_DUTY_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Недопустимый kind: {kind}. Допустимо: {', '.join(ALL_DUTY_KINDS)}",
+        )
+
+    s.kind = kind
+    db.commit()
+    db.refresh(s)
+    pos_name = s.position_name or (s.position.name if s.position else None)
+    return ScheduleResponse(
+        id=s.id, title=s.title,
+        position_id=s.position_id, position_name=pos_name,
+        kind=s.kind,
     )
 
 

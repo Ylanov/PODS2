@@ -215,6 +215,8 @@ async function _handleCreate() {
     const sel    = document.getElementById('dept-duty-create-position');
     const posId  = sel?.value ? parseInt(sel.value) : null;
     const posName = sel?.selectedOptions[0]?.dataset?.name || null;
+    const kind = document.querySelector('input[name="dept-duty-create-kind"]:checked')?.value
+              || 'duty';
 
     if (!title) { window.showSnackbar?.('Введите название графика', 'error'); return; }
 
@@ -223,6 +225,7 @@ async function _handleCreate() {
             title,
             position_id:   posId,
             position_name: posName,
+            kind,
         });
         _hideCreateForm();
         window.showSnackbar?.('График создан', 'success');
@@ -258,13 +261,22 @@ function _renderScheduleList() {
             ? '<span class="duty-sched-item__scope" title="Применяется ко всем спискам с такой должностью">все списки</span>'
             : `<span class="duty-sched-item__scope duty-sched-item__scope--bound"
                        title="Применяется только к ${tplCount} шаблон(у/ам)">${tplCount} шаблон.</span>`;
+        const kind = s.kind || 'duty';
+        const kindBadge = kind === 'amg_duty'
+            ? `<span class="duty-sched-item__kind duty-sched-item__kind--amg"
+                     title="Дежурство в АМГ — учётный график, в слоты не подставляет">АМГ</span>`
+            : '';
         return `
         <div class="duty-sched-item${s.id === _currentId ? ' duty-sched-item--active' : ''}"
              data-sched-id="${s.id}">
             <div class="duty-sched-item__title">${esc(s.title)}</div>
             ${s.position_name ? `<div class="duty-sched-item__sub">${esc(s.position_name)}</div>` : ''}
+            ${kindBadge}
             ${scopeBadge}
             <div class="duty-sched-item__actions">
+                <button class="duty-sched-item__kind-toggle btn btn-outlined btn-xs"
+                        data-sched-kind="${s.id}" data-current-kind="${kind}" type="button"
+                        title="Переключить тип графика (наряд / дежурство АМГ)">⇄</button>
                 <button class="duty-sched-item__tpl btn btn-outlined btn-xs"
                         data-sched-tpl="${s.id}" type="button"
                         title="Применять только к выбранным шаблонам списков">🎯</button>
@@ -278,6 +290,7 @@ function _renderScheduleList() {
         el.addEventListener('click', e => {
             if (e.target.closest('.duty-sched-item__del')) return;
             if (e.target.closest('.duty-sched-item__tpl')) return;
+            if (e.target.closest('.duty-sched-item__kind-toggle')) return;
             _selectSchedule(parseInt(el.dataset.schedId));
         });
     });
@@ -289,6 +302,27 @@ function _renderScheduleList() {
     container.querySelectorAll('.duty-sched-item__tpl').forEach(btn => {
         btn.addEventListener('click', () => _openTemplateFilterModal(parseInt(btn.dataset.schedTpl)));
     });
+
+    container.querySelectorAll('.duty-sched-item__kind-toggle').forEach(btn => {
+        btn.addEventListener('click', () => _toggleScheduleKind(
+            parseInt(btn.dataset.schedKind, 10),
+            btn.dataset.currentKind || 'duty',
+        ));
+    });
+}
+
+
+async function _toggleScheduleKind(scheduleId, currentKind) {
+    const next = currentKind === 'amg_duty' ? 'duty' : 'amg_duty';
+    const label = next === 'amg_duty' ? '«Дежурство в АМГ»' : '«Наряд»';
+    if (!confirm(`Сменить тип графика на ${label}?`)) return;
+    try {
+        await api.patch(`/dept/schedules/${scheduleId}/kind`, { kind: next });
+        window.showSnackbar?.(`Тип графика изменён на ${label}`, 'success');
+        await loadDeptSchedules();
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
+    }
 }
 
 

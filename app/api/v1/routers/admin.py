@@ -12,7 +12,7 @@ from typing import Literal, List, Optional, Any, Dict
 from app.db.database import get_db
 from app.models.user import User
 from app.models.event import Event, Group, Slot, Position, DEFAULT_COLUMNS
-from app.models.duty import DutyMark, DutySchedule, MARK_DUTY
+from app.models.duty import DutyMark, DutySchedule, MARK_DUTY, DUTY_KIND_DUTY
 from app.models.person import Person
 from app.schemas.event import (
     EventCreate, EventResponse, GroupCreate, GroupResponse, GroupUpdate,
@@ -278,6 +278,7 @@ def _get_duty_map_for_date(db: Session, target_date, *, event=None) -> dict:
             DutyMark.duty_date       == target_date,
             DutyMark.mark_type       == MARK_DUTY,
             DutySchedule.position_id != None,       # noqa: E711
+            DutySchedule.kind        == DUTY_KIND_DUTY,
         )
         .order_by(DutyMark.id.asc())
         .all()
