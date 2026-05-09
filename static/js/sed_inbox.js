@@ -252,10 +252,9 @@ export function openSedOnboarding() {
                     <li>
                         <h4>Скачайте расширение</h4>
                         <p>Получите ZIP с папкой расширения.</p>
-                        <a class="btn btn-success btn-sm" id="sed-onb-dl"
-                           href="/api/v1/sed/bridge.zip" download="sed-bridge.zip">
+                        <button class="btn btn-success btn-sm" id="sed-onb-dl" type="button">
                             ⬇ Скачать sed-bridge.zip
-                        </a>
+                        </button>
                     </li>
 
                     <li>
@@ -333,6 +332,47 @@ export function openSedOnboarding() {
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     overlay.querySelector('#sed-onb-close')?.addEventListener('click', () => overlay.remove());
     overlay.querySelector('#sed-onb-done')?.addEventListener('click',  () => overlay.remove());
+
+    // Кнопка «Скачать sed-bridge.zip». Простой <a href> не подходит, потому
+    // что endpoint защищён Bearer-токеном — браузер не передаёт его в
+    // обычной навигации. Делаем fetch с заголовком, получаем blob,
+    // создаём временный object-URL и открываем save-as.
+    overlay.querySelector('#sed-onb-dl')?.addEventListener('click', async () => {
+        const btn = overlay.querySelector('#sed-onb-dl');
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Скачиваем…';
+        try {
+            const resp = await fetch('/api/v1/sed/bridge.zip', {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (!resp.ok) {
+                let detail = `HTTP ${resp.status}`;
+                try {
+                    const j = await resp.json();
+                    if (j?.detail) detail = j.detail;
+                } catch { /* not JSON */ }
+                throw new Error(detail);
+            }
+            const blob = await resp.blob();
+            const url  = URL.createObjectURL(blob);
+            const a = Object.assign(document.createElement('a'), {
+                href:     url,
+                download: 'sed-bridge.zip',
+            });
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            window.showSnackbar?.('Архив скачан. Распакуйте и загрузите как расширение.', 'success');
+        } catch (err) {
+            window.showSnackbar?.(`Не удалось скачать: ${err?.message || err}`, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = orig;
+        }
+    });
 
     overlay.querySelector('#sed-onb-copy-url')?.addEventListener('click', async () => {
         try {

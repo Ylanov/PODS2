@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -212,13 +212,19 @@ def download_extension_zip(
                 # вразброс по диску.
                 rel = Path("sed-bridge") / fpath.relative_to(_EXT_DIR)
                 zf.write(fpath, arcname=str(rel))
-    buf.seek(0)
 
-    return StreamingResponse(
-        iter([buf.getvalue()]),
+    body = buf.getvalue()
+
+    # Response с bytes (а не StreamingResponse) — Starlette автоматически
+    # выставит Content-Length, без него Yandex Browser в редких случаях
+    # обрывал загрузку из nginx-прокси с таймаутом «Загрузка прервана».
+    return Response(
+        content=body,
         media_type="application/zip",
         headers={
             "Content-Disposition": 'attachment; filename="sed-bridge.zip"',
+            "Content-Length":      str(len(body)),
             "Cache-Control":       "no-store",
+            "X-Content-Type-Options": "nosniff",
         },
     )
