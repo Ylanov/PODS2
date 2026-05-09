@@ -71,12 +71,6 @@ class ScheduleResponse(BaseModel):
     title:         str
     position_id:   Optional[int]
     position_name: Optional[str]
-    # Если пусто — график применяется ко всем спискам с такой position
-    # (бэк-совместимое поведение). Если задан список template-id —
-    # автозаполнение работает только для событий из этих шаблонов.
-    applicable_template_ids: List[int] = []
-    # 'duty' (наряд, default) или 'amg_duty' (дежурство АМГ).
-    # У 'amg_duty' автозаполнение слотов в списках выключено.
     kind:          str           = "duty"
 
     class Config:
@@ -85,11 +79,6 @@ class ScheduleResponse(BaseModel):
 
 class ScheduleKindPayload(BaseModel):
     kind: str = Field(..., description="'duty' или 'amg_duty'")
-
-
-class ScheduleTemplatesPayload(BaseModel):
-    """PATCH /schedules/{id}/applicable-templates — массив template-id."""
-    template_ids: List[int] = []
 
 
 class PersonInScheduleResponse(BaseModel):
@@ -137,7 +126,6 @@ def list_schedules(
         result.append(ScheduleResponse(
             id=s.id, title=s.title,
             position_id=s.position_id, position_name=pos_name,
-            applicable_template_ids=s.get_applicable_template_ids(),
             kind=getattr(s, "kind", "duty") or "duty",
         ))
     return result
@@ -175,7 +163,6 @@ async def create_schedule(
     return ScheduleResponse(
         id=s.id, title=s.title,
         position_id=s.position_id, position_name=s.position_name,
-        applicable_template_ids=s.get_applicable_template_ids(),
         kind=s.kind,
     )
 
@@ -207,50 +194,7 @@ async def update_schedule_kind(
     return ScheduleResponse(
         id=s.id, title=s.title,
         position_id=s.position_id, position_name=pos_name,
-        applicable_template_ids=s.get_applicable_template_ids(),
         kind=s.kind,
-    )
-
-
-@router.patch("/schedules/{schedule_id}/applicable-templates",
-              response_model=ScheduleResponse,
-              summary="Привязать админ-график к конкретным шаблонам списков (или снять)")
-async def update_schedule_applicable_templates(
-    schedule_id: int,
-    payload:     ScheduleTemplatesPayload,
-    db:    Session = Depends(get_db),
-    admin: User    = Depends(get_current_active_admin),
-):
-    """
-    Зеркало dept-эндпоинта — управление перечнем шаблонов, к которым
-    применяется автозаполнение этого графика. Пустой список → ко всем (default).
-    """
-    s = db.query(DutySchedule).filter(DutySchedule.id == schedule_id).first()
-    if not s:
-        raise HTTPException(status_code=404, detail="График не найден")
-
-    if payload.template_ids:
-        valid_ids = {
-            row.id for row in
-            db.query(Event.id).filter(
-                Event.id.in_(payload.template_ids),
-                Event.is_template == True,   # noqa: E712
-            ).all()
-        }
-        cleaned = [tid for tid in payload.template_ids if tid in valid_ids]
-    else:
-        cleaned = []
-
-    s.set_applicable_template_ids(cleaned)
-    db.commit()
-    db.refresh(s)
-
-    pos_name = s.position_name or (s.position.name if s.position else None)
-    return ScheduleResponse(
-        id=s.id, title=s.title,
-        position_id=s.position_id, position_name=pos_name,
-        applicable_template_ids=s.get_applicable_template_ids(),
-        kind=getattr(s, "kind", "duty") or "duty",
     )
 
 

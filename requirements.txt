@@ -47,9 +47,3 @@ cachetools>=5.3.0
 # segno — pure-Python без зависимостей (≈100 KB), умеет SVG/PNG/Eps.
 # Альтернатива qrcode[pil] требует Pillow, что лишний bloat.
 segno>=1.5.0
-
-# ─── HTTP-клиент (oper_map proxy: Yandex tiles/geocoder + OSRM routes) ────────
-# Сервер ходит за тайлами/геокодером сам через инет-сетевуху, в локалке
-# у пользователей интернета нет. httpx используем как async-клиент с
-# поддержкой timeout'ов — стандарт в FastAPI-экосистеме.
-httpx>=0.27.0,<1.0.0

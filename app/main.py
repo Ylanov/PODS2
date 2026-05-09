@@ -26,7 +26,6 @@ from app.api.v1.routers import dept_duty
 from app.api.v1.routers import duty_window
 from app.api.v1.routers import dashboard
 from app.api.v1.routers import sed
-from app.api.v1.routers import oper_map
 from app.api.v1.routers import tasks
 from app.api.v1.routers import audit as audit_module
 from app.api.v1.routers import holidays as holidays_module
@@ -153,7 +152,6 @@ app.include_router(dashboard.router,       prefix="/api/v1/admin",   tags=["Да
 app.include_router(dept_duty.router,       prefix="/api/v1/dept",    tags=["Графики наряда (управление)"])
 app.include_router(duty_window.router,     prefix="/api/v1/duty",    tags=["Окно подачи графиков"])
 app.include_router(sed.router,             prefix="/api/v1/sed",     tags=["СЭД-дайджест"])
-app.include_router(oper_map.router,        prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного"])
 app.include_router(tasks.router,           prefix="/api/v1/tasks",   tags=["Календарь задач"])
 
 # Аудит и уведомления.
@@ -222,7 +220,7 @@ _CSS_BUNDLE_ORDER = [
     "audit.css",        "event-editor.css",   "history-calendar.css",
     "operations.css",   "comms-report.css",   "procurement.css",
     "media.css",        "training.css",       "person_conflicts.css",
-    "global_search.css", "analytics.css",     "oper_map.css",
+    "global_search.css", "analytics.css",
 ]
 
 def _build_css_bundle() -> str:

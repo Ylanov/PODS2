@@ -83,18 +83,6 @@ class Settings(BaseSettings):
     def training_unit_usernames(self) -> set[str] | None:
         return self._parse_unit_list(self.TRAINING_UNIT_USERNAMES)
 
-    # ─── Карта Оперативного дежурного (oper_map) ──────────────────────────────
-    # Ключ Яндекс.Карт для прокси геокодера/тайлов. Запрашивается на сервере
-    # (со стороны интернет-сетевухи), браузеру пользователя в локалке не уходит.
-    # Если пусто — прокси отдают 503; UI показывает «карта не настроена».
-    YANDEX_MAPS_API_KEY: str = ""
-    # URL OSRM для маршрутов. Публичный по умолчанию; можно поднять свой
-    # инстанс в локалке и переопределить (например http://osrm:5000).
-    OSRM_BASE_URL: str = "https://router.project-osrm.org"
-    # Папка для кеша Яндекс-тайлов — в проде маппится в volume,
-    # в dev живёт рядом с проектом. Пустая строка = без кеша.
-    OPER_MAP_TILE_CACHE_DIR: str = "var/oper_map_tiles"
-
     # ─── Пул соединений БД (тюнится под количество gunicorn-воркеров) ─────────
     # Реальные соединения = DB_POOL_SIZE × число_воркеров.
     # Плюс резерв на max_overflow. По умолчанию postgres max_connections=100 —
