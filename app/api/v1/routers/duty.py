@@ -518,6 +518,14 @@ async def toggle_mark(
             logger.warning(f"Нет списков на {payload.duty_date}. Ближайшие: {nearby}")
         else:
             for event in events_on_date:
+                # Фильтр applicable_template_ids: если у графика задан
+                # перечень шаблонов — заполняем только инстансы из них.
+                # Без этой проверки график применялся ко всем спискам
+                # на дату (бажил даже если admin привязал к одному
+                # шаблону — слоты других списков всё равно заполнялись).
+                # На dept-стороне такая проверка уже есть.
+                if not schedule.applies_to_event(event):
+                    continue
                 for group in event.groups:
                     for slot in group.slots:
                         if slot.position_id == schedule.position_id:
