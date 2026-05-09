@@ -357,7 +357,7 @@ function _placeBaseMarker() {
 async function _findBase() {
     const q = document.getElementById('om-base-input').value.trim();
     if (!q) return;
-    await _geocodePick({
+    await _findViaSuggestThenGeocode({
         q,
         anchorId: 'om-base-input',
         onPick: (result) => {
@@ -370,6 +370,34 @@ async function _findBase() {
             _map.setView([result.lat, result.lng], 14);
         },
     });
+}
+
+// Универсальный поиск: сначала Suggest API (точные ll прямо из uri),
+// если он недоступен или не вернул ничего — fallback на текстовый геокодер.
+async function _findViaSuggestThenGeocode({ q, anchorId, onPick }) {
+    if (!_suggestDisabled) {
+        let items = [];
+        try {
+            const res = await api.get(`/oper-map/suggest?q=${encodeURIComponent(q)}`);
+            items = Array.isArray(res?.results) ? res.results : [];
+        } catch (err) {
+            if (err?.status === 403) _suggestDisabled = true;
+            // прочие ошибки — пойдём в fallback
+        }
+        if (items.length > 0) {
+            // Если Suggest вернул несколько вариантов — открываем выпадашку,
+            // пользователь выберет нужный (с точными координатами из uri).
+            const input = document.getElementById(anchorId);
+            if (items.length === 1) {
+                const direct = _suggestToCoords(items[0]);
+                if (direct) { onPick(direct); return; }
+            }
+            _showSuggestDropdown(input, items, onPick);
+            return;
+        }
+    }
+    // Fallback — обычный геокодер по тексту.
+    await _geocodePick({ q, anchorId, onPick });
 }
 
 async function _saveBase() {
@@ -652,7 +680,7 @@ let _targetLng = null;
 async function _findTarget() {
     const q = document.getElementById('om-target-input').value.trim();
     if (!q) return;
-    await _geocodePick({
+    await _findViaSuggestThenGeocode({
         q,
         anchorId: 'om-target-input',
         onPick: (r) => {
