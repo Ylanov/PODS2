@@ -74,7 +74,7 @@ function _renderShell(root) {
             </div>
             <button id="al-add-slot" class="btn btn-outlined btn-sm" type="button">+ позиция</button>
             <button id="al-seed"     class="btn btn-outlined btn-sm" type="button" title="Заполнить стандартными позициями (управления, отделы, службы)">📋 Шаблон</button>
-            <button id="al-sync"     class="btn btn-outlined btn-sm" type="button" title="Прописать должности в Базе людей по текущим привязкам в оповещении">🔄 Синхронизировать</button>
+            <button id="al-sync"     class="al-tool-action al-tool-action--accent" type="button" title="Прописать должности в Базе людей по текущим привязкам в оповещении">🔄 Синхронизация должностей</button>
             <button id="al-print"    class="btn btn-filled   btn-sm" type="button" title="Скачать список на день в Word">📄 Печать на день</button>
         </div>
         <div id="al-grid-wrap" class="al-grid-wrap"></div>
@@ -660,7 +660,12 @@ export async function initAlertLists(rootId) {
     });
     document.getElementById('al-add-slot').addEventListener('click', _addSlot);
     document.getElementById('al-seed').addEventListener('click', _seedFromTemplate);
-    document.getElementById('al-sync').addEventListener('click', _syncPositions);
+    const syncBtn = document.getElementById('al-sync');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', _syncPositions);
+    } else {
+        console.warn('[alert_lists] Кнопка #al-sync не найдена в DOM. Скорее всего, в браузере закеширован старый alert_lists.js — нужно сделать Ctrl+Shift+R.');
+    }
     document.getElementById('al-print').addEventListener('click', _printDay);
 
     await _loadLists();

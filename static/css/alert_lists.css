@@ -38,6 +38,43 @@
     align-items: center;
     gap: 4px;
 }
+
+/* Акцентная кнопка тулбара — для действий типа «Синхронизация», которые
+   важно сразу заметить. Pill, ярко-фиолетовая, диагностический dataset. */
+.al-tool-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+.al-tool-action--accent {
+    background: #ede9fe;
+    color: #5b21b6;
+    border-color: #c4b5fd;
+}
+.al-tool-action--accent:hover {
+    background: #ddd6fe;
+    border-color: #a78bfa;
+}
+@media (prefers-color-scheme: dark) {
+    .al-tool-action--accent {
+        background: rgba(124, 58, 237, 0.22);
+        color: #c4b5fd;
+        border-color: rgba(124, 58, 237, 0.55);
+    }
+    .al-tool-action--accent:hover {
+        background: rgba(124, 58, 237, 0.32);
+    }
+}
 .al-month-label {
     min-width: 140px;
     text-align: center;
