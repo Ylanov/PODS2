@@ -292,12 +292,17 @@ def _get_duty_map_for_date(db: Session, target_date, *, event=None) -> dict:
 
 def _get_substitutes_for_date(db: Session, target_date) -> list[dict]:
     """
-    Возвращает список замещений (DutyMark с is_primary=False и заполненными
-    substitute_*) на эту дату. Каждое — словарь:
+    Возвращает плоский список замещений на эту дату — по одной записи
+    на каждую цель (template_group_id + department). Один DutyMark может
+    покрывать несколько мест в разных списках, поэтому массив substitutes_json
+    разворачивается в плоский список (см. DutyMark.get_substitutes()).
+
+    Формат записи:
       {
           "person":                       Person,
           "substitute_department":        str,
           "substitute_template_group_id": int,
+          "schedule_position_name":       str,
       }
 
     Применяется при автозаполнении слотов инстансов: если у слота
@@ -313,28 +318,29 @@ def _get_substitutes_for_date(db: Session, target_date) -> list[dict]:
             DutyMark.duty_date == target_date,
             DutyMark.mark_type == MARK_DUTY,
             DutyMark.is_primary == False,            # noqa: E712
-            DutyMark.substitute_department.isnot(None),
-            DutyMark.substitute_template_group_id.isnot(None),
             DutySchedule.kind  == DUTY_KIND_DUTY,
         )
         .order_by(DutyMark.id.asc())
         .all()
     )
-    return [
-        {
-            "person":                       person,
-            "substitute_department":        mark.substitute_department,
-            "substitute_template_group_id": mark.substitute_template_group_id,
-            # Должность исходного графика — для аннотации в slot:
-            # "5 Управление (оператор)" чтобы админ видел откуда пришла замена.
-            "schedule_position_name": (
-                schedule.position_name
-                or (schedule.position.name if schedule.position else None)
-                or ""
-            ),
-        }
-        for mark, schedule, person in rows
-    ]
+    out: list[dict] = []
+    for mark, schedule, person in rows:
+        targets = mark.get_substitutes()
+        if not targets:
+            continue
+        sched_pos = (
+            schedule.position_name
+            or (schedule.position.name if schedule.position else None)
+            or ""
+        )
+        for t in targets:
+            out.append({
+                "person":                       person,
+                "substitute_department":        t["department"],
+                "substitute_template_group_id": t["template_group_id"],
+                "schedule_position_name":       sched_pos,
+            })
+    return out
 
 
 def _apply_substitute_for_slot(substitutes: list[dict], slot, group) -> bool:

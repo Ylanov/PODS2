@@ -238,6 +238,9 @@ class DutyMark(Base):
         default=True,
         server_default="1",
     )
+    # Legacy «одиночное» замещение — одна цель. Сохраняем колонки ради
+    # backward compat. Если substitutes_json непустой, эти два поля
+    # игнорируются (см. get_substitutes()).
     substitute_department = Column(String, nullable=True)
     substitute_template_group_id = Column(
         Integer,
@@ -245,10 +248,79 @@ class DutyMark(Base):
         nullable=True,
         index=True,
     )
+    # JSON-массив целей замещения вида:
+    #   [{"department": "5_uprav", "template_group_id": 42}, ...]
+    # Один наряд может покрывать несколько разных мест в разных списках.
+    # Если NULL/пусто — используется legacy-пара (substitute_department +
+    # substitute_template_group_id).
+    substitutes_json = Column(Text, nullable=True)
 
     # ── Relationships ─────────────────────────────────────────────────────────
     schedule = relationship("DutySchedule", back_populates="marks")
     person   = relationship("Person", lazy="joined")
+
+    def get_substitutes(self) -> list[dict]:
+        """
+        Возвращает список замещений для этой отметки в едином формате
+        [{"department": str, "template_group_id": int}, ...].
+
+        Источник: substitutes_json если он заполнен; иначе legacy-пара
+        substitute_department + substitute_template_group_id (как одна
+        запись в списке, чтобы вызывающий код не различал случаи).
+        """
+        import json as _json
+        raw = self.substitutes_json
+        if raw:
+            try:
+                data = _json.loads(raw)
+                if isinstance(data, list):
+                    out = []
+                    for item in data:
+                        if not isinstance(item, dict):
+                            continue
+                        dept = (item.get("department") or "").strip()
+                        gid  = item.get("template_group_id")
+                        try:
+                            gid = int(gid) if gid is not None else None
+                        except (TypeError, ValueError):
+                            gid = None
+                        if dept and gid:
+                            out.append({"department": dept, "template_group_id": gid})
+                    if out:
+                        return out
+            except (_json.JSONDecodeError, ValueError, TypeError):
+                pass
+        if self.substitute_department and self.substitute_template_group_id:
+            return [{
+                "department":        self.substitute_department,
+                "template_group_id": int(self.substitute_template_group_id),
+            }]
+        return []
+
+    def set_substitutes(self, items: list[dict]) -> None:
+        """
+        Записывает массив замещений. Для backward compat первая запись
+        (если есть) копируется в legacy-поля — чтобы экспорт docx и
+        прочий код, который ещё смотрит на старые колонки, не сломался.
+        """
+        import json as _json
+        clean = []
+        for it in (items or []):
+            dept = (it.get("department") or "").strip()
+            try:
+                gid = int(it.get("template_group_id"))
+            except (TypeError, ValueError):
+                continue
+            if dept and gid:
+                clean.append({"department": dept, "template_group_id": gid})
+
+        self.substitutes_json = _json.dumps(clean, ensure_ascii=False) if clean else None
+        if clean:
+            self.substitute_department        = clean[0]["department"]
+            self.substitute_template_group_id = clean[0]["template_group_id"]
+        else:
+            self.substitute_department        = None
+            self.substitute_template_group_id = None
 
     __table_args__ = (
         UniqueConstraint(
