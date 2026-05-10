@@ -298,6 +298,12 @@ function bindEvents() {
             .then(m => m.openDeptImportDialog())
             .catch(err => console.warn('dept_import_dialog import:', err));
     });
+    // «📞 Импорт телефонов» — Excel с колонками ФИО / Служ. / Дом. / Моб.
+    document.getElementById('persons-import-phones-btn')?.addEventListener('click', () => {
+        import('./phone_import_dialog.js')
+            .then(m => m.openPhoneImportDialog())
+            .catch(err => console.warn('phone_import_dialog import:', err));
+    });
     document.getElementById('duty-save-btn')?.addEventListener('click', admin.saveDutyOfficer);
 
     // Должности

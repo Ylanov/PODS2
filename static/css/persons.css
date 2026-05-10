@@ -483,3 +483,86 @@
         color: #fbbf24;
     }
 }
+
+/* ── Импорт телефонов из Excel ─────────────────────────────────────────── */
+
+.phi-h {
+    margin: 0 0 4px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+.phi-sub {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.4;
+}
+
+.phi-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin-bottom: 8px;
+}
+.phi-table thead th {
+    text-align: left;
+    padding: 6px 8px;
+    background: var(--md-surface-container);
+    border-bottom: 1px solid var(--md-outline-variant);
+    font-weight: 600;
+}
+.phi-table tbody td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.phi-table tbody tr:hover { background: var(--md-surface-variant); }
+.phi-table tbody tr:has(.phi-cb:not(:checked)) { opacity: 0.55; }
+.phi-old { color: var(--md-on-surface-hint); }
+
+/* Перезапись существующего телефона — жёлтый highlight */
+.phi-table tbody tr.phi-row--overwrite .phi-old {
+    background: rgba(217, 119, 6, 0.12);
+    color: #92400e;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+    .phi-table tbody tr.phi-row--overwrite .phi-old {
+        background: rgba(217, 119, 6, 0.22);
+        color: #fbbf24;
+    }
+}
+
+.phi-amb-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.phi-amb-row {
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: var(--md-surface);
+}
+.phi-amb-row__head {
+    font-size: 0.84rem;
+    margin-bottom: 4px;
+}
+.phi-amb-row__candidates {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.82rem;
+    padding-left: 8px;
+}
+.phi-amb-row__candidates label {
+    cursor: pointer;
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+}
+.phi-amb-row__candidates small {
+    color: var(--md-on-surface-variant);
+}
