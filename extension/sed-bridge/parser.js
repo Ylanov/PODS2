@@ -259,6 +259,12 @@ function sanitizeBody(html) {
         // on*-атрибуты (onclick="..." и т.д.)
         .replace(/\s+on[a-z]+\s*=\s*"[^"]*"/gi, "")
         .replace(/\s+on[a-z]+\s*=\s*'[^']*'/gi, "")
+        // Относительные URL → абсолютные на sed.mchs.ru. Без этого браузер
+        // pods2 пытается грузить /sites/all/themes/.../icon.png со staff.asy-tk.ru
+        // и получает 404 (иконки PDF, аватары и пр.). Не трогаем уже
+        // абсолютные (http://, https://, //, data:, mailto:).
+        .replace(/(\s(?:src|href)=)"\/(?!\/)/gi, '$1"https://sed.mchs.ru/')
+        .replace(/(\s(?:src|href)=)'\/(?!\/)/gi, "$1'https://sed.mchs.ru/")
         // Лишние пробелы (косметика)
         .replace(/\s{2,}/g, " ")
         .trim()

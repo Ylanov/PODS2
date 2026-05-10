@@ -441,6 +441,14 @@ function _renderLetter(modal, letter) {
         ? new Date(letter.fetched_at).toLocaleString('ru-RU')
         : '';
 
+    // Страховка от старых писем в БД с относительными URL'ами:
+    // браузер pods2 пытается грузить /sites/.../icon.png со staff.asy-tk.ru
+    // и получает 404. Переписываем на абсолютные sed.mchs.ru.
+    // (В новых письмах parser.js делает то же самое до отправки.)
+    const bodyFixed = (letter.body_html || '')
+        .replace(/(\s(?:src|href)=)"\/(?!\/)/gi, '$1"https://sed.mchs.ru/')
+        .replace(/(\s(?:src|href)=)'\/(?!\/)/gi, "$1'https://sed.mchs.ru/");
+
     modal.querySelector('.sed-letter-modal__head strong').textContent = letter.title || `Письмо #${letter.node_id}`;
     modal.querySelector('.sed-letter-modal__body').innerHTML = `
         ${metaRows ? `<div class="sed-letter-meta">${metaRows}</div>` : ''}
@@ -450,7 +458,7 @@ function _renderLetter(modal, letter) {
                 ${filesHtml}
             </div>` : ''}
         <div class="sed-letter-body">
-            ${letter.body_html || '<p style="color:var(--md-on-surface-variant);"><i>Тело письма пустое.</i></p>'}
+            ${bodyFixed || '<p style="color:var(--md-on-surface-variant);"><i>Тело письма пустое.</i></p>'}
         </div>
         ${fetchedTime ? `<p class="sed-letter-modal__fetched">Загружено: ${fetchedTime}</p>` : ''}
     `;

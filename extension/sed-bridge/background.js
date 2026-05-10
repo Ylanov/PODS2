@@ -96,8 +96,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             return false;
         }
         const opts = { url: msg.url, saveAs: false };
-        // filename — опционально. Chrome сам почистит запрещённые символы.
-        if (msg.filename) opts.filename = msg.filename;
+        const cleanName = sanitizeFilename(msg.filename);
+        // Если имя осталось валидным — передаём; иначе пусть Chrome сам
+        // вытащит имя из URL'а или Content-Disposition (надёжнее, чем
+        // получить ошибку "Invalid filename" от chrome.downloads).
+        if (cleanName) opts.filename = cleanName;
         chrome.downloads.download(opts, (downloadId) => {
             if (chrome.runtime.lastError) {
                 sendResponse({ ok: false, error: chrome.runtime.lastError.message });
@@ -108,6 +111,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return true;   // async
     }
 });
+
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * chrome.downloads.download падает с "Invalid filename" если имя содержит
+ * запрещённые в Windows-FS символы (/ \ : * ? " < > |), trailing space/dot,
+ * или leading dot. Чистим всё это. Если после чистки имя пустое — возвращаем
+ * пустую строку, и тогда вызывающий код передаст в API без filename
+ * (Chrome возьмёт из URL'а или Content-Disposition сам).
+ */
+function sanitizeFilename(raw) {
+    if (!raw || typeof raw !== "string") return "";
+    let s = raw
+        .replace(/[\/\\:*?"<>|\r\n\t]/g, "_")  // запрещённые
+        .replace(/\s+/g, " ")                   // схлопываем пробелы
+        .replace(/^\.+/, "")                    // ведущие точки
+        .replace(/[\.\s]+$/, "")                // trailing dots/spaces
+        .trim()
+        .slice(0, 180);
+    // Chrome ругается также на пустое имя или на "только точки"
+    if (!s || /^\.+$/.test(s)) return "";
+    return s;
+}
 
 
 // ─── Core sync ─────────────────────────────────────────────────────────────
