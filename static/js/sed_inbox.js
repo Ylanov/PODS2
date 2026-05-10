@@ -113,6 +113,16 @@ export async function initSedInbox() {
         }
     });
 
+    // Кнопка «Переустановить расширение» — висит всегда в footer'е, открывает
+    // существующий onboarding-wizard (там скачать ZIP, скопировать токен/URL).
+    // После удаления плагина в браузере pods2 сам не понимает что плагин
+    // снесли (snapshot живой ещё 30 минут по TTL), поэтому даём явный путь.
+    document.getElementById('sed-header-reinstall')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        drop.classList.add('hidden');
+        openSedOnboarding();
+    });
+
     await _fetchAndRender();
 
     clearInterval(STATE.pollTimer);
