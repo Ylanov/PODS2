@@ -60,9 +60,12 @@ def _convert(table: str, column: str, default_expr: str | None) -> str:
     """
     set_default = ""
     if default_expr:
+        # Внутри EXECUTE '...' одинарные кавычки нужно удваивать, иначе
+        # '{}'::jsonb преждевременно закрывает строку EXECUTE.
+        escaped = default_expr.replace("'", "''")
         set_default = f"""
                 EXECUTE 'ALTER TABLE {table}
-                         ALTER COLUMN {column} SET DEFAULT {default_expr}';
+                         ALTER COLUMN {column} SET DEFAULT {escaped}';
         """
     return f"""
         DO $$
