@@ -49,21 +49,27 @@ window.addEventListener('message', (e) => {
 });
 
 /**
- * Запросить у расширения скачивание файла по URL СЭД. Если расширение
- * не отвечает за 2 секунды — фоллбэк: открываем URL в новой вкладке (SED
- * сам покажет файл; пользователь нажмёт «Скачать» в pdf-viewer'е руками).
+ * Запросить у расширения скачивание файла по URL СЭД. Возвращает
+ * {ok:true} если расширение успешно стартовало download, иначе
+ * {ok:false, error:...}.
+ *
+ * Внимание: НЕ делает window.open в качестве фоллбэка. Если открывать
+ * новую вкладку из async-callback'а (после await/setTimeout) —
+ * Яндекс.Браузер видит отсутствие user-gesture'а и popup-блокатор
+ * редиректит ТЕКУЩУЮ вкладку (pods2 уходит в СЭД). Поэтому фоллбэк
+ * на «открыть в СЭД» делается на уровне DOM: сам элемент — это
+ * <a target="_blank" href="...">, и если bridge не готов мы просто не
+ * вызываем preventDefault — браузер штатно откроет новую вкладку.
  */
 function _requestSedDownload(url, name) {
     return new Promise((resolve) => {
-        // Если уже есть pending по этому URL — не дублируем.
         if (STATE.pendingDls.has(url)) {
             return resolve({ ok: false, error: 'already-pending' });
         }
         const timer = setTimeout(() => {
             STATE.pendingDls.delete(url);
-            window.open(url, '_blank', 'noopener,noreferrer');
             resolve({ ok: false, error: 'extension-timeout' });
-        }, 2000);
+        }, 5000);
         STATE.pendingDls.set(url, { resolve, timer });
         window.postMessage({ type: 'pods2-sed-download', url, name: name || '' }, '*');
     });
@@ -246,33 +252,37 @@ function _renderList(snap) {
         };
     });
 
-    // Делегированный обработчик кнопок-файлов: скачать через расширение.
-    list.querySelectorAll('.sed-file--btn').forEach(btn => {
-        btn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            _onFileClick(btn);
-        };
+    list.querySelectorAll('.sed-file').forEach(a => {
+        a.onclick = (e) => _onFileLinkClick(e, a);
     });
 }
 
-async function _onFileClick(btn) {
-    const url  = btn.dataset.sedFileUrl;
-    const name = btn.dataset.sedFileName;
-    if (!url) return;
-    btn.disabled = true;
-    try {
-        const res = await _requestSedDownload(url, name);
+/**
+ * Обработчик клика по ссылке файла. Если bridge готов — preventDefault
+ * и скачивание через расширение. Если нет — НИЧЕГО не трогаем, браузер
+ * штатно откроет URL в новой вкладке через target="_blank" (это
+ * происходит синхронно в user-gesture'е, без popup-блокировки).
+ */
+function _onFileLinkClick(e, a) {
+    if (!STATE.bridgeReady) return;   // нативный target=_blank
+    e.preventDefault();
+    e.stopPropagation();
+    const url  = a.href;
+    const name = a.dataset.sedFileName || '';
+    _requestSedDownload(url, name).then(res => {
         if (res.ok) {
             window.showSnackbar?.('Файл скачивается…', 'success');
         } else if (res.error === 'extension-timeout') {
-            window.showSnackbar?.('Расширение не отвечает — открыли в новой вкладке.', 'warn');
+            // Bridge ready был, но расширение не ответило за 5с — возможно
+            // повисла service worker'а. Откроем вкладку, но в новом
+            // user-gesture'е это сделать нельзя из async-callback, так что
+            // показываем снэкбар с просьбой кликнуть ещё раз.
+            window.showSnackbar?.('Расширение не отвечает. Кликните ещё раз — откроем в СЭД.', 'warn');
+            STATE.bridgeReady = false;   // следующий клик пойдёт нативом
         } else if (res.error && res.error !== 'already-pending') {
             window.showSnackbar?.(`Ошибка скачивания: ${res.error}`, 'error');
         }
-    } finally {
-        btn.disabled = false;
-    }
+    });
 }
 
 function _renderSection(section) {
@@ -303,18 +313,19 @@ function _renderSection(section) {
 function _renderItem(item) {
     const nodeId  = parseInt(item.node_id, 10);
 
-    // Файлы: показываем максимум 5 в превью. Клик по файлу — скачать
-    // через расширение (минуя pdf-viewer СЭД); если расширения нет —
-    // фоллбэк на открытие в новой вкладке (см. _requestSedDownload).
+    // Файлы: показываем максимум 5 в превью. Клик по файлу — расширение
+    // (если установлено) перехватит preventDefault'ом и скачает через
+    // chrome.downloads, минуя pdf-viewer СЭД. Если расширения нет —
+    // браузер штатно откроет URL в новой вкладке через target="_blank".
     const filesHtml = (item.files || []).slice(0, 5).map(f => {
         if (!f || !f.url) return '';
         return `
-            <button class="sed-file sed-file--btn" type="button"
-                    data-sed-file-url="${_esc(f.url)}"
-                    data-sed-file-name="${_esc(f.name || '')}"
-                    title="Скачать через расширение (минуя pdf-viewer СЭД)">
+            <a class="sed-file" href="${_esc(f.url)}"
+               target="_blank" rel="noopener noreferrer"
+               data-sed-file-name="${_esc(f.name || '')}"
+               title="Скачать (через расширение — минуя pdf-viewer СЭД)">
                 ⬇ ${_esc(f.name || 'Файл')}
-            </button>`;
+            </a>`;
     }).join('');
 
     // Title — кликабельный, открывает модалку с телом (если она уже
@@ -417,13 +428,13 @@ function _renderLetter(modal, letter) {
         `).join('');
 
     const filesHtml = (letter.files || []).map(f => `
-        <button class="sed-letter-file sed-file--btn" type="button"
-                data-sed-file-url="${_esc(f.url)}"
-                data-sed-file-name="${_esc(f.name || '')}"
-                title="Скачать через расширение (минуя pdf-viewer СЭД)">
+        <a class="sed-letter-file" href="${_esc(f.url)}"
+           target="_blank" rel="noopener noreferrer"
+           data-sed-file-name="${_esc(f.name || '')}"
+           title="Скачать (через расширение — минуя pdf-viewer СЭД)">
             ⬇ ${_esc(f.name || 'Файл')}
             ${f.size ? `<small>${_fmtSize(f.size)}</small>` : ''}
-        </button>
+        </a>
     `).join('');
 
     const fetchedTime = letter.fetched_at
@@ -444,12 +455,8 @@ function _renderLetter(modal, letter) {
         ${fetchedTime ? `<p class="sed-letter-modal__fetched">Загружено: ${fetchedTime}</p>` : ''}
     `;
 
-    modal.querySelectorAll('.sed-file--btn').forEach(btn => {
-        btn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            _onFileClick(btn);
-        };
+    modal.querySelectorAll('.sed-letter-file').forEach(a => {
+        a.onclick = (e) => _onFileLinkClick(e, a);
     });
 }
 
