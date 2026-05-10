@@ -2,12 +2,41 @@
 
 import * as auth       from './auth.js';
 import * as ui         from './ui.js';
-import * as admin      from './admin.js';
 import * as department from './department.js';
-import * as duty       from './duty.js';
 import * as combatCalc from './combat_calc.js';
 import * as deptDuty   from './dept_duty.js';
-import * as dashboard  from './dashboard.js';
+
+// Lazy-loaded модули, нужные только админу. Не парсятся у 99% пользователей
+// (управления). Под нагрузку 500-1000 онлайн это снижает время первой
+// загрузки и память JS-парсинга. При первом обращении (клик на admin-кнопку,
+// открытие admin-панели) модуль подтягивается асинхронно.
+function createLazyModule(loader) {
+    let cache = null;
+    let loadingPromise = null;
+    return new Proxy({}, {
+        get(_, prop) {
+            if (cache) return cache[prop];
+            // Возвращаем функцию-обёртку: при вызове лениво грузит модуль
+            // и затем зовёт настоящую функцию. Подходит для всех use-cases
+            // в app.js — handlers, setTimeout(...), window.app.X.
+            return (...args) => {
+                if (cache) {
+                    const fn = cache[prop];
+                    return typeof fn === 'function' ? fn(...args) : fn;
+                }
+                if (!loadingPromise) loadingPromise = loader();
+                return loadingPromise.then(m => {
+                    cache = m;
+                    const fn = m[prop];
+                    return typeof fn === 'function' ? fn(...args) : fn;
+                });
+            };
+        },
+    });
+}
+const admin     = createLazyModule(() => import('./admin.js'));
+const duty      = createLazyModule(() => import('./duty.js'));
+const dashboard = createLazyModule(() => import('./dashboard.js'));
 // Подключаем статически — модуль регистрирует window.openSlotHistory
 // при импорте, чтобы inline-кнопка в таблице слотов его видела.
 import './slot_history.js';
