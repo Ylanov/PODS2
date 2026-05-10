@@ -602,83 +602,222 @@
     text-align: right;
 }
 
-/* Метаданные документа */
-.sed-letter-meta {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 4px 12px;
-    padding: 10px 12px;
-    background: var(--md-surface-container);
-    border-radius: var(--md-radius-sm);
-    margin-bottom: 12px;
-    font-size: 0.82rem;
-}
-.sed-letter-meta-row {
-    display: flex;
-    gap: 6px;
-    line-height: 1.4;
-}
-.sed-letter-meta-row__label {
+/* Ссылка ↗ в шапке модалки — открыть оригинал в СЭД */
+.sed-letter-modal__sed-link {
+    display: inline-block;
+    margin-left: 8px;
     color: var(--md-on-surface-variant);
-    font-weight: 500;
-    flex: 0 0 auto;
+    text-decoration: none;
+    font-size: 0.95rem;
+    padding: 0 4px;
+    border-radius: 4px;
 }
-.sed-letter-meta-row__value {
-    color: var(--md-on-surface);
-    flex: 1;
+.sed-letter-modal__sed-link:hover {
+    color: var(--md-primary);
+    background: var(--md-surface-variant);
 }
 
-/* Файлы письма */
-.sed-letter-files {
-    margin-bottom: 12px;
+/* ─── Чипы (статус/срочность/тип документа) ─────────────────────────── */
+.sed-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
 }
-.sed-letter-files__h {
-    margin: 0 0 6px;
-    font-size: 0.84rem;
-    font-weight: 600;
-}
-.sed-letter-file {
+.sed-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    margin: 2px 4px 2px 0;
-    background: var(--md-surface);
-    border: 1px solid var(--md-outline-variant);
-    border-radius: 6px;
-    color: var(--md-on-surface);
-    text-decoration: none;
-    font-size: 0.82rem;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    line-height: 1.4;
+    border: 1px solid transparent;
 }
-.sed-letter-file:hover {
-    background: var(--md-primary-light);
-    border-color: var(--md-primary);
+.sed-chip--neutral {
+    background: var(--md-surface-container);
+    color: var(--md-on-surface-variant);
+    border-color: var(--md-outline-variant);
 }
-.sed-letter-file small {
-    color: var(--md-on-surface-hint);
-    font-size: 0.72rem;
+.sed-chip--info {
+    background: rgba(33, 150, 243, 0.12);
+    color: #1565c0;
+    border-color: rgba(33, 150, 243, 0.3);
+}
+.sed-chip--success {
+    background: rgba(76, 175, 80, 0.14);
+    color: #2e7d32;
+    border-color: rgba(76, 175, 80, 0.3);
+}
+.sed-chip--warn {
+    background: rgba(255, 152, 0, 0.16);
+    color: #e65100;
+    border-color: rgba(255, 152, 0, 0.35);
+}
+.sed-chip--danger {
+    background: rgba(244, 67, 54, 0.14);
+    color: #c62828;
+    border-color: rgba(244, 67, 54, 0.32);
 }
 
-/* Само тело письма (Drupal-разметка) */
-.sed-letter-body {
-    margin-top: 4px;
+/* ─── Детали (двухколоночная сетка) ─────────────────────────────────── */
+.sed-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px 18px;
+    padding: 12px 14px;
+    background: var(--md-surface-container);
+    border-radius: 8px;
+    margin-bottom: 14px;
 }
-.sed-letter-body .field-label {
+.sed-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.sed-detail__label {
+    color: var(--md-on-surface-variant);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.sed-detail__value {
+    color: var(--md-on-surface);
+    font-size: 0.86rem;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+/* ─── Содержание (длинный summary отдельным блоком) ─────────────────── */
+.sed-summary {
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: var(--md-primary-light, rgba(33, 150, 243, 0.08));
+    border-left: 3px solid var(--md-primary, #1976d2);
+    border-radius: 0 6px 6px 0;
+}
+.sed-summary__label {
+    color: var(--md-on-surface-variant);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 3px;
+}
+.sed-summary__value {
+    color: var(--md-on-surface);
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+/* ─── Секции (Файлы / Текст документа) ──────────────────────────────── */
+.sed-section {
+    margin-top: 16px;
+}
+.sed-section__h {
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--md-on-surface-variant);
-    font-size: 0.8rem;
-    margin-top: 6px;
+    letter-spacing: 0.2px;
 }
-.sed-letter-body .field-item {
+
+/* ─── Файлы письма (карточки) ───────────────────────────────────────── */
+.sed-letter-files {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.sed-letter-file {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 8px;
     color: var(--md-on-surface);
-    margin-bottom: 4px;
+    text-decoration: none;
+    font-size: 0.86rem;
+    transition: background 0.12s, border-color 0.12s;
+}
+.sed-letter-file:hover {
+    background: var(--md-primary-light, rgba(33, 150, 243, 0.07));
+    border-color: var(--md-primary);
+}
+.sed-letter-file__icon {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+.sed-letter-file__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.sed-letter-file__size {
+    color: var(--md-on-surface-hint);
+    font-size: 0.74rem;
+    white-space: nowrap;
+}
+.sed-letter-file__dl {
+    color: var(--md-on-surface-variant);
+    font-size: 1rem;
+}
+.sed-letter-file:hover .sed-letter-file__dl {
+    color: var(--md-primary);
+}
+
+/* ─── Тело письма (Drupal-разметка) ─────────────────────────────────── */
+.sed-letter-body {
+    color: var(--md-on-surface);
+    font-size: 0.88rem;
+    line-height: 1.6;
+}
+.sed-letter-body p {
+    margin: 6px 0;
 }
 .sed-letter-body h1,
 .sed-letter-body h2,
-.sed-letter-body h3 {
-    margin: 10px 0 4px;
-    font-size: 1rem;
+.sed-letter-body h3,
+.sed-letter-body h4 {
+    margin: 14px 0 6px;
+    font-size: 0.96rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+.sed-letter-body img {
+    max-width: 100%;
+    height: auto;
+}
+.sed-letter-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 0.84rem;
+}
+.sed-letter-body th,
+.sed-letter-body td {
+    border: 1px solid var(--md-outline-variant);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+.sed-letter-body th {
+    background: var(--md-surface-container);
+    font-weight: 600;
+}
+.sed-letter-body a {
+    color: var(--md-primary);
+    word-break: break-word;
+}
+.sed-letter-body ul,
+.sed-letter-body ol {
+    margin: 6px 0;
+    padding-left: 24px;
 }

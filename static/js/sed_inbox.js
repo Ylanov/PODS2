@@ -402,65 +402,145 @@ async function _openLetter(nodeId) {
 }
 
 
+// Подписи к meta-полям из METAFIELDMAP в parser.js
+const META_LABELS = {
+    status:           'Состояние',
+    doc_type:         'Вид документа',
+    priority:         'Срочность',
+    summary:          'Содержание',
+    internal_no:      'Номер/дата',
+    addressee:        'Адресат',
+    executor:         'Исполнитель',
+    signer:           'Подписант',
+    with_signature:   'ЭП',
+    sheets_count:     'Кол-во листов',
+    attachments_cnt:  'Приложений',
+};
+
+// Поля, которые показываем чипами вверху (короткие, категориальные).
+const META_CHIP_KEYS = ['status', 'priority', 'doc_type'];
+// Порядок остальных полей в «деталях».
+const META_DETAIL_ORDER = [
+    'internal_no', 'signer', 'addressee', 'executor',
+    'sheets_count', 'attachments_cnt', 'with_signature',
+];
+
+// Цветовая схема чипов: ключевые слова → CSS-класс.
+function _chipClass(key, value) {
+    const v = (value || '').toLowerCase();
+    if (key === 'priority') {
+        if (/срочн|оперативн/.test(v)) return 'sed-chip--danger';
+        return 'sed-chip--info';
+    }
+    if (key === 'status') {
+        if (/подпис|согласован|исполн|закры/.test(v)) return 'sed-chip--success';
+        if (/отклон|отказ|возврат/.test(v))           return 'sed-chip--danger';
+        if (/рассмотрен|подготов|доработ/.test(v))    return 'sed-chip--warn';
+        return 'sed-chip--neutral';
+    }
+    return 'sed-chip--info';
+}
+
+// Иконка по расширению файла.
+function _fileIcon(name) {
+    const ext = String(name || '').toLowerCase().split('.').pop();
+    if (['pdf'].includes(ext))                       return '📕';
+    if (['doc','docx','rtf','odt'].includes(ext))    return '📄';
+    if (['xls','xlsx','csv','ods'].includes(ext))    return '📊';
+    if (['ppt','pptx','odp'].includes(ext))          return '📽';
+    if (['jpg','jpeg','png','gif','bmp','tiff','webp'].includes(ext)) return '🖼';
+    if (['zip','rar','7z','tar','gz'].includes(ext)) return '🗜';
+    if (['mp3','wav','ogg','m4a'].includes(ext))     return '🎵';
+    if (['mp4','avi','mov','mkv','webm'].includes(ext)) return '🎬';
+    return '📎';
+}
+
+
 function _renderLetter(modal, letter) {
     const meta = letter.meta || {};
-    // Маппинг ключей из META_FIELD_MAP (см. parser.js) в человеческие подписи
-    const META_LABELS = {
-        status:           'Состояние',
-        doc_type:         'Вид документа',
-        priority:         'Срочность',
-        summary:          'Содержание',
-        internal_no:      'Номер/дата',
-        addressee:        'Адресат',
-        executor:         'Исполнитель',
-        signer:           'Подписант',
-        with_signature:   'ЭП',
-        sheets_count:     'Кол-во листов',
-        attachments_cnt:  'Приложений',
-    };
-    const metaRows = Object.entries(META_LABELS)
-        .filter(([k]) => meta[k])
-        .map(([k, label]) => `
-            <div class="sed-letter-meta-row">
-                <span class="sed-letter-meta-row__label">${_esc(label)}:</span>
-                <span class="sed-letter-meta-row__value">${_esc(meta[k])}</span>
+
+    // ─── Чипы (status, priority, doc_type) ───────────────────────────────
+    const chipsHtml = META_CHIP_KEYS
+        .filter(k => meta[k])
+        .map(k => `
+            <span class="sed-chip ${_chipClass(k, meta[k])}"
+                  title="${_esc(META_LABELS[k])}">${_esc(meta[k])}</span>
+        `).join('');
+
+    // ─── Детали (двухколоночная сетка) ───────────────────────────────────
+    const detailsRows = META_DETAIL_ORDER
+        .filter(k => meta[k])
+        .map(k => `
+            <div class="sed-detail">
+                <div class="sed-detail__label">${_esc(META_LABELS[k])}</div>
+                <div class="sed-detail__value">${_esc(meta[k])}</div>
             </div>
         `).join('');
 
-    const filesHtml = (letter.files || []).map(f => `
+    // ─── Содержание (отдельным блоком, оно длинное) ──────────────────────
+    const summaryHtml = meta.summary
+        ? `<div class="sed-summary">
+               <div class="sed-summary__label">${_esc(META_LABELS.summary)}</div>
+               <div class="sed-summary__value">${_esc(meta.summary)}</div>
+           </div>`
+        : '';
+
+    // ─── Файлы (карточки с иконкой) ──────────────────────────────────────
+    const files = letter.files || [];
+    const filesHtml = files.map(f => `
         <a class="sed-letter-file" href="${_esc(f.url)}"
            target="_blank" rel="noopener noreferrer"
            data-sed-file-name="${_esc(f.name || '')}"
            title="Скачать (через расширение — минуя pdf-viewer СЭД)">
-            ⬇ ${_esc(f.name || 'Файл')}
-            ${f.size ? `<small>${_fmtSize(f.size)}</small>` : ''}
+            <span class="sed-letter-file__icon">${_fileIcon(f.name)}</span>
+            <span class="sed-letter-file__name">${_esc(f.name || 'Файл')}</span>
+            ${f.size ? `<span class="sed-letter-file__size">${_fmtSize(f.size)}</span>` : ''}
+            <span class="sed-letter-file__dl">⬇</span>
         </a>
     `).join('');
+
+    // ─── Тело: переписываем относительные URL'ы (страховка) ──────────────
+    const bodyFixed = (letter.body_html || '')
+        .replace(/(\s(?:src|href)=)"\/(?!\/)/gi, '$1"https://sed.mchs.ru/')
+        .replace(/(\s(?:src|href)=)'\/(?!\/)/gi, "$1'https://sed.mchs.ru/");
+    const bodyTrimmed = bodyFixed.trim();
 
     const fetchedTime = letter.fetched_at
         ? new Date(letter.fetched_at).toLocaleString('ru-RU')
         : '';
 
-    // Страховка от старых писем в БД с относительными URL'ами:
-    // браузер pods2 пытается грузить /sites/.../icon.png со staff.asy-tk.ru
-    // и получает 404. Переписываем на абсолютные sed.mchs.ru.
-    // (В новых письмах parser.js делает то же самое до отправки.)
-    const bodyFixed = (letter.body_html || '')
-        .replace(/(\s(?:src|href)=)"\/(?!\/)/gi, '$1"https://sed.mchs.ru/')
-        .replace(/(\s(?:src|href)=)'\/(?!\/)/gi, "$1'https://sed.mchs.ru/");
+    // ─── Шапка модалки: title + ссылка на СЭД ────────────────────────────
+    const headStrong = modal.querySelector('.sed-letter-modal__head strong');
+    headStrong.innerHTML = `
+        ${_esc(letter.title || `Письмо #${letter.node_id}`)}
+        <a class="sed-letter-modal__sed-link"
+           href="https://sed.mchs.ru/node/${letter.node_id}"
+           target="_blank" rel="noopener noreferrer"
+           title="Открыть оригинал в СЭД">↗</a>
+    `;
 
-    modal.querySelector('.sed-letter-modal__head strong').textContent = letter.title || `Письмо #${letter.node_id}`;
     modal.querySelector('.sed-letter-modal__body').innerHTML = `
-        ${metaRows ? `<div class="sed-letter-meta">${metaRows}</div>` : ''}
+        ${chipsHtml ? `<div class="sed-chips">${chipsHtml}</div>` : ''}
+
+        ${detailsRows ? `<div class="sed-details">${detailsRows}</div>` : ''}
+
+        ${summaryHtml}
+
         ${filesHtml ? `
-            <div class="sed-letter-files">
-                <h4 class="sed-letter-files__h">Файлы</h4>
-                ${filesHtml}
-            </div>` : ''}
-        <div class="sed-letter-body">
-            ${bodyFixed || '<p style="color:var(--md-on-surface-variant);"><i>Тело письма пустое.</i></p>'}
-        </div>
-        ${fetchedTime ? `<p class="sed-letter-modal__fetched">Загружено: ${fetchedTime}</p>` : ''}
+            <section class="sed-section">
+                <h4 class="sed-section__h">📎 Файлы (${files.length})</h4>
+                <div class="sed-letter-files">${filesHtml}</div>
+            </section>` : ''}
+
+        ${bodyTrimmed ? `
+            <section class="sed-section">
+                <h4 class="sed-section__h">📄 Текст документа</h4>
+                <div class="sed-letter-body">${bodyTrimmed}</div>
+            </section>` : ''}
+
+        ${fetchedTime
+            ? `<p class="sed-letter-modal__fetched">Загружено в pods2: ${fetchedTime}</p>`
+            : ''}
     `;
 
     modal.querySelectorAll('.sed-letter-file').forEach(a => {

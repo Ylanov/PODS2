@@ -245,6 +245,11 @@ export function extractLetter(html, nodeId) {
 function sanitizeBody(html) {
     if (!html) return "";
     return html
+        // page-header (h1 с заголовком документа) — в pods2 он уже в head'е модалки
+        .replace(/<h1[^>]*class="[^"]*page-header[^"]*"[^>]*>[\s\S]*?<\/h1>/gi, "")
+        // field-divs Drupal — те же значения уже извлечены в meta-словарь
+        // фронтом выше; в теле они только дублируют и мешают.
+        .replace(/<div[^>]*class="[^"]*field field-name-field-[a-z0-9-]+[^"]*"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi, "")
         // node-actions-wrapper и его содержимое
         .replace(/<div[^>]*class="[^"]*node-actions-wrapper[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi, "")
         // tabs-wrap (вкладки)
