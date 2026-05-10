@@ -99,15 +99,15 @@ def _normalize_name(s: str) -> str:
     return _NAME_NORMALIZE_RE.sub(" ", (s or "").strip()).lower()
 
 
-def _normalize_phone(raw) -> str:
+def _normalize_one_phone(raw: str) -> str:
     """
-    Нормализация телефона: оставляем только цифры, приводим к +7XXXXXXXXXX.
+    Нормализация ОДНОГО номера: оставляем только цифры, приводим к +7XXXXXXXXXX.
     Excel-формат «89260367265» (числом) → «+79260367265».
-    Если меньше 10 цифр — отдаём как есть (мог быть служебный 4-значный).
+    Если меньше 10 цифр — отдаём как есть (мог быть короткий служебный).
     """
-    if raw is None:
+    s = (raw or "").strip()
+    if not s:
         return ""
-    s = str(raw).strip()
     digits = re.sub(r"\D", "", s)
     if not digits:
         return ""
@@ -115,16 +115,39 @@ def _normalize_phone(raw) -> str:
         return "+7" + digits[1:]
     if len(digits) == 10:
         return "+7" + digits
-    return s   # короткие/иные форматы — оставляем как было
+    return s
 
 
-def _pick_phone(office, home, mobile) -> str:
-    """Приоритет: мобильный > служебный > домашний."""
-    for raw in (mobile, office, home):
-        norm = _normalize_phone(raw)
-        if norm:
-            return norm
-    return ""
+# Разделители номеров когда в одной ячейке их несколько: запятая, точка с
+# запятой, перенос строки, слэш, «или», два и более пробела.
+_PHONE_SPLIT_RE = re.compile(r"[,\n;/]+|\s+или\s+|\s{2,}")
+
+
+def _collect_phones(*cells) -> str:
+    """
+    Собирает все номера из всех ячеек строки (служебный/домашний/мобильный)
+    в одну строку через «, ». Если в ячейке несколько номеров — разбивает.
+    Дубликаты отбрасываются. По задумке: у Person.phone одна строка, в
+    которой ВСЕ известные номера человека (мобильный, служебный, домашний —
+    различия не нужны, главное что номер этого человека).
+    """
+    seen: set[str] = set()
+    out:  list[str] = []
+    for cell in cells:
+        if cell is None:
+            continue
+        # Excel может прислать число (89260367265) или текст
+        raw = str(cell).strip()
+        if not raw:
+            continue
+        # Если в ячейке несколько номеров — разбиваем
+        parts = _PHONE_SPLIT_RE.split(raw)
+        for part in parts:
+            norm = _normalize_one_phone(part)
+            if norm and norm not in seen:
+                seen.add(norm)
+                out.append(norm)
+    return ", ".join(out)
 
 
 def _person_ref(p: Person) -> _PersonRef:
@@ -213,10 +236,10 @@ async def preview(
         if not name:
             skipped_no_name += 1
             continue
-        office = row[1] if len(row) > 1 else None
-        home   = row[2] if len(row) > 2 else None
-        mobile = row[3] if len(row) > 3 else None
-        phone  = _pick_phone(office, home, mobile)
+        # Все колонки — это просто разные номера одного человека.
+        # Пользователь явно сказал: домашний/мобильный/служебный — это
+        # всё «телефоны» без разделения, складываем все в одно поле.
+        phone = _collect_phones(*row[1:])
         if not phone:
             skipped_no_phone += 1
             continue

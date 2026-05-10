@@ -48,9 +48,11 @@ export function openPhoneImportDialog() {
             </div>
             <div id="phi-body" style="flex:1; overflow-y:auto; padding:14px 18px;">
                 <p style="margin:0 0 10px; font-size:0.84rem; color:var(--md-on-surface-variant); line-height:1.4;">
-                    Файл с колонками: <b>ФИО</b>, <b>Служебный телефон</b>,
-                    <b>Домашний телефон</b>, <b>Мобильный телефон</b>.
-                    Берётся первый непустой по приоритету: мобильный → служебный → домашний.
+                    Файл с колонкой <b>ФИО</b> и любым количеством колонок с телефонами
+                    (служебный / домашний / мобильный — без разделения).
+                    Все номера из строки собираются в одну запись для человека
+                    (через запятую, дубликаты отбрасываются). В ячейке может быть
+                    несколько номеров через запятую — разделим автоматически.
                 </p>
                 <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
                     <input type="file" id="phi-file" accept=".xlsx,.xlsm"
@@ -92,7 +94,7 @@ async function _runPreview(overlay, file) {
     try {
         const resp = await fetch('/api/v1/admin/persons/import-phones/preview', {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
             body:    fd,
         });
         if (!resp.ok) {
