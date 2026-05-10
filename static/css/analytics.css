@@ -69,6 +69,95 @@
     margin-top: 2px;
 }
 
+/* Варианты карточки-счётчика для индикации проблем в данных */
+.analytics-stat--warn {
+    background: rgba(217, 119, 6, 0.10);
+    border-color: rgba(217, 119, 6, 0.35);
+}
+.analytics-stat--warn .analytics-stat__value { color: #92400e; }
+.analytics-stat--err {
+    background: rgba(225, 29, 72, 0.10);
+    border-color: rgba(225, 29, 72, 0.35);
+}
+.analytics-stat--err .analytics-stat__value { color: #9f1239; }
+@media (prefers-color-scheme: dark) {
+    .analytics-stat--warn .analytics-stat__value { color: #fbbf24; }
+    .analytics-stat--err  .analytics-stat__value { color: #fb7185; }
+}
+
+/* ── Двухколоночная разметка для перегруз/недогруз и дубликатов ─────── */
+.analytics-twocol {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 10px;
+}
+@media (max-width: 900px) {
+    .analytics-twocol { grid-template-columns: 1fr; }
+}
+.analytics-twocol__col { min-width: 0; }
+
+.analytics-h-sm {
+    margin: 0 0 6px;
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+.analytics-h-sm--warn { color: #92400e; }
+.analytics-h-sm--cool { color: #1e40af; }
+@media (prefers-color-scheme: dark) {
+    .analytics-h-sm--warn { color: #fbbf24; }
+    .analytics-h-sm--cool { color: #93c5fd; }
+}
+
+.analytics-load-pct {
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+
+/* ── Дубликаты телефонов / документов ───────────────────────────────── */
+.analytics-dup-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.82rem;
+}
+.analytics-dup-list li {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+.analytics-dup-list li:last-child { border-bottom: none; }
+.analytics-dup-list code {
+    background: var(--md-surface-variant);
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 6px;
+}
+
+/* ── Чипы дней пропусков ─────────────────────────────────────────────── */
+.analytics-missing-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+.analytics-day-chip {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 0.74rem;
+    font-family: var(--md-font-mono);
+    background: rgba(225, 29, 72, 0.10);
+    color: #9f1239;
+    border-radius: 4px;
+    border: 1px solid rgba(225, 29, 72, 0.25);
+}
+@media (prefers-color-scheme: dark) {
+    .analytics-day-chip {
+        background: rgba(225, 29, 72, 0.22);
+        color: #fb7185;
+        border-color: rgba(225, 29, 72, 0.45);
+    }
+}
+
 .analytics-table {
     width: 100%;
     border-collapse: collapse;

@@ -25,6 +25,9 @@ export async function loadAnalytics() {
 
     root.innerHTML = `
         ${_renderTotals(data.totals)}
+        ${_renderDutyLoad(data.duty_load)}
+        ${_renderDataHealth(data.data_health)}
+        ${_renderUncovered(data.uncovered, data.uncovered_month)}
         ${_renderUsers(data.users)}
         ${_renderPositions(data.positions)}
         ${_renderDutyTop(data.duty_top)}
@@ -210,6 +213,201 @@ function _renderGhosts(ghosts, total) {
                         <td>${_esc(p.full_name)}</td>
                         <td>${_esc(p.rank || '')}</td>
                         <td>${_esc(p.department || '— нераспределён')}</td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+        </section>
+    `;
+}
+
+
+// ─── Перегруз / недогруз в нарядах за 90 дней ─────────────────────────────
+function _renderDutyLoad(d) {
+    if (!d || !d.active_with_duty) return '';
+    const showOver = d.overloaded?.length || 0;
+    const showUnder = d.underloaded?.length || 0;
+    if (!showOver && !showUnder) return `
+        <section class="analytics-section">
+            <h2 class="analytics-h">Нагрузка нарядов (90 дней)</h2>
+            <p class="analytics-sub">
+                Среднее: <b>${d.avg_per_person}</b> N/чел. (по ${d.active_with_duty} активным).
+                Распределение в норме — нет ни перегруженных (≥${d.threshold_high}),
+                ни недогруженных (≤${d.threshold_low}).
+            </p>
+        </section>
+    `;
+    const renderRow = (e) => `
+        <tr>
+            <td>${_esc(e.full_name)}${e.rank ? ` <small>${_esc(e.rank)}</small>` : ''}</td>
+            <td>${_esc(e.department || '—')}</td>
+            <td style="text-align:right;"><b>${e.count}</b></td>
+            <td style="text-align:right;"><span class="analytics-load-pct">${e.pct_of_avg}%</span></td>
+        </tr>
+    `;
+    return `
+        <section class="analytics-section">
+            <h2 class="analytics-h">Нагрузка нарядов (90 дней)</h2>
+            <p class="analytics-sub">
+                Среднее <b>${d.avg_per_person}</b> N/чел. по ${d.active_with_duty} активным.
+                Перегруз: ≥<b>${d.threshold_high}</b> (150% от среднего).
+                Недогруз: ≤<b>${d.threshold_low}</b> (40% от среднего).
+            </p>
+            <div class="analytics-twocol">
+                ${showOver ? `
+                    <div class="analytics-twocol__col">
+                        <h3 class="analytics-h-sm analytics-h-sm--warn">Перегруженные (${showOver})</h3>
+                        <table class="analytics-table">
+                            <thead><tr>
+                                <th>ФИО</th>
+                                <th>Управление</th>
+                                <th style="text-align:right;">Нарядов</th>
+                                <th style="text-align:right;">% от ср.</th>
+                            </tr></thead>
+                            <tbody>${d.overloaded.map(renderRow).join('')}</tbody>
+                        </table>
+                    </div>
+                ` : ''}
+                ${showUnder ? `
+                    <div class="analytics-twocol__col">
+                        <h3 class="analytics-h-sm analytics-h-sm--cool">Недогруженные (${showUnder})</h3>
+                        <table class="analytics-table">
+                            <thead><tr>
+                                <th>ФИО</th>
+                                <th>Управление</th>
+                                <th style="text-align:right;">Нарядов</th>
+                                <th style="text-align:right;">% от ср.</th>
+                            </tr></thead>
+                            <tbody>${d.underloaded.map(renderRow).join('')}</tbody>
+                        </table>
+                    </div>
+                ` : ''}
+            </div>
+        </section>
+    `;
+}
+
+
+// ─── Здоровье Базы людей ──────────────────────────────────────────────────
+function _renderDataHealth(h) {
+    if (!h) return '';
+    const pct = (n) => h.total_active ? Math.round(100 * n / h.total_active) : 0;
+    const dupBlock = (label, items, total, fmt) => {
+        if (!total) return '';
+        return `
+            <div class="analytics-twocol__col">
+                <h3 class="analytics-h-sm analytics-h-sm--warn">
+                    ${_esc(label)} (${total}${total > items.length ? `, показано ${items.length}` : ''})
+                </h3>
+                <ul class="analytics-dup-list">
+                    ${items.map(g => `
+                        <li>
+                            <code>${_esc(g.key)}</code>:
+                            ${g.persons.map(p => `<span>${_esc(p.full_name)}${fmt(p)}</span>`).join(' · ')}
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        `;
+    };
+    return `
+        <section class="analytics-section">
+            <h2 class="analytics-h">Здоровье Базы людей</h2>
+            <p class="analytics-sub">
+                Активных в базе: <b>${h.total_active}</b>. Незаполненные поля и
+                подозрения на дубликаты — точки внимания для админа.
+            </p>
+            <div class="analytics-stats">
+                <div class="analytics-stat ${h.no_position ? 'analytics-stat--warn' : ''}">
+                    <div class="analytics-stat__value">${h.no_position}</div>
+                    <div class="analytics-stat__label">без должности</div>
+                    <div class="analytics-stat__hint">${pct(h.no_position)}%</div>
+                </div>
+                <div class="analytics-stat ${h.no_phone ? 'analytics-stat--warn' : ''}">
+                    <div class="analytics-stat__value">${h.no_phone}</div>
+                    <div class="analytics-stat__label">без телефона</div>
+                    <div class="analytics-stat__hint">${pct(h.no_phone)}%</div>
+                </div>
+                <div class="analytics-stat ${h.no_department ? 'analytics-stat--warn' : ''}">
+                    <div class="analytics-stat__value">${h.no_department}</div>
+                    <div class="analytics-stat__label">без управления</div>
+                    <div class="analytics-stat__hint">${pct(h.no_department)}%</div>
+                </div>
+                <div class="analytics-stat ${h.dup_phones_total ? 'analytics-stat--err' : ''}">
+                    <div class="analytics-stat__value">${h.dup_phones_total}</div>
+                    <div class="analytics-stat__label">дубл. телефоны</div>
+                </div>
+                <div class="analytics-stat ${h.dup_docs_total ? 'analytics-stat--err' : ''}">
+                    <div class="analytics-stat__value">${h.dup_docs_total}</div>
+                    <div class="analytics-stat__label">дубл. документы</div>
+                </div>
+            </div>
+            ${(h.dup_phones_total || h.dup_docs_total) ? `
+                <div class="analytics-twocol">
+                    ${dupBlock(
+                        'Дубликаты по телефону',
+                        h.dup_phones,
+                        h.dup_phones_total,
+                        p => p.phone ? ` <small>${_esc(p.phone)}</small>` : '',
+                    )}
+                    ${dupBlock(
+                        'Дубликаты по № документа',
+                        h.dup_docs,
+                        h.dup_docs_total,
+                        p => p.doc_number ? ` <small>${_esc(p.doc_number)}</small>` : '',
+                    )}
+                </div>
+            ` : ''}
+        </section>
+    `;
+}
+
+
+// ─── Дни без покрытия в графиках нарядов (текущий месяц) ──────────────────
+function _renderUncovered(rows, monthInfo) {
+    if (!rows?.length) return `
+        <section class="analytics-section">
+            <h2 class="analytics-h">Дни без покрытия в графиках нарядов</h2>
+            <p class="analytics-sub">
+                В графиках с привязанными людьми в этом месяце пропусков нет —
+                каждый день кто-то стоит. 👍
+            </p>
+        </section>
+    `;
+    const monthName = ['январь','февраль','март','апрель','май','июнь',
+                       'июль','август','сентябрь','октябрь','ноябрь','декабрь'][
+        (monthInfo?.month || 1) - 1
+    ];
+    return `
+        <section class="analytics-section">
+            <h2 class="analytics-h">Дни без покрытия (${monthName} ${monthInfo?.year || ''})</h2>
+            <p class="analytics-sub">
+                Графики с привязанными людьми, в которых в этом месяце есть дни
+                без отметки наряда (N). Превентивная диагностика «забыли назначить».
+            </p>
+            <table class="analytics-table">
+                <thead><tr>
+                    <th>График</th>
+                    <th>Должность</th>
+                    <th style="text-align:right;">Людей</th>
+                    <th style="text-align:right;">Пропусков</th>
+                    <th>Дни</th>
+                </tr></thead>
+                <tbody>
+                ${rows.map(r => `
+                    <tr>
+                        <td>${_esc(r.schedule_title)}</td>
+                        <td>${_esc(r.position_name || '—')}</td>
+                        <td style="text-align:right;">${r.persons_cnt}</td>
+                        <td style="text-align:right;">
+                            <b class="${r.missing_count > 7 ? 'analytics-rate--low' : 'analytics-rate--mid'}">${r.missing_count}</b>
+                        </td>
+                        <td class="analytics-missing-days">
+                            ${r.missing_dates.slice(0, 12).map(d => `
+                                <span class="analytics-day-chip">${d.slice(8)}.${d.slice(5, 7)}</span>
+                            `).join('')}
+                            ${r.missing_dates.length > 12 ? `<small>… и ещё ${r.missing_dates.length - 12}</small>` : ''}
+                        </td>
                     </tr>
                 `).join('')}
                 </tbody>

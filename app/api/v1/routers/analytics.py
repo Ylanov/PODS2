@@ -17,7 +17,7 @@ from app.db.database import get_db
 from app.models.user import User
 from app.models.event import Event, Group, Slot, Position
 from app.models.person import Person
-from app.models.duty import DutyMark, MARK_DUTY
+from app.models.duty import DutyMark, DutySchedule, DutySchedulePerson, MARK_DUTY, DUTY_KIND_DUTY
 from app.api.dependencies import get_current_active_admin
 
 
@@ -165,6 +165,174 @@ def analytics_overview(
         if p.full_name not in used_in_slots and p.id not in used_in_duty
     ])
 
+    # ── Перегруз/недогруз в нарядах за 90 дней ──────────────────────────────
+    # avg считаем по тем у кого хоть один N-наряд за период; иначе среднее
+    # размывается «бездельниками» и пороги получаются нереалистично низкими.
+    duty_count_rows = (
+        db.query(
+            DutyMark.person_id,
+            func.count(DutyMark.id).label("cnt"),
+        )
+        .filter(DutyMark.mark_type == MARK_DUTY)
+        .filter(DutyMark.duty_date >= cutoff)
+        .group_by(DutyMark.person_id)
+        .all()
+    )
+    counts_map = {r.person_id: int(r.cnt or 0) for r in duty_count_rows}
+    avg_per_person = (
+        round(sum(counts_map.values()) / len(counts_map), 2)
+        if counts_map else 0.0
+    )
+    threshold_high = round(avg_per_person * 1.5, 1) if avg_per_person else 0
+    threshold_low  = round(avg_per_person * 0.4, 1) if avg_per_person else 0
+
+    # Тянем Person'ов одним запросом для всех cnt>0
+    load_pids = list(counts_map.keys())
+    load_persons = (
+        db.query(Person).filter(Person.id.in_(load_pids)).all()
+        if load_pids else []
+    )
+    load_persons_map = {p.id: p for p in load_persons}
+
+    overloaded = []
+    underloaded = []
+    if avg_per_person > 0:
+        for pid, cnt in counts_map.items():
+            p = load_persons_map.get(pid)
+            if not p or p.fired_at is not None:
+                continue
+            entry = {
+                "person_id":    pid,
+                "full_name":    p.full_name,
+                "rank":         p.rank,
+                "department":   p.department,
+                "count":        cnt,
+                "pct_of_avg":   round(100 * cnt / avg_per_person, 0) if avg_per_person else 0,
+            }
+            if cnt >= threshold_high:
+                overloaded.append(entry)
+            elif cnt <= threshold_low:
+                underloaded.append(entry)
+        overloaded.sort(key=lambda e: e["count"], reverse=True)
+        underloaded.sort(key=lambda e: e["count"])
+
+    duty_load = {
+        "period_days":      90,
+        "active_with_duty": len(counts_map),
+        "avg_per_person":   avg_per_person,
+        "threshold_high":   threshold_high,
+        "threshold_low":    threshold_low,
+        "overloaded":       overloaded[:15],   # топ-15 чтобы не переполнять UI
+        "underloaded":      underloaded[:15],
+    }
+
+    # ── Здоровье Базы людей ─────────────────────────────────────────────────
+    active_persons = persons_all   # уже загрузили выше
+    no_position = sum(1 for p in active_persons if not (p.position_title or "").strip())
+    no_phone    = sum(1 for p in active_persons if not (p.phone or "").strip())
+    no_department = sum(1 for p in active_persons if not (p.department or "").strip())
+
+    # Дубликаты по нормализованному телефону / номеру документа.
+    from collections import defaultdict as _dd
+    by_phone = _dd(list)
+    by_doc   = _dd(list)
+    for p in active_persons:
+        ph = (p.phone or "").strip()
+        if ph:
+            # Нормализуем для группировки: только цифры, последние 10
+            digits = "".join(ch for ch in ph if ch.isdigit())
+            if len(digits) >= 10:
+                key = digits[-10:]
+                by_phone[key].append(p)
+        dn = (p.doc_number or "").strip()
+        if dn:
+            by_doc[dn].append(p)
+
+    dup_phones = [
+        {
+            "key":     k,
+            "persons": [{"id": p.id, "full_name": p.full_name, "phone": p.phone} for p in ps],
+        }
+        for k, ps in by_phone.items() if len(ps) > 1
+    ]
+    dup_docs = [
+        {
+            "key":     k,
+            "persons": [{"id": p.id, "full_name": p.full_name, "doc_number": p.doc_number} for p in ps],
+        }
+        for k, ps in by_doc.items() if len(ps) > 1
+    ]
+
+    data_health = {
+        "total_active":  len(active_persons),
+        "no_position":   no_position,
+        "no_phone":      no_phone,
+        "no_department": no_department,
+        "dup_phones":    dup_phones[:30],
+        "dup_phones_total": len(dup_phones),
+        "dup_docs":      dup_docs[:30],
+        "dup_docs_total": len(dup_docs),
+    }
+
+    # ── Дни без покрытия в графиках нарядов (текущий месяц) ─────────────────
+    # Для каждого активного DutySchedule (kind=duty) с привязанными людьми —
+    # дни текущего месяца без N-отметки. Это «забытые» дни в графике.
+    today = date_type.today()
+    month_start = today.replace(day=1)
+    if month_start.month == 12:
+        next_month = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        next_month = month_start.replace(month=month_start.month + 1)
+    month_end = next_month - timedelta(days=1)
+
+    schedules_with_persons = (
+        db.query(
+            DutySchedule.id,
+            DutySchedule.title,
+            DutySchedule.position_name,
+            func.count(distinct(DutySchedulePerson.person_id)).label("persons_cnt"),
+        )
+        .outerjoin(DutySchedulePerson, DutySchedulePerson.schedule_id == DutySchedule.id)
+        .filter(DutySchedule.kind == DUTY_KIND_DUTY)
+        .group_by(DutySchedule.id, DutySchedule.title, DutySchedule.position_name)
+        .having(func.count(distinct(DutySchedulePerson.person_id)) > 0)
+        .all()
+    )
+    sched_ids = [r.id for r in schedules_with_persons]
+
+    # Все N-отметки за месяц по этим графикам — одним запросом
+    marks_by_sched: dict[int, set] = defaultdict(set)
+    if sched_ids:
+        mark_rows = (
+            db.query(DutyMark.schedule_id, DutyMark.duty_date)
+            .filter(DutyMark.schedule_id.in_(sched_ids))
+            .filter(DutyMark.mark_type == MARK_DUTY)
+            .filter(DutyMark.duty_date >= month_start)
+            .filter(DutyMark.duty_date <= month_end)
+            .all()
+        )
+        for sid, d in mark_rows:
+            marks_by_sched[sid].add(d)
+
+    uncovered = []
+    days_in_month = (month_end - month_start).days + 1
+    all_days = [month_start + timedelta(days=i) for i in range(days_in_month)]
+    for r in schedules_with_persons:
+        existing_days = marks_by_sched.get(r.id, set())
+        missing = [d.isoformat() for d in all_days if d not in existing_days]
+        if not missing:
+            continue
+        uncovered.append({
+            "schedule_id":   r.id,
+            "schedule_title": r.title,
+            "position_name":  r.position_name,
+            "persons_cnt":    int(r.persons_cnt or 0),
+            "missing_dates":  missing,
+            "missing_count":  len(missing),
+        })
+    # Сортируем — больше пропусков сверху.
+    uncovered.sort(key=lambda x: x["missing_count"], reverse=True)
+
     return {
         "totals":       totals,
         "users":        users,
@@ -172,4 +340,8 @@ def analytics_overview(
         "duty_top":     duty_top,
         "ghosts":       ghosts,
         "ghosts_total": ghosts_total,
+        "duty_load":    duty_load,
+        "data_health":  data_health,
+        "uncovered":    uncovered,
+        "uncovered_month": {"year": month_start.year, "month": month_start.month},
     }
