@@ -19,15 +19,23 @@ depends_on:    Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Защита от orphan-типа (см. new-69 / new-75)
+    # Защита от orphan-типа в pg_type. Раньше использовали проверку через
+    # information_schema.tables — оказалось что она view-обёртка и иногда
+    # показывает «таблица есть» там где в pg_class её нет. Из-за этого
+    # DROP TYPE не выполнялся, и CREATE TABLE падал с UniqueViolation
+    # "Key (typname, typnamespace)=(sed_letters, 2200) already exists".
+    # Решение — проверять напрямую через pg_class (relkind='r' = обычная
+    # таблица). Если в pg_class таблицы нет — снимаем orphan-тип, после
+    # чего CREATE TABLE проходит чисто.
     op.execute("""
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sed_letters')
                AND NOT EXISTS (
-                   SELECT 1 FROM information_schema.tables WHERE table_name = 'sed_letters'
+                   SELECT 1 FROM pg_class
+                    WHERE relname = 'sed_letters' AND relkind = 'r'
                ) THEN
-                EXECUTE 'DROP TYPE IF EXISTS sed_letters CASCADE';
+                EXECUTE 'DROP TYPE IF EXISTS public.sed_letters CASCADE';
             END IF;
         END $$;
     """)
