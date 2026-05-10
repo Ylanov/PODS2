@@ -20,10 +20,54 @@
 import { api } from './api.js';
 
 const STATE = {
-    visible:    false,
-    snapshot:   null,   // { taken_at, sections: [...], total }
-    pollTimer:  null,
+    visible:        false,
+    snapshot:       null,   // { taken_at, sections: [...], total }
+    pollTimer:      null,
+    bridgeReady:    false,  // расширение sed-bridge установлено и сигналит ready
+    pendingDls:     new Map(),  // url → { resolve, timer } — ждём ответ от расширения
 };
+
+// Слушаем «привет» от content-script расширения и результаты загрузок.
+// Этот блок выполняется при первом импорте модуля, а не в initSedInbox(),
+// потому что расширение шлёт ready-сигнал на document_idle — может произойти
+// до или после инициализации UI; не хотим зависеть от порядка.
+window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    const msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'pods2-sed-bridge-ready') {
+        STATE.bridgeReady = true;
+        return;
+    }
+    if (msg.type === 'pods2-sed-download-result') {
+        const pending = STATE.pendingDls.get(msg.url);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        STATE.pendingDls.delete(msg.url);
+        pending.resolve(msg);
+    }
+});
+
+/**
+ * Запросить у расширения скачивание файла по URL СЭД. Если расширение
+ * не отвечает за 2 секунды — фоллбэк: открываем URL в новой вкладке (SED
+ * сам покажет файл; пользователь нажмёт «Скачать» в pdf-viewer'е руками).
+ */
+function _requestSedDownload(url, name) {
+    return new Promise((resolve) => {
+        // Если уже есть pending по этому URL — не дублируем.
+        if (STATE.pendingDls.has(url)) {
+            return resolve({ ok: false, error: 'already-pending' });
+        }
+        const timer = setTimeout(() => {
+            STATE.pendingDls.delete(url);
+            window.open(url, '_blank', 'noopener,noreferrer');
+            resolve({ ok: false, error: 'extension-timeout' });
+        }, 2000);
+        STATE.pendingDls.set(url, { resolve, timer });
+        window.postMessage({ type: 'pods2-sed-download', url, name: name || '' }, '*');
+    });
+}
 
 const POLL_MS = 60_000;   // каждую минуту перепроверяем снимок (на случай WS-просадки)
 
@@ -191,6 +235,34 @@ function _renderList(snap) {
             requestAnimationFrame(() => _openLetter(nodeId));
         };
     });
+
+    // Делегированный обработчик кнопок-файлов: скачать через расширение.
+    list.querySelectorAll('.sed-file--btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _onFileClick(btn);
+        };
+    });
+}
+
+async function _onFileClick(btn) {
+    const url  = btn.dataset.sedFileUrl;
+    const name = btn.dataset.sedFileName;
+    if (!url) return;
+    btn.disabled = true;
+    try {
+        const res = await _requestSedDownload(url, name);
+        if (res.ok) {
+            window.showSnackbar?.('Файл скачивается…', 'success');
+        } else if (res.error === 'extension-timeout') {
+            window.showSnackbar?.('Расширение не отвечает — открыли в новой вкладке.', 'warn');
+        } else if (res.error && res.error !== 'already-pending') {
+            window.showSnackbar?.(`Ошибка скачивания: ${res.error}`, 'error');
+        }
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 function _renderSection(section) {
@@ -221,16 +293,18 @@ function _renderSection(section) {
 function _renderItem(item) {
     const nodeId  = parseInt(item.node_id, 10);
 
-    // Файлы: показываем максимум 5 в превью. По клику на письмо
-    // (не на файл) откроется модалка с полным списком.
+    // Файлы: показываем максимум 5 в превью. Клик по файлу — скачать
+    // через расширение (минуя pdf-viewer СЭД); если расширения нет —
+    // фоллбэк на открытие в новой вкладке (см. _requestSedDownload).
     const filesHtml = (item.files || []).slice(0, 5).map(f => {
         if (!f || !f.url) return '';
         return `
-            <a class="sed-file" href="${_esc(f.url)}"
-               target="_blank" rel="noopener noreferrer"
-               title="Открыть вложение в СЭД (через cookie-сессию)">
-                📎 ${_esc(f.name || 'Файл')}
-            </a>`;
+            <button class="sed-file sed-file--btn" type="button"
+                    data-sed-file-url="${_esc(f.url)}"
+                    data-sed-file-name="${_esc(f.name || '')}"
+                    title="Скачать через расширение (минуя pdf-viewer СЭД)">
+                ⬇ ${_esc(f.name || 'Файл')}
+            </button>`;
     }).join('');
 
     // Title — кликабельный, открывает модалку с телом (если она уже
@@ -333,12 +407,13 @@ function _renderLetter(modal, letter) {
         `).join('');
 
     const filesHtml = (letter.files || []).map(f => `
-        <a class="sed-letter-file" href="${_esc(f.url)}"
-           target="_blank" rel="noopener noreferrer"
-           title="Открыть в СЭД (через cookie-сессию)">
-            📎 ${_esc(f.name || 'Файл')}
+        <button class="sed-letter-file sed-file--btn" type="button"
+                data-sed-file-url="${_esc(f.url)}"
+                data-sed-file-name="${_esc(f.name || '')}"
+                title="Скачать через расширение (минуя pdf-viewer СЭД)">
+            ⬇ ${_esc(f.name || 'Файл')}
             ${f.size ? `<small>${_fmtSize(f.size)}</small>` : ''}
-        </a>
+        </button>
     `).join('');
 
     const fetchedTime = letter.fetched_at
@@ -358,6 +433,14 @@ function _renderLetter(modal, letter) {
         </div>
         ${fetchedTime ? `<p class="sed-letter-modal__fetched">Загружено: ${fetchedTime}</p>` : ''}
     `;
+
+    modal.querySelectorAll('.sed-file--btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            _onFileClick(btn);
+        };
+    });
 }
 
 

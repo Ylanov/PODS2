@@ -1,13 +1,14 @@
 {
     "manifest_version": 3,
     "name": "pods2 — мост СЭД",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Раз в 5 минут читает разделы СЭД в фоне (под уже залогиненной сессией пользователя) и шлёт в pods2: дайджест + ТЕЛА писем (содержание+метаданные+ссылки на файлы). Без передачи паролей. Никаких workflow-действий (делегирование/подпись) от имени пользователя.",
 
     "permissions": [
         "alarms",
         "storage",
-        "notifications"
+        "notifications",
+        "downloads"
     ],
     "host_permissions": [
         "https://sed.mchs.ru/*",
@@ -18,6 +19,19 @@
         "service_worker": "background.js",
         "type": "module"
     },
+
+    "content_scripts": [
+        {
+            "matches": [
+                "https://staff.asy-tk.ru/*",
+                "https://staff.app/*",
+                "http://localhost/*",
+                "http://127.0.0.1/*"
+            ],
+            "js": ["content.js"],
+            "run_at": "document_idle"
+        }
+    ],
 
     "action": {
         "default_title": "СЭД-мост pods2",

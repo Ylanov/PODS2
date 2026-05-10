@@ -469,6 +469,19 @@
     border-color: var(--md-primary);
 }
 
+/* Кнопка скачивания файла (вместо <a> на СЭД — расширение скачает напрямую,
+   минуя встроенный pdf-viewer Хрома, кнопка которого живёт в shadow DOM). */
+.sed-file--btn {
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    line-height: inherit;
+}
+.sed-file--btn[disabled] {
+    opacity: 0.6;
+    cursor: progress;
+}
+
 /* Кнопка-заголовок письма (вместо ссылки на СЭД — открывает модалку pods2) */
 .sed-item__title--btn {
     background: none;

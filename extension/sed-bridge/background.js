@@ -85,6 +85,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         chrome.storage.local.get(["last_status", "last_status_at", "last_total"]).then(sendResponse);
         return true;
     }
+    // Скачивание файла из СЭД, инициированное pods2 UI через content-script.
+    // Используем chrome.downloads.download — он сам подставит cookie sed.mchs.ru
+    // (cookie-jar общий с обычной навигацией) и сохранит файл, минуя
+    // встроенный pdf-viewer. Если SED отдаёт inline — расширение всё равно
+    // принудительно сохранит как attachment.
+    if (msg?.type === "sed_download") {
+        if (!msg.url || !/^https:\/\/sed\.mchs\.ru\//i.test(msg.url)) {
+            sendResponse({ ok: false, error: "URL должен быть https://sed.mchs.ru/..." });
+            return false;
+        }
+        const opts = { url: msg.url, saveAs: false };
+        // filename — опционально. Chrome сам почистит запрещённые символы.
+        if (msg.filename) opts.filename = msg.filename;
+        chrome.downloads.download(opts, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+            } else {
+                sendResponse({ ok: true, downloadId });
+            }
+        });
+        return true;   // async
+    }
 });
 
 
