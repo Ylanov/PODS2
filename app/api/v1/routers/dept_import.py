@@ -21,11 +21,13 @@ import io
 import re
 from typing import Optional, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.database import get_db
 from app.models.user import User
 from app.models.person import Person
@@ -193,7 +195,9 @@ class ImportApplyPayload(BaseModel):
 
 @router.post("/persons/import-departments/preview",
              summary="Распарсить Word и вернуть preview импорта квот людей")
+@limiter.limit(lambda: settings.IMPORT_RATE_LIMIT)
 async def preview_import(
+        request:      Request,
         files:        list[UploadFile]    = File(...),
         db:           Session             = Depends(get_db),
         current_admin: User               = Depends(get_current_active_admin),
@@ -341,7 +345,9 @@ async def preview_import(
 
 @router.post("/persons/import-departments/apply",
              summary="Применить импорт + сохранить новые алиасы")
+@limiter.limit(lambda: settings.IMPORT_RATE_LIMIT)
 async def apply_import(
+        request:       Request,
         payload:       ImportApplyPayload,
         db:            Session             = Depends(get_db),
         current_admin: User                = Depends(get_current_active_admin),

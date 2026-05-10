@@ -9,23 +9,27 @@ Endpoint /admin/analytics/overview возвращает все агрегаты 
 from collections import defaultdict
 from datetime import date as date_type, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, case, distinct
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_current_active_admin
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.database import get_db
-from app.models.user import User
+from app.models.duty import DutyMark, DutySchedule, DutySchedulePerson, MARK_DUTY, DUTY_KIND_DUTY
 from app.models.event import Event, Group, Slot, Position
 from app.models.person import Person
-from app.models.duty import DutyMark, DutySchedule, DutySchedulePerson, MARK_DUTY, DUTY_KIND_DUTY
-from app.api.dependencies import get_current_active_admin
+from app.models.user import User
 
 
 router = APIRouter()
 
 
 @router.get("/overview", summary="Сводная аналитика для админ-дашборда")
+@limiter.limit(lambda: settings.ANALYTICS_RATE_LIMIT)
 def analytics_overview(
+        request:       Request,
         db:            Session = Depends(get_db),
         current_admin: User    = Depends(get_current_active_admin),
 ):

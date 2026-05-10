@@ -24,12 +24,14 @@ import re
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_active_admin
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.websockets import manager
 from app.db.database import get_db
 from app.models.person import Person
@@ -189,7 +191,9 @@ def _find_candidates(excel_name: str, persons_index: dict) -> list[Person]:
 
 @router.post("/persons/import-phones/preview", response_model=PreviewResponse,
              summary="Парсинг Excel с телефонами + автоматический матчинг ФИО")
+@limiter.limit(lambda: settings.IMPORT_RATE_LIMIT)
 async def preview(
+    request: Request,
     file:  UploadFile = File(...),
     db:    Session = Depends(get_db),
     admin: User    = Depends(get_current_active_admin),
@@ -275,7 +279,9 @@ async def preview(
 
 @router.post("/persons/import-phones/apply",
              summary="Применить телефоны: записывает Person.phone у выбранных")
+@limiter.limit(lambda: settings.IMPORT_RATE_LIMIT)
 async def apply(
+    request: Request,
     payload: ApplyPayload,
     db:      Session = Depends(get_db),
     admin:   User    = Depends(get_current_active_admin),

@@ -40,12 +40,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_permission
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.websockets import manager
 from app.db.database import get_db
 from app.models.sed_inbox import SedInboxSnapshot, SedLetter
@@ -122,7 +124,9 @@ def get_snapshot(
 
 @router.post("/snapshot", response_model=SedSnapshotOut, status_code=200,
              summary="Сохранить дайджест от расширения (UPSERT по user)")
+@limiter.limit(lambda: settings.SED_SNAPSHOT_RATE_LIMIT)
 async def upsert_snapshot(
+    request:      Request,
     payload:      SedSnapshotIn,
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user),
@@ -209,7 +213,9 @@ class SedLetterOut(BaseModel):
 
 @router.post("/letter", response_model=SedLetterOut, status_code=200,
              summary="Сохранить полное письмо от расширения (UPSERT по user+node)")
+@limiter.limit(lambda: settings.SED_LETTER_RATE_LIMIT)
 def upsert_letter(
+    request:      Request,
     payload:      SedLetterIn,
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user),

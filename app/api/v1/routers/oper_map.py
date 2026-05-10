@@ -34,12 +34,13 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import require_permission
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.database import get_db
 from app.models.oper_map import OperMapSettings, OperMapZone
 
@@ -270,7 +271,9 @@ async def proxy_tile(z: int, x: int, y: int):
 # ─── Прокси: Яндекс-геокодер ─────────────────────────────────────────────────
 
 @router.get("/geocode", summary="Прокси Яндекс-геокодера: адрес → координаты")
+@limiter.limit(lambda: settings.GEOCODE_RATE_LIMIT)
 async def proxy_geocode(
+    request: Request,
     q:    Optional[str] = Query(default=None, max_length=500),
     bbox: Optional[str] = Query(default=None, description="lng1,lat1~lng2,lat2"),
     uri:  Optional[str] = Query(default=None, max_length=2000,
@@ -424,7 +427,11 @@ async def proxy_vendor(name: str):
 # деградирует к обычному поиску по Enter (без подсказок).
 
 @router.get("/suggest", summary="Прокси Яндекс Suggest: автоподсказки адресов")
-async def proxy_suggest(q: str = Query(..., min_length=2, max_length=200)):
+@limiter.limit(lambda: settings.SUGGEST_RATE_LIMIT)
+async def proxy_suggest(
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=200),
+):
     if not settings.YANDEX_MAPS_API_KEY:
         raise HTTPException(status_code=503, detail="YANDEX_MAPS_API_KEY не задан")
 
