@@ -88,13 +88,29 @@ export function onSedWsUpdate() {
     if (STATE.visible) _fetchAndRender();
 }
 
+// Если последняя синхронизация старше этого TTL — считаем что расширение
+// больше не работает (удалили / отключили / умерла cookie-сессия в СЭД)
+// и показываем юзеру onboarding обратно. Без этого после удаления плагина
+// в UI висели бы старые письма как живые.
+const STALE_TTL_MS = 30 * 60 * 1000;   // 30 минут
+
+function _isSnapshotFresh(snap) {
+    if (!snap || !snap.taken_at) return false;
+    const ageMs = Date.now() - new Date(snap.taken_at).getTime();
+    return ageMs < STALE_TTL_MS;
+}
+
 async function _fetchAndRender() {
     if (!STATE.visible) return;
     try {
         const snap = await api.get('/sed/snapshot');
-        STATE.snapshot = snap;   // null если расширение ещё ничего не прислало
-        _renderBadge(snap);
-        _renderList(snap);
+        // Если snapshot старше 30 минут — расширение не активно, показываем
+        // onboarding (как при первом запуске). Иначе UI висел бы со старыми
+        // данными даже после удаления расширения.
+        const fresh = _isSnapshotFresh(snap);
+        STATE.snapshot = fresh ? snap : null;
+        _renderBadge(fresh ? snap : null);
+        _renderList(fresh ? snap : null);
     } catch (err) {
         // 403 — у юзера сняли permission. Просто прячем кнопку.
         if (err && err.status === 403) {
@@ -159,12 +175,20 @@ function _renderList(snap) {
     // Привязка клика по заголовку письма — открывает модалку просмотра
     // в pods2 вместо перехода в СЭД. Делегирование, потому что innerHTML
     // переписывается на каждый рефреш.
+    //
+    // Открываем через requestAnimationFrame: текущий click event закончит
+    // propagate ДО создания модалки в DOM. Без этого click bubbles up
+    // через document, и затем модалка появляется во время того же тика —
+    // в зависимости от других слушателей (poll, dropdown-close-on-outside)
+    // модалка могла закрываться на том же тике («открывается на секунду
+    // и резко закрывается»).
     list.querySelectorAll('.sed-item__title--btn').forEach(btn => {
         btn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             const nodeId = parseInt(btn.dataset.letterNodeId, 10);
-            if (nodeId) _openLetter(nodeId);
+            if (!nodeId) return;
+            requestAnimationFrame(() => _openLetter(nodeId));
         };
     });
 }
@@ -246,6 +270,13 @@ async function _openLetter(nodeId) {
     document.body.appendChild(modal);
 
     const close = () => modal.remove();
+    // Закрытие — только через крестик, Esc, или явный клик на overlay.
+    // mousedown/click внутри карточки НЕ должны пузыриться выше модалки —
+    // иначе document-level click handlers (например dropdown auto-close)
+    // могут закрыть что-нибудь ещё, и интерактив внутри модалки сломается.
+    const card = modal.querySelector('.sed-letter-modal__card');
+    card.addEventListener('mousedown', e => e.stopPropagation());
+    card.addEventListener('click',     e => e.stopPropagation());
     modal.querySelector('.sed-letter-modal__close').addEventListener('click', close);
     modal.addEventListener('click', e => { if (e.target === modal) close(); });
     document.addEventListener('keydown', function _onKey(e) {
