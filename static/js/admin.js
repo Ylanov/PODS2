@@ -3,11 +3,24 @@
 import { api } from './api.js';
 import { showError, showSuccess, formatRole, loadEventsDropdowns, getCachedEvents } from './ui.js';
 import { applyDuplicateHighlight, renderDuplicatesBanner } from './duplicates.js';
+import { subscribeRoom, unsubscribeRoom } from './websockets.js';
 
 // ─── Локальный кэш ────────────────────────────────────────────────────────────
 let availablePositions   = [];
 let availableDepartments = [];
 let currentEditorEventId = null;
+
+// Переключатель WS-room: при загрузке нового списка отписываемся от
+// предыдущего и подписываемся на новый. Так под нагрузкой 1000 онлайн
+// каждый юзер получает обновления только своего открытого списка,
+// а не всех 1000.
+function _switchEditorRoom(newId) {
+    if (currentEditorEventId && String(currentEditorEventId) !== String(newId)) {
+        unsubscribeRoom(`event:${currentEditorEventId}`);
+    }
+    currentEditorEventId = newId;
+    if (newId) subscribeRoom(`event:${newId}`);
+}
 let currentColumns       = []; // активная конфигурация столбцов загруженного списка
 let currentEditorData    = null; // полные данные загруженного события (для фильтрации)
 
@@ -121,7 +134,7 @@ export async function handleDeleteEvent() {
     try {
         await api.delete(`/admin/events/${currentEditorEventId}`);
         notify('Список успешно удалён');
-        currentEditorEventId = null;
+        _switchEditorRoom(null);
         el('editor-container').classList.add('hidden');
         el('editor-empty').classList.remove('hidden');
         await loadEventsDropdowns();
@@ -871,7 +884,7 @@ export function loadAdminEditor() {
             : 'Нет шаблонов. Создайте первый через «+ Новый список»');
         return;
     }
-    currentEditorEventId = eventId;
+    _switchEditorRoom(eventId);
     renderAdminEditor(eventId);
 }
 
@@ -882,7 +895,7 @@ export function loadAdminEditor() {
 export function autoLoadEditorOnChange() {
     const eventId = el('editor-event-id')?.value;
     if (!eventId) return;
-    currentEditorEventId = eventId;
+    _switchEditorRoom(eventId);
     renderAdminEditor(eventId);
 }
 
@@ -896,7 +909,7 @@ export function openEventInEditor(eventId) {
     if (!eventId) return;
     const sel = el('editor-event-id');
     if (sel) sel.value = String(eventId);
-    currentEditorEventId = eventId;
+    _switchEditorRoom(eventId);
     renderAdminEditor(eventId);
 }
 
@@ -1493,7 +1506,7 @@ function _bindSchedGridEvents(grid) {
                 await api.delete(`/admin/events/${eventId}`);
                 window.showSnackbar?.('Список успешно удалён', 'success');
                 if (currentEditorEventId == eventId) {
-                    currentEditorEventId = null;
+                    _switchEditorRoom(null);
                     document.getElementById('editor-container')?.classList.add('hidden');
                     document.getElementById('editor-empty')?.classList.remove('hidden');
                 }

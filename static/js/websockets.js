@@ -37,6 +37,11 @@ function connect() {
                 }));
             } catch (_) { /* noop */ }
         }
+
+        // Восстанавливаем все активные room-подписки после реконнекта.
+        // Без этого после короткого отрыва WS пользователь перестал бы
+        // получать обновления открытого списка до F5.
+        _resubscribeAllRooms();
     };
 
     ws.onmessage = function (event) {
@@ -169,6 +174,32 @@ export function sendMessage(data) {
         return;
     }
     ws.send(JSON.stringify(data));
+}
+
+// ─── Rooms (универсальные подписки) ────────────────────────────────────────
+// Помнящий клиент: при reconnect автоматически восстанавливает все активные
+// подписки. Без этого после кратковременного отвала WS пользователь
+// перестал бы получать обновления своего открытого списка до F5.
+const _activeRooms = new Set();
+
+export function subscribeRoom(room) {
+    if (!room) return;
+    _activeRooms.add(room);
+    sendMessage({ type: 'subscribe', room });
+}
+
+export function unsubscribeRoom(room) {
+    if (!room) return;
+    _activeRooms.delete(room);
+    sendMessage({ type: 'unsubscribe', room });
+}
+
+function _resubscribeAllRooms() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    for (const room of _activeRooms) {
+        try { ws.send(JSON.stringify({ type: 'subscribe', room })); }
+        catch (_) { /* noop — соединение валится, переподключение тоже придёт */ }
+    }
 }
 
 export function initWebSocket() {

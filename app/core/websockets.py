@@ -29,12 +29,32 @@ from typing import Dict, Optional, Set
 from fastapi import WebSocket, WebSocketDisconnect
 
 
+# Маппинг action → room. Если в broadcast message нет event_id, но есть
+# знакомый action из этого списка — шлём только подписчикам соотв-ей комнаты.
+#
+# Сейчас — пустой: чтобы не ломать функционал на этапе перехода
+# (alert_lists / combat_calc / persons-модули ещё не научились шлёт
+# subscribe-сообщения). По мере подключения подписки на фронте
+# переносим actions сюда — это снижает нагрузку постепенно.
+#
+# Этап 1: только event:N работает через rooms (сделано).
+# Этап 2: добавляем "alert_lists_update": "alert_lists" + фронт-subscribe.
+_ACTION_ROOM_MAP: Dict[str, str] = {}
+
+
 class ConnectionManager:
     def __init__(self) -> None:
         # Все активные соединения
         self._connections: Set[WebSocket] = set()
-        # Подписки: websocket → event_id (или None если не подписан)
+        # Подписки на конкретный event_id (legacy): websocket → event_id|None.
+        # Сохранено для бэк-совместимости со старым broadcast({event_id}).
         self._subscriptions: Dict[WebSocket, Optional[int]] = {}
+        # Универсальные rooms: room → set[websocket]. Любой строковый ключ:
+        # "event:42", "alert_lists", "duty:5", "combat_calc:7".
+        # При 1000 онлайн каждое изменение списка X шлёт только подписчикам
+        # room="event:X" (5-20 человек), а не всем 1000.
+        self._rooms: Dict[str, Set[WebSocket]] = {}
+        self._ws_rooms: Dict[WebSocket, Set[str]] = {}
         # Идентификация юзера: websocket → user_id (для персональных уведомлений)
         # Устанавливается клиентом через {"type":"identify","user_id":N}.
         # user_id → set[websocket] — быстрый lookup для push_to_user.
@@ -60,6 +80,13 @@ class ConnectionManager:
         async with self._lock:
             self._connections.discard(websocket)
             self._subscriptions.pop(websocket, None)
+            # Чистим rooms — иначе утечка ws-ссылок при долгих сессиях.
+            for room in self._ws_rooms.pop(websocket, set()):
+                bucket = self._rooms.get(room)
+                if bucket:
+                    bucket.discard(websocket)
+                    if not bucket:
+                        self._rooms.pop(room, None)
             uid = self._user_by_ws.pop(websocket, None)
             if uid is not None:
                 bucket = self._ws_by_user.get(uid)
@@ -118,80 +145,106 @@ class ConnectionManager:
     # ─── Подписки ─────────────────────────────────────────────────────────────
 
     async def subscribe(self, websocket: WebSocket, event_id: int) -> None:
-        """Подписывает соединение на конкретный event_id."""
+        """Legacy: подписка на event_id. Внутри переадресуется в room 'event:N'."""
+        await self.subscribe_room(websocket, f"event:{event_id}")
         async with self._lock:
             if websocket in self._subscriptions:
                 self._subscriptions[websocket] = event_id
 
     async def unsubscribe(self, websocket: WebSocket) -> None:
-        """Снимает подписку с соединения."""
+        """Legacy: снимает event_id-подписку (room тоже очистится)."""
         async with self._lock:
+            old_eid = self._subscriptions.get(websocket)
             if websocket in self._subscriptions:
                 self._subscriptions[websocket] = None
+        if old_eid is not None:
+            await self.unsubscribe_room(websocket, f"event:{old_eid}")
+
+    # ─── Universal rooms ──────────────────────────────────────────────────────
+    # Любой строковый ключ-комната: "event:42", "alert_lists", "combat_calc:7".
+    # Один websocket может быть подписан на N rooms (например, открыл вкладку
+    # «Карта ОД» + получает уведомления по своему управлению).
+
+    async def subscribe_room(self, websocket: WebSocket, room: str) -> None:
+        if not room:
+            return
+        async with self._lock:
+            if websocket not in self._connections:
+                return
+            self._rooms.setdefault(room, set()).add(websocket)
+            self._ws_rooms.setdefault(websocket, set()).add(room)
+
+    async def unsubscribe_room(self, websocket: WebSocket, room: str) -> None:
+        if not room:
+            return
+        async with self._lock:
+            bucket = self._rooms.get(room)
+            if bucket:
+                bucket.discard(websocket)
+                if not bucket:
+                    self._rooms.pop(room, None)
+            ws_set = self._ws_rooms.get(websocket)
+            if ws_set:
+                ws_set.discard(room)
+                if not ws_set:
+                    self._ws_rooms.pop(websocket, None)
+
+    async def push_to_room(self, room: str, message: dict) -> None:
+        """Отправить сообщение всем подписанным на эту room. ~5-20 ws вместо 1000."""
+        text = json.dumps(message)
+        async with self._lock:
+            targets = list(self._rooms.get(room, ()))
+        await self._send_with_cleanup(targets, text)
 
     # ─── Рассылка ─────────────────────────────────────────────────────────────
 
-    async def broadcast(self, message: dict) -> None:
-        """
-        Рассылает сообщение с учётом подписок.
-
-        Логика:
-          - Если в сообщении есть event_id — отправляем только тем, кто подписан
-            на этот event_id. Остальные не тревожатся.
-          - Если event_id нет (combat_calc_update и т.п.) — отправляем всем.
-            Это глобальные события, они редкие.
-        """
-        text       = json.dumps(message)
-        target_eid = message.get("event_id")   # None если глобальное сообщение
-
-        async with self._lock:
-            # Снимаем snapshot чтобы не держать лок во время IO
-            snapshot = dict(self._subscriptions)
-
-        targets  = []
-        for ws, subscribed_eid in snapshot.items():
-            if target_eid is None:
-                # Глобальное сообщение — всем
-                targets.append(ws)
-            elif subscribed_eid == target_eid:
-                # Точечное сообщение — только подписчикам этого события
-                targets.append(ws)
-
+    async def _send_with_cleanup(self, targets: list, text: str) -> None:
+        """Шлёт text всем сокетам, мёртвые удаляет из всех структур."""
         failed = []
         for ws in targets:
             try:
                 await ws.send_text(text)
             except Exception:
                 failed.append(ws)
-
-        # Удаляем мёртвые соединения
         if failed:
-            async with self._lock:
-                for ws in failed:
-                    self._connections.discard(ws)
-                    self._subscriptions.pop(ws, None)
+            for ws in failed:
+                # Параллельные disconnect'ы — каждый берёт свой lock внутри.
+                await self.disconnect(ws)
+
+    async def broadcast(self, message: dict) -> None:
+        """
+        Универсальный вход: маршрутизация на rooms.
+
+        Логика:
+          • Если в message['event_id'] — push в room "event:{id}".
+          • Если message['action'] и есть room-маппинг — push в свою room
+            (alert_lists_update → "alert_lists", combat_calc_update → "combat_calc",
+            person_update → "persons").
+          • Если ни того ни другого — broadcast_all (глобальное сообщение).
+
+        Для 1000 онлайн это превращает «каждое изменение списка X шлёт всем 1000»
+        в «5-20 подписчикам комнаты event:X».
+        """
+        target_eid = message.get("event_id")
+        if target_eid is not None:
+            await self.push_to_room(f"event:{target_eid}", message)
+            return
+
+        action = message.get("action") or ""
+        room = _ACTION_ROOM_MAP.get(action)
+        if room:
+            await self.push_to_room(room, message)
+            return
+
+        # Действие неизвестно или явно глобальное — всем.
+        await self.broadcast_all(message)
 
     async def broadcast_all(self, message: dict) -> None:
-        """
-        Безусловная рассылка всем клиентам (используется для системных уведомлений).
-        """
+        """Безусловная рассылка всем клиентам (системные уведомления)."""
         text = json.dumps(message)
-
         async with self._lock:
             snapshot = list(self._connections)
-
-        failed = []
-        for ws in snapshot:
-            try:
-                await ws.send_text(text)
-            except Exception:
-                failed.append(ws)
-
-        if failed:
-            async with self._lock:
-                for ws in failed:
-                    self._connections.discard(ws)
-                    self._subscriptions.pop(ws, None)
+        await self._send_with_cleanup(snapshot, text)
 
     @property
     def connection_count(self) -> int:
@@ -242,15 +295,23 @@ async def handle_websocket_connection(websocket: WebSocket) -> None:
                 except Exception:
                     break
 
-            # ── Подписка на событие ───────────────────────────────────────────
+            # ── Подписка на event_id (legacy) или произвольную room ───────────
             elif msg_type == "subscribe":
-                event_id = payload.get("event_id")
-                if isinstance(event_id, int):
-                    await manager.subscribe(websocket, event_id)
+                room = payload.get("room")
+                if isinstance(room, str) and room:
+                    await manager.subscribe_room(websocket, room)
+                else:
+                    event_id = payload.get("event_id")
+                    if isinstance(event_id, int):
+                        await manager.subscribe(websocket, event_id)
 
-            # ── Отписка ───────────────────────────────────────────────────────
+            # ── Отписка от конкретной room или сразу от event_id (legacy) ─────
             elif msg_type == "unsubscribe":
-                await manager.unsubscribe(websocket)
+                room = payload.get("room")
+                if isinstance(room, str) and room:
+                    await manager.unsubscribe_room(websocket, room)
+                else:
+                    await manager.unsubscribe(websocket)
 
             # ── Идентификация для персональных уведомлений ────────────────────
             elif msg_type == "identify":

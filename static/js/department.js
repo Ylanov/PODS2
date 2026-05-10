@@ -3,6 +3,7 @@
 import { api } from './api.js';
 import { showError, updateDeptCardProgress, formatRole } from './ui.js';
 import { attach as attachFio } from './fio_autocomplete.js';
+import { subscribeRoom, unsubscribeRoom } from './websockets.js';
 
 // ─── Состояние модуля ─────────────────────────────────────────────────────────
 let groupedData    = {};
@@ -223,7 +224,15 @@ export function loadMySlots() {
 
     if (!eventId) return showError('Выберите список из выпадающего меню');
 
+    // Переключаем WS-room на новый event: отписка от старого + подписка
+    // на новый. Без этого фронт получал бы обновления только если все
+    // 1000 пользователей слушали бы все события — теперь только подписчики
+    // конкретного списка.
+    if (currentEventId && String(currentEventId) !== String(eventId)) {
+        unsubscribeRoom(`event:${currentEventId}`);
+    }
     currentEventId = eventId;
+    subscribeRoom(`event:${eventId}`);
     renderMySlots(eventId);
 }
 

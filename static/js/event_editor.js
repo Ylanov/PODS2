@@ -18,6 +18,7 @@ import { api } from './api.js';
 import { formatRole } from './ui.js';
 import { attach as attachFio } from './fio_autocomplete.js';
 import { applyDuplicateHighlight, renderDuplicatesBanner } from './duplicates.js';
+import { subscribeRoom, unsubscribeRoom } from './websockets.js';
 
 const WEEKDAYS_FULL = [
     'Воскресенье', 'Понедельник', 'Вторник', 'Среда',
@@ -62,6 +63,10 @@ const _state = {
 export async function openEventEditor(eventId) {
     _state.eventId  = eventId;
     _state.saving.clear();
+
+    // Подписываемся на WS-комнату списка — при изменениях в нём (другой
+    // юзер сохранил слот) бэк пушит обновление, фронт перерисует.
+    if (eventId) subscribeRoom(`event:${eventId}`);
 
     _openShellModal();
 
@@ -172,6 +177,7 @@ function _closeModal() {
     if (modal?._escHandler) document.removeEventListener('keydown', modal._escHandler);
     modal?.remove();
     document.removeEventListener('datachanged', _handleWsUpdate);
+    if (_state.eventId) unsubscribeRoom(`event:${_state.eventId}`);
     _state.eventId = null;
 }
 
