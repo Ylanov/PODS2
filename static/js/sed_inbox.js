@@ -155,6 +155,18 @@ function _renderList(snap) {
             ? `Обновлено ${t.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
             : '';
     }
+
+    // Привязка клика по заголовку письма — открывает модалку просмотра
+    // в pods2 вместо перехода в СЭД. Делегирование, потому что innerHTML
+    // переписывается на каждый рефреш.
+    list.querySelectorAll('.sed-item__title--btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const nodeId = parseInt(btn.dataset.letterNodeId, 10);
+            if (nodeId) _openLetter(nodeId);
+        };
+    });
 }
 
 function _renderSection(section) {
@@ -184,21 +196,25 @@ function _renderSection(section) {
 
 function _renderItem(item) {
     const nodeId  = parseInt(item.node_id, 10);
-    const nodeUrl = nodeId ? `https://sed.mchs.ru/node/${nodeId}` : null;
 
+    // Файлы: показываем максимум 5 в превью. По клику на письмо
+    // (не на файл) откроется модалка с полным списком.
     const filesHtml = (item.files || []).slice(0, 5).map(f => {
         if (!f || !f.url) return '';
         return `
             <a class="sed-file" href="${_esc(f.url)}"
                target="_blank" rel="noopener noreferrer"
-               title="Скачать вложение">
+               title="Открыть вложение в СЭД (через cookie-сессию)">
                 📎 ${_esc(f.name || 'Файл')}
             </a>`;
     }).join('');
 
-    const titleEl = nodeUrl
-        ? `<a class="sed-item__title" href="${_esc(nodeUrl)}"
-              target="_blank" rel="noopener noreferrer">${_esc(item.title || '—')}</a>`
+    // Title — кликабельный, открывает модалку с телом (если она уже
+    // загружена расширением). Без node_id — просто текст.
+    const titleEl = nodeId
+        ? `<button class="sed-item__title sed-item__title--btn" type="button"
+                  data-letter-node-id="${nodeId}"
+                  title="Открыть письмо в pods2 (без перехода в СЭД)">${_esc(item.title || '—')}</button>`
         : `<span class="sed-item__title">${_esc(item.title || '—')}</span>`;
 
     return `
@@ -206,6 +222,119 @@ function _renderItem(item) {
             ${titleEl}
             ${filesHtml ? `<div class="sed-item__files">${filesHtml}</div>` : ''}
         </div>`;
+}
+
+
+// ─── Модалка просмотра письма ────────────────────────────────────────────
+
+async function _openLetter(nodeId) {
+    document.getElementById('sed-letter-modal')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'sed-letter-modal';
+    modal.className = 'sed-letter-modal';
+    modal.innerHTML = `
+        <div class="sed-letter-modal__card">
+            <div class="sed-letter-modal__head">
+                <strong style="flex:1;">Письмо #${nodeId}</strong>
+                <button class="sed-letter-modal__close" type="button" aria-label="Закрыть">✕</button>
+            </div>
+            <div class="sed-letter-modal__body">
+                <p style="text-align:center; padding:30px; color:var(--md-on-surface-variant);">Загрузка…</p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    modal.querySelector('.sed-letter-modal__close').addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function _onKey(e) {
+        if (e.key === 'Escape') {
+            close();
+            document.removeEventListener('keydown', _onKey);
+        }
+    });
+
+    let letter;
+    try {
+        letter = await api.get(`/sed/letter/${nodeId}`);
+    } catch (err) {
+        modal.querySelector('.sed-letter-modal__body').innerHTML = `
+            <div class="sed-letter-modal__notfound">
+                <p><b>Письмо ещё не загружено в pods2.</b></p>
+                <p>Расширение СЭД-моста подтянет его при следующей синхронизации
+                    (раз в 5 минут). Можно дождаться или нажать «Синхронизировать»
+                    в popup-е расширения. До этого момента — открыть в самом СЭД:</p>
+                <p><a href="https://sed.mchs.ru/node/${nodeId}" target="_blank" rel="noopener noreferrer">
+                    https://sed.mchs.ru/node/${nodeId}</a></p>
+            </div>
+        `;
+        return;
+    }
+
+    _renderLetter(modal, letter);
+}
+
+
+function _renderLetter(modal, letter) {
+    const meta = letter.meta || {};
+    // Маппинг ключей из META_FIELD_MAP (см. parser.js) в человеческие подписи
+    const META_LABELS = {
+        status:           'Состояние',
+        doc_type:         'Вид документа',
+        priority:         'Срочность',
+        summary:          'Содержание',
+        internal_no:      'Номер/дата',
+        addressee:        'Адресат',
+        executor:         'Исполнитель',
+        signer:           'Подписант',
+        with_signature:   'ЭП',
+        sheets_count:     'Кол-во листов',
+        attachments_cnt:  'Приложений',
+    };
+    const metaRows = Object.entries(META_LABELS)
+        .filter(([k]) => meta[k])
+        .map(([k, label]) => `
+            <div class="sed-letter-meta-row">
+                <span class="sed-letter-meta-row__label">${_esc(label)}:</span>
+                <span class="sed-letter-meta-row__value">${_esc(meta[k])}</span>
+            </div>
+        `).join('');
+
+    const filesHtml = (letter.files || []).map(f => `
+        <a class="sed-letter-file" href="${_esc(f.url)}"
+           target="_blank" rel="noopener noreferrer"
+           title="Открыть в СЭД (через cookie-сессию)">
+            📎 ${_esc(f.name || 'Файл')}
+            ${f.size ? `<small>${_fmtSize(f.size)}</small>` : ''}
+        </a>
+    `).join('');
+
+    const fetchedTime = letter.fetched_at
+        ? new Date(letter.fetched_at).toLocaleString('ru-RU')
+        : '';
+
+    modal.querySelector('.sed-letter-modal__head strong').textContent = letter.title || `Письмо #${letter.node_id}`;
+    modal.querySelector('.sed-letter-modal__body').innerHTML = `
+        ${metaRows ? `<div class="sed-letter-meta">${metaRows}</div>` : ''}
+        ${filesHtml ? `
+            <div class="sed-letter-files">
+                <h4 class="sed-letter-files__h">Файлы</h4>
+                ${filesHtml}
+            </div>` : ''}
+        <div class="sed-letter-body">
+            ${letter.body_html || '<p style="color:var(--md-on-surface-variant);"><i>Тело письма пустое.</i></p>'}
+        </div>
+        ${fetchedTime ? `<p class="sed-letter-modal__fetched">Загружено: ${fetchedTime}</p>` : ''}
+    `;
+}
+
+
+function _fmtSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 }
 
 

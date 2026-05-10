@@ -48,7 +48,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user, require_permission
 from app.core.websockets import manager
 from app.db.database import get_db
-from app.models.sed_inbox import SedInboxSnapshot
+from app.models.sed_inbox import SedInboxSnapshot, SedLetter
 from app.models.user import User
 
 
@@ -176,6 +176,111 @@ def delete_snapshot(
         SedInboxSnapshot.user_id == current_user.id
     ).delete(synchronize_session=False)
     db.commit()
+
+
+# ─── Письма (тело + метаданные, кеш в pods2) ─────────────────────────────
+
+class SedLetterFile(BaseModel):
+    name: str = Field(..., max_length=500)
+    url:  str = Field(..., max_length=2000)
+    size: Optional[int] = None
+    mime: Optional[str] = Field(default=None, max_length=120)
+
+
+class SedLetterIn(BaseModel):
+    """Что присылает расширение после парсинга /node/{N}."""
+    node_id:    int = Field(..., gt=0)
+    title:      str = Field(..., max_length=2000)
+    body_html:  str = Field(default="", max_length=500_000)   # 500KB на письмо хватит с запасом
+    meta:       dict = Field(default_factory=dict)
+    files:      list[SedLetterFile] = []
+
+
+class SedLetterOut(BaseModel):
+    node_id:    int
+    title:      str
+    body_html:  str
+    meta:       dict
+    files:      list[SedLetterFile]
+    fetched_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.post("/letter", response_model=SedLetterOut, status_code=200,
+             summary="Сохранить полное письмо от расширения (UPSERT по user+node)")
+def upsert_letter(
+    payload:      SedLetterIn,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    Расширение по cookie-сессии скачивает /node/{N}, парсит, шлёт сюда.
+    Pods2 кеширует — в UI письмо открывается из БД, без перехода в СЭД.
+
+    Важно: тело уже очищено расширением от workflow-кнопок (делегировать,
+    ознакомлен, расписать, и т.п.). На бэке доп. санитизация — на уровне
+    исключительно нежелательного — уже не нужна, отдаём фронту что есть.
+    """
+    row = (
+        db.query(SedLetter)
+        .filter(
+            SedLetter.user_id == current_user.id,
+            SedLetter.node_id == payload.node_id,
+        )
+        .first()
+    )
+    if row is None:
+        row = SedLetter(user_id=current_user.id, node_id=payload.node_id)
+        db.add(row)
+
+    row.title     = payload.title
+    row.body_html = payload.body_html
+    row.set_meta(payload.meta)
+    row.set_files([f.model_dump() for f in payload.files])
+    row.fetched_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(row)
+
+    return SedLetterOut(
+        node_id=row.node_id,
+        title=row.title,
+        body_html=row.body_html,
+        meta=row.get_meta(),
+        files=[SedLetterFile(**f) for f in row.get_files()],
+        fetched_at=row.fetched_at,
+    )
+
+
+@router.get("/letter/{node_id}", response_model=SedLetterOut,
+            summary="Получить кешированное письмо по node_id")
+def get_letter(
+    node_id:      int,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    row = (
+        db.query(SedLetter)
+        .filter(
+            SedLetter.user_id == current_user.id,
+            SedLetter.node_id == node_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail="Письмо ещё не было загружено расширением. "
+                   "Откройте СЭД и подождите следующей синхронизации.",
+        )
+    return SedLetterOut(
+        node_id=row.node_id,
+        title=row.title,
+        body_html=row.body_html,
+        meta=row.get_meta(),
+        files=[SedLetterFile(**f) for f in row.get_files()],
+        fetched_at=row.fetched_at,
+    )
 
 
 # ─── Скачивание расширения (zip) ─────────────────────────────────────────────

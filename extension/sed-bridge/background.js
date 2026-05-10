@@ -7,7 +7,7 @@
 // Ничего не хранит локально кроме настроек (URL pods2 + токен) и
 // статуса последней синхронизации.
 
-import { extractCount, extractItems, isLoginPage } from "./parser.js";
+import { extractCount, extractItems, extractLetter, isLoginPage } from "./parser.js";
 
 const SED_BASE = "https://sed.mchs.ru";
 const ALARM    = "sed-sync";
@@ -184,7 +184,7 @@ async function syncNow() {
     await chrome.storage.local.set({ last_total: total });
     await saveStatus({
         kind:    "ok",
-        message: `Дайджест отправлен. Всего непрочитанных: ${total}.`,
+        message: `Дайджест отправлен. Всего непрочитанных: ${total}. Загружаем тела писем…`,
     });
 
     // Обновим бейдж на иконке расширения
@@ -193,5 +193,101 @@ async function syncNow() {
         await chrome.action.setBadgeText({ text: total > 0 ? String(total > 99 ? "99+" : total) : "" });
     } catch {}
 
+    // Тянем тела писем — в фоне, отдельно от snapshot. Если упадёт — не
+    // блокируем основной флоу (snapshot уже отправлен). Один раз на
+    // node_id за сессию: храним set'ом отправленных в storage.local.
+    fetchAndSendLetters(result, settings).catch(err => {
+        console.warn("[sed-bridge] fetchAndSendLetters:", err);
+    });
+
     return { sent: true, total };
+}
+
+
+/**
+ * Для каждого письма из всех секций — открываем /node/{N}, парсим тело
+ * (extractLetter) и шлём в pods2 POST /api/v1/sed/letter.
+ *
+ * Дедупликация: храним set «уже отправленных» letter-id в текущей сессии,
+ * чтобы при следующем тике не качать заново. Cache на стороне pods2 —
+ * это server-side кеш через UPSERT по (user_id, node_id).
+ */
+async function fetchAndSendLetters(sections, settings) {
+    const stored = await chrome.storage.local.get(["sent_letters"]);
+    const sentSet = new Set(Array.isArray(stored.sent_letters) ? stored.sent_letters : []);
+
+    // Уникальные node_id из всех секций (письмо может быть в нескольких)
+    const seen = new Set();
+    const queue = [];
+    for (const section of sections) {
+        for (const it of (section.items || [])) {
+            if (!it.node_id || seen.has(it.node_id)) continue;
+            seen.add(it.node_id);
+            queue.push(it.node_id);
+        }
+    }
+
+    if (!queue.length) return;
+
+    const podsUrl = settings.pods2_url.replace(/\/+$/, "");
+    let sentCount = 0;
+    let failCount = 0;
+    // Лимит на тик: 30 писем за раз. Иначе при 100+ непрочитанных
+    // первый запуск делал бы сотни запросов в СЭД и pods2 одновременно.
+    // Остальные подтянутся в следующем тике (через 5 минут).
+    const TICK_LIMIT = 30;
+
+    for (const nodeId of queue.slice(0, TICK_LIMIT)) {
+        if (sentSet.has(nodeId)) continue;
+        let html;
+        try {
+            html = await fetchSed(`/node/${nodeId}`);
+        } catch (err) {
+            failCount += 1;
+            continue;
+        }
+        if (isLoginPage(html)) {
+            // Сессия СЭД отвалилась посреди тика — прерываем
+            break;
+        }
+        const letter = extractLetter(html, nodeId);
+        if (!letter) {
+            failCount += 1;
+            continue;
+        }
+        try {
+            const r = await fetch(`${podsUrl}/api/v1/sed/letter`, {
+                method: "POST",
+                headers: {
+                    "Content-Type":  "application/json",
+                    "Authorization": `Bearer ${settings.pods2_token}`,
+                },
+                body: JSON.stringify(letter),
+            });
+            if (r.ok) {
+                sentCount += 1;
+                sentSet.add(nodeId);
+            } else {
+                failCount += 1;
+            }
+        } catch {
+            failCount += 1;
+        }
+
+        // Небольшой sleep между запросами — не валим СЭД и pods2.
+        await new Promise(r => setTimeout(r, 250));
+    }
+
+    // Сохраняем дедуп-set обратно (ограничиваем размер чтобы не разрастался).
+    const sentArr = Array.from(sentSet);
+    await chrome.storage.local.set({
+        sent_letters: sentArr.slice(-500),
+    });
+
+    if (sentCount > 0 || failCount > 0) {
+        await saveStatus({
+            kind:    sentCount ? "ok" : "warn",
+            message: `Тела писем: загружено ${sentCount}${failCount ? `, ошибок ${failCount}` : ""}.`,
+        });
+    }
 }

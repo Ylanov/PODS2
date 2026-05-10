@@ -118,3 +118,150 @@ export function isLoginPage(html) {
     return /class="[^"]*\bnot-logged-in\b[^"]*"/.test(html)
         || /id="user-login-form"/.test(html);
 }
+
+
+// ─── Парсер страницы письма /node/{N} ────────────────────────────────────
+
+// Маппинг технических field-name → читаемых ключей. Расширяем по мере
+// встречи новых полей. То что не в маппинге — попадает в meta под своим
+// техническим именем (для отладки и форвард-совместимости).
+const META_FIELD_MAP = {
+    "extra-status-new":   "status",          // Состояние документа
+    "do-type":            "doc_type",        // Вид документа
+    "do-priority":        "priority",        // Срочность
+    "do-body":            "summary",         // Содержание (краткое)
+    "extra-internal-new": "internal_no",     // Номер/дата внутреннего
+    "do-corr":            "addressee",       // Адресат
+    "extra-executors":    "executor",        // Исполнитель
+    "extra-signer":       "signer",          // Подписант
+    "do-is-ds":           "with_signature",  // Документ с ЭП
+    "base-doc-sheet":     "sheets_count",    // Кол-во листов
+    "base-doc-attach":    "attachments_cnt", // Кол-во приложений
+};
+
+/**
+ * Извлекает письмо из HTML страницы /node/{N}.
+ * Возвращает { node_id, title, body_html, meta, files } или null если
+ * страница не похожа на документ (нет h1.page-header).
+ *
+ * body_html — содержимое .region-content, очищенное от:
+ *   • .node-actions-wrapper (кнопки делегировать/расписать/закрыть)
+ *   • .tabs-wrap (вкладки переключения видов документа)
+ *   • любые <a> с use-ajax классом (модальные действия)
+ *   • <script>, <style>, on*-атрибуты (защита от инъекций)
+ *
+ * Пользователь явно запретил workflow-действия в pods2.
+ */
+export function extractLetter(html, nodeId) {
+    if (!html) return null;
+
+    // Title: <h1 class="page-header">…</h1>
+    const titleMatch = html.match(/<h1[^>]*class="[^"]*page-header[^"]*"[^>]*>([\s\S]*?)<\/h1>/i);
+    if (!titleMatch) return null;
+    const title = decodeEntities(stripTags(titleMatch[1])).slice(0, 1000);
+
+    // Meta-поля. Один проход regex'ом по всему HTML.
+    const meta = {};
+    const fieldRe = /class="field field-name-field-([a-z0-9-]+)[^"]*"[\s\S]{0,400}?<div class="field-label">([^<]+)<\/div>[\s\S]{0,2000}?<div class="field-item even">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+    let fm;
+    while ((fm = fieldRe.exec(html)) !== null) {
+        const tech  = fm[1];
+        const label = decodeEntities(stripTags(fm[2])).replace(/[:\s]+$/, "").trim();
+        const valHtml = fm[3];
+        const val   = decodeEntities(stripTags(valHtml)).trim();
+        const key   = META_FIELD_MAP[tech] || `_${tech}`;
+        if (val) {
+            meta[key] = val;
+            // На всякий случай сохраняем человеческий label (для форвард-совместимости)
+            if (!META_FIELD_MAP[tech]) meta[`${key}__label`] = label;
+        }
+    }
+
+    // Файлы — ссылки на /systems3/files/. Ищем уникальные URL.
+    const files = [];
+    const seen = new Set();
+    const fileRe = /<a[^>]+href="(https:\/\/sed\.mchs\.ru\/systems3\/files\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+    let xm;
+    while ((xm = fileRe.exec(html)) !== null) {
+        const url = xm[1];
+        if (seen.has(url)) continue;
+        seen.add(url);
+        // Имя файла — приоритетно из <span class="file-title">, иначе из innerHTML <a>,
+        // иначе из URL.
+        let name = "";
+        const ftMatch = xm[2].match(/<span class="file-title">([\s\S]*?)<\/span>/);
+        if (ftMatch) name = decodeEntities(stripTags(ftMatch[1]));
+        if (!name) name = decodeEntities(stripTags(xm[2]));
+        if (!name) {
+            try { name = decodeURIComponent(url.split("/").pop().split("?")[0]); }
+            catch { name = url.split("/").pop(); }
+        }
+        files.push({ name: name.slice(0, 300), url });
+        if (files.length >= 30) break;
+    }
+
+    // Body — содержимое .region-content, очищенное от workflow.
+    // Берём последнее вхождение region-content (Drupal иногда даёт
+    // вложенные region'ы; основной — последний).
+    let bodyHtml = "";
+    const regionRe = /<div class="region region-content">([\s\S]*?)<\/div>\s*<\/main>/;
+    const regionMatch = html.match(regionRe);
+    if (regionMatch) {
+        bodyHtml = regionMatch[1];
+    } else {
+        // Fallback — после <h1 class="page-header"> до </main>
+        const i = html.indexOf("page-header");
+        if (i > 0) {
+            const tail = html.slice(i, i + 200_000);
+            const closeMain = tail.indexOf("</main>");
+            bodyHtml = tail.slice(tail.indexOf("</h1>") + 5, closeMain > 0 ? closeMain : tail.length);
+        }
+    }
+    bodyHtml = sanitizeBody(bodyHtml);
+
+    return {
+        node_id: nodeId,
+        title,
+        body_html: bodyHtml,
+        meta,
+        files,
+    };
+}
+
+
+/**
+ * Чистит HTML тела от:
+ *   • node-actions-wrapper (кнопки делегировать/расписать/ознакомлен)
+ *   • tabs-wrap (вкладки переключения)
+ *   • <a class="use-ajax ...">  (модалки workflow)
+ *   • <script>, <style>
+ *   • on*-атрибуты (onclick и пр.)
+ *
+ * Жёстких санитайзеров типа DOMPurify нет (в service worker нет DOM API),
+ * поэтому работаем regex'ами. Этого достаточно для вырезания понятных
+ * паттернов Drupal'а — фронт отрисует через innerHTML с CSP,
+ * который запрещает inline-script.
+ */
+function sanitizeBody(html) {
+    if (!html) return "";
+    return html
+        // node-actions-wrapper и его содержимое
+        .replace(/<div[^>]*class="[^"]*node-actions-wrapper[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi, "")
+        // tabs-wrap (вкладки)
+        .replace(/<div[^>]*class="[^"]*tabs-wrap[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi, "")
+        // <a class="use-ajax ..."> — модальные действия СЭД
+        .replace(/<a[^>]*class="[^"]*use-ajax[^"]*"[^>]*>[\s\S]*?<\/a>/gi, "")
+        // dropdown-menu (меню действий)
+        .replace(/<ul[^>]*class="[^"]*dropdown-menu[^"]*"[\s\S]*?<\/ul>/gi, "")
+        // <script>, <style>
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+        // on*-атрибуты (onclick="..." и т.д.)
+        .replace(/\s+on[a-z]+\s*=\s*"[^"]*"/gi, "")
+        .replace(/\s+on[a-z]+\s*=\s*'[^']*'/gi, "")
+        // Лишние пробелы (косметика)
+        .replace(/\s{2,}/g, " ")
+        .trim()
+        // Урезаем — на всякий случай (бэк всё равно лимитирует 500KB)
+        .slice(0, 400_000);
+}

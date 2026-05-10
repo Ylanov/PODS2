@@ -64,3 +64,72 @@ class SedInboxSnapshot(Base):
 
     def set_sections(self, sections: list[dict]) -> None:
         self.sections_json = json.dumps(sections, ensure_ascii=False)
+
+
+class SedLetter(Base):
+    """
+    Полное письмо/документ из СЭД, сохранённое в pods2 для офлайн-просмотра.
+
+    Расширение, у которого есть cookie-сессия СЭД, скачивает страницу
+    /node/{N}, парсит body+meta и POST'ит сюда. Pods2 кеширует на (user, node_id)
+    — переоткрытие письма потом не дёргает СЭД, всё уже в БД.
+
+    body_html — содержимое письма после очистки от workflow-кнопок.
+    Никаких ссылок «делегировать», «расписать», «ознакомлен» там быть не
+    должно — это требование пользователя (только просмотр и скачивание).
+
+    files_json — массив {name, url, size?, mime?} с URL'ами на sed.mchs.ru.
+    Сами файлы пока НЕ скачиваются (этап 2 — отдельный коммит).
+    """
+
+    __tablename__ = "sed_letters"
+
+    id        = Column(Integer, primary_key=True, index=True)
+    user_id   = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    node_id   = Column(Integer, nullable=False, index=True)
+    title     = Column(Text,    nullable=False)
+    body_html = Column(Text,    nullable=False, default="")
+    # Структурированные поля: vid_dokumenta, srochnost, status, nomer_data,
+    # adresat, ispolnitel, podpisant, kol_listov, etc. (плоский dict).
+    meta_json  = Column(Text, nullable=False, default="{}")
+    # Массив {name, url, size, mime}
+    files_json = Column(Text, nullable=False, default="[]")
+    # ISO-время взятия с СЭД (для UI «обновлено N минут назад»)
+    fetched_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    user = relationship("User")
+
+    __table_args__ = (
+        # Один node на пользователя — повторный POST с тем же node_id
+        # обновляет существующую запись.
+        UniqueConstraint("user_id", "node_id", name="uq_sed_letters_user_node"),
+    )
+
+    def get_meta(self) -> dict:
+        try:
+            data = json.loads(self.meta_json or "{}")
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
+    def set_meta(self, meta: dict) -> None:
+        self.meta_json = json.dumps(meta or {}, ensure_ascii=False)
+
+    def get_files(self) -> list[dict]:
+        try:
+            data = json.loads(self.files_json or "[]")
+            return data if isinstance(data, list) else []
+        except (json.JSONDecodeError, ValueError):
+            return []
+
+    def set_files(self, files: list[dict]) -> None:
+        self.files_json = json.dumps(files or [], ensure_ascii=False)
