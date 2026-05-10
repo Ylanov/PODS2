@@ -333,6 +333,68 @@ def analytics_overview(
     # Сортируем — больше пропусков сверху.
     uncovered.sort(key=lambda x: x["missing_count"], reverse=True)
 
+    # ── Тренды за последние 12 ISO-недель ───────────────────────────────────
+    # Считаем weekly-агрегаты: % заполнения списков (по событиям с date в
+    # неделе), число N-нарядов за неделю, среднее N на активного человека
+    # с нарядами в эту неделю.
+    weeks_count = 12
+    today_d = date_type.today()
+    # Понедельник текущей недели: weekday() — 0=пн, 6=вс.
+    cur_monday = today_d - timedelta(days=today_d.weekday())
+    week_starts = [cur_monday - timedelta(weeks=(weeks_count - 1 - i)) for i in range(weeks_count)]
+    week_labels = [d.strftime("%d.%m") for d in week_starts]
+
+    # Fill rate по неделям — берём слоты в реальных списках, чья event.date
+    # попадает в эту неделю. Если событий нет — null (не 0!), чтобы линия
+    # не «ныряла» к нулю в пустых неделях.
+    fill_rate_weekly: list = []
+    for ws in week_starts:
+        we = ws + timedelta(days=6)
+        row = (
+            db.query(
+                func.count(Slot.id).label("total"),
+                func.sum(is_filled).label("filled"),
+            )
+            .join(Group, Group.id == Slot.group_id)
+            .join(Event, Event.id == Group.event_id)
+            .filter(Event.is_template == False)
+            .filter(Event.date >= ws, Event.date <= we)
+            .first()
+        )
+        total  = int(row.total or 0) if row else 0
+        filled = int(row.filled or 0) if row else 0
+        fill_rate_weekly.append(
+            round(100 * filled / total, 1) if total else None
+        )
+
+    # N-наряды по неделям + среднее на человека с нарядами.
+    duty_count_weekly: list = []
+    avg_duty_weekly:  list = []
+    for ws in week_starts:
+        we = ws + timedelta(days=6)
+        rows = (
+            db.query(
+                DutyMark.person_id,
+                func.count(DutyMark.id).label("cnt"),
+            )
+            .filter(DutyMark.mark_type == MARK_DUTY)
+            .filter(DutyMark.duty_date >= ws, DutyMark.duty_date <= we)
+            .group_by(DutyMark.person_id)
+            .all()
+        )
+        total_n   = sum(int(r.cnt or 0) for r in rows)
+        unique_p  = len(rows)
+        duty_count_weekly.append(total_n)
+        avg_duty_weekly.append(round(total_n / unique_p, 2) if unique_p else None)
+
+    trends = {
+        "weeks":       week_labels,
+        "week_starts": [d.isoformat() for d in week_starts],
+        "fill_rate":   fill_rate_weekly,
+        "duty_count":  duty_count_weekly,
+        "duty_avg":    avg_duty_weekly,
+    }
+
     return {
         "totals":       totals,
         "users":        users,
@@ -344,4 +406,5 @@ def analytics_overview(
         "data_health":  data_health,
         "uncovered":    uncovered,
         "uncovered_month": {"year": month_start.year, "month": month_start.month},
+        "trends":       trends,
     }

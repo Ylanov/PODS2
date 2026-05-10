@@ -158,6 +158,85 @@
     }
 }
 
+/* ── Тренд-графики (SVG) ─────────────────────────────────────────────── */
+.analytics-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 14px;
+    margin-top: 10px;
+}
+.analytics-chart {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+}
+.analytics-chart__head {
+    margin-bottom: 6px;
+}
+.analytics-chart__title {
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+.analytics-chart__sub {
+    color: var(--md-on-surface-variant);
+    font-size: 0.74rem;
+    line-height: 1.3;
+}
+.analytics-chart__svg {
+    display: block;
+    width: 100%;
+    height: 200px;
+    margin-top: 4px;
+}
+.analytics-chart__grid {
+    stroke: var(--md-outline-variant);
+    stroke-dasharray: 2 3;
+    stroke-width: 1;
+    opacity: 0.6;
+}
+.analytics-chart__axis {
+    fill: var(--md-on-surface-variant);
+    font-size: 10px;
+    font-family: var(--md-font-mono);
+}
+.analytics-chart__dot {
+    transition: r 0.1s ease-out;
+    cursor: pointer;
+}
+.analytics-chart__dot:hover {
+    r: 5;
+}
+.analytics-chart__summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--md-outline-variant);
+    font-size: 0.82rem;
+    color: var(--md-on-surface-variant);
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.analytics-chart__delta--up   { color: #15803d; font-weight: 600; }
+.analytics-chart__delta--down { color: #b91c1c; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+    .analytics-chart__delta--up   { color: #4ade80; }
+    .analytics-chart__delta--down { color: #f87171; }
+}
+.analytics-chart__empty {
+    padding: 30px;
+    text-align: center;
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+    font-size: 0.84rem;
+}
+
 .analytics-table {
     width: 100%;
     border-collapse: collapse;

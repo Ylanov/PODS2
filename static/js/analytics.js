@@ -25,6 +25,7 @@ export async function loadAnalytics() {
 
     root.innerHTML = `
         ${_renderTotals(data.totals)}
+        ${_renderTrends(data.trends)}
         ${_renderDutyLoad(data.duty_load)}
         ${_renderDataHealth(data.data_health)}
         ${_renderUncovered(data.uncovered, data.uncovered_month)}
@@ -219,6 +220,184 @@ function _renderGhosts(ghosts, total) {
             </table>
         </section>
     `;
+}
+
+
+// ─── Тренды по неделям (SVG-line charts, без зависимостей) ───────────────
+
+/**
+ * Рисует SVG-линейный график.
+ * @param {object} opts
+ *   labels    — массив подписей по X (недели «01.05» и т.п.)
+ *   values    — массив чисел (или null где данных нет)
+ *   color     — основной цвет линии
+ *   suffix    — единица измерения для подписей точек («%», «', '')
+ *   title     — заголовок над графиком
+ *   subtitle  — пояснение мелким шрифтом
+ *   minMaxHint — опционально {min, max} чтобы зафиксировать диапазон
+ */
+function _lineChart({ labels, values, color, suffix = '', title, subtitle, minMaxHint }) {
+    const W = 720;        // viewBox-ширина (масштабируется по контейнеру)
+    const H = 200;
+    const PAD_L = 36;     // место под Y-метки слева
+    const PAD_R = 12;
+    const PAD_T = 16;
+    const PAD_B = 28;     // место под X-подписи внизу
+
+    const validVals = values.filter(v => v != null && Number.isFinite(v));
+    if (!validVals.length) {
+        return `
+            <div class="analytics-chart">
+                <div class="analytics-chart__head">
+                    <h3 class="analytics-chart__title">${_esc(title)}</h3>
+                    ${subtitle ? `<small class="analytics-chart__sub">${_esc(subtitle)}</small>` : ''}
+                </div>
+                <div class="analytics-chart__empty">Данных пока нет</div>
+            </div>
+        `;
+    }
+    let vMin = minMaxHint?.min ?? Math.min(...validVals);
+    let vMax = minMaxHint?.max ?? Math.max(...validVals);
+    if (vMin === vMax) { vMin = vMin - 1; vMax = vMax + 1; }   // не делим на 0
+    // Чуть-чуть «воздуха» сверху и снизу
+    const pad = (vMax - vMin) * 0.08;
+    vMin -= pad; vMax += pad;
+
+    const innerW = W - PAD_L - PAD_R;
+    const innerH = H - PAD_T - PAD_B;
+    const xAt = (i) => PAD_L + (innerW * i / Math.max(1, labels.length - 1));
+    const yAt = (v) => PAD_T + innerH - (innerH * (v - vMin) / (vMax - vMin));
+
+    // Y-tick: 4 уровня
+    const ticks = [];
+    for (let i = 0; i <= 3; i++) {
+        const t = vMin + (vMax - vMin) * (i / 3);
+        ticks.push(t);
+    }
+
+    // Строим path: пропускаем null'ы (разрывы линии).
+    let path = '';
+    let started = false;
+    values.forEach((v, i) => {
+        if (v == null || !Number.isFinite(v)) {
+            started = false;
+            return;
+        }
+        const x = xAt(i).toFixed(1);
+        const y = yAt(v).toFixed(1);
+        path += (started ? ' L ' : ' M ') + `${x} ${y}`;
+        started = true;
+    });
+
+    // Точки + tooltip-titles
+    const dots = values.map((v, i) => {
+        if (v == null) return '';
+        return `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}"
+                       r="3" fill="${color}" class="analytics-chart__dot">
+                    <title>${_esc(labels[i])}: ${v}${suffix}</title>
+                </circle>`;
+    }).join('');
+
+    // X-подписи: показываем все если ≤8, иначе через одну
+    const everyOther = labels.length > 8;
+    const xLabels = labels.map((l, i) => {
+        if (everyOther && i % 2 !== 0 && i !== labels.length - 1) return '';
+        return `<text x="${xAt(i).toFixed(1)}" y="${H - 8}" class="analytics-chart__axis"
+                      text-anchor="middle">${_esc(l)}</text>`;
+    }).join('');
+
+    // Y-подписи и горизонтальные линии-подсказки
+    const yLines = ticks.map(t => `
+        <line x1="${PAD_L}" y1="${yAt(t).toFixed(1)}"
+              x2="${W - PAD_R}" y2="${yAt(t).toFixed(1)}"
+              class="analytics-chart__grid"/>
+        <text x="${PAD_L - 6}" y="${(yAt(t) + 3).toFixed(1)}"
+              class="analytics-chart__axis" text-anchor="end">${_fmtNum(t)}${suffix}</text>
+    `).join('');
+
+    // Сводка: первое/последнее значение + дельта
+    const firstNonNull = values.find(v => v != null);
+    const lastNonNull  = [...values].reverse().find(v => v != null);
+    let summary = '';
+    if (firstNonNull != null && lastNonNull != null) {
+        const delta = lastNonNull - firstNonNull;
+        const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '—');
+        const cls = delta > 0 ? 'analytics-chart__delta--up' : (delta < 0 ? 'analytics-chart__delta--down' : '');
+        summary = `
+            <div class="analytics-chart__summary">
+                <span>Сейчас: <b>${lastNonNull}${suffix}</b></span>
+                <span class="${cls}">${arrow} ${Math.abs(_round(delta))}${suffix} за период</span>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="analytics-chart">
+            <div class="analytics-chart__head">
+                <h3 class="analytics-chart__title">${_esc(title)}</h3>
+                ${subtitle ? `<small class="analytics-chart__sub">${_esc(subtitle)}</small>` : ''}
+            </div>
+            <svg viewBox="0 0 ${W} ${H}" class="analytics-chart__svg" preserveAspectRatio="none"
+                 role="img" aria-label="${_esc(title)}">
+                ${yLines}
+                ${xLabels}
+                <path d="${path}" fill="none" stroke="${color}" stroke-width="2"
+                      stroke-linejoin="round" stroke-linecap="round"/>
+                ${dots}
+            </svg>
+            ${summary}
+        </div>
+    `;
+}
+
+
+function _renderTrends(t) {
+    if (!t || !t.weeks?.length) return '';
+    return `
+        <section class="analytics-section">
+            <h2 class="analytics-h">Тренды (12 недель)</h2>
+            <p class="analytics-sub">
+                Динамика заполнения списков и нагрузки нарядов по ISO-неделям.
+                Точки прерываются если в неделе не было событий/нарядов.
+            </p>
+            <div class="analytics-charts">
+                ${_lineChart({
+                    labels:   t.weeks,
+                    values:   t.fill_rate,
+                    color:    '#2e7d32',
+                    suffix:   '%',
+                    title:    'Заполняемость списков',
+                    subtitle: 'Слоты с ФИО / общее × 100% по событиям недели',
+                    minMaxHint: { min: 0, max: 100 },
+                })}
+                ${_lineChart({
+                    labels:   t.weeks,
+                    values:   t.duty_count,
+                    color:    '#1976d2',
+                    suffix:   '',
+                    title:    'Нарядов в неделю',
+                    subtitle: 'Сумма N-отметок за неделю',
+                })}
+                ${_lineChart({
+                    labels:   t.weeks,
+                    values:   t.duty_avg,
+                    color:    '#7c3aed',
+                    suffix:   '',
+                    title:    'Среднее N на человека',
+                    subtitle: 'По людям с ≥1 нарядом за эту неделю',
+                })}
+            </div>
+        </section>
+    `;
+}
+
+
+function _fmtNum(n) {
+    if (Math.abs(n) >= 100) return Math.round(n).toString();
+    return Math.round(n * 10) / 10;
+}
+function _round(n) {
+    return Math.round(n * 10) / 10;
 }
 
 
