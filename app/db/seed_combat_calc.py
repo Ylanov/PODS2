@@ -431,9 +431,9 @@ def seed_templates(db) -> None:
         ),
     ]
 
-    import json
-    templates[0].structure_json = json.dumps(TEMPLATE_1, ensure_ascii=False)
-    templates[1].structure_json = json.dumps(TEMPLATE_2, ensure_ascii=False)
+    # JSONB-колонка: SQLAlchemy сам сериализует dict/list в JSON.
+    templates[0].structure_json = TEMPLATE_1
+    templates[1].structure_json = TEMPLATE_2
 
     for t in templates:
         db.add(t)

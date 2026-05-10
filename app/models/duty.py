@@ -16,12 +16,11 @@ DutyMark            — отметка «в наряде» (человек × д
 
 from datetime import datetime, timezone
 
-import json
-
 from sqlalchemy import (
     Column, Integer, String, Date, ForeignKey, Boolean, Text,
     DateTime, UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -91,7 +90,9 @@ class DutySchedule(Base):
     #                  (бэк-совместимое поведение по умолчанию)
     #   [42, 17, …]  → только к спискам, у которых event.source_template_id
     #                  присутствует в этом массиве
-    applicable_template_ids = Column(Text, nullable=True)
+    # JSONB вместо Text-with-json — никаких json.loads на горячих путях
+    # автозаполнения слотов (вызывается на каждом instantiate_template).
+    applicable_template_ids = Column(JSONB, nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),
@@ -103,15 +104,15 @@ class DutySchedule(Base):
         raw = self.applicable_template_ids
         if not raw:
             return []
-        try:
-            data = json.loads(raw)
-            return [int(x) for x in data if isinstance(x, (int, str)) and str(x).isdigit()]
-        except (json.JSONDecodeError, ValueError, TypeError):
+        if not isinstance(raw, list):
             return []
+        return [int(x) for x in raw if isinstance(x, (int, str)) and str(x).isdigit()]
 
     def set_applicable_template_ids(self, ids: list[int]) -> None:
         clean = sorted({int(x) for x in (ids or []) if x})
-        self.applicable_template_ids = json.dumps(clean) if clean else None
+        # NULL вместо пустого списка — позволяет SQL `WHERE applicable_template_ids IS NULL`
+        # быстро отделять «график без фильтра» от «есть фильтр».
+        self.applicable_template_ids = clean if clean else None
 
     def applies_to_event(self, event) -> bool:
         """
@@ -259,7 +260,9 @@ class DutyMark(Base):
     # Один наряд может покрывать несколько разных мест в разных списках.
     # Если NULL/пусто — используется legacy-пара (substitute_department +
     # substitute_template_group_id).
-    substitutes_json = Column(Text, nullable=True)
+    # JSONB. На отрисовке wizard'а замещений эта функция дёргается на
+    # каждый mark — без json.loads быстрее под нагрузкой.
+    substitutes_json = Column(JSONB, nullable=True)
 
     # ── Relationships ─────────────────────────────────────────────────────────
     schedule = relationship("DutySchedule", back_populates="marks")
@@ -274,28 +277,22 @@ class DutyMark(Base):
         substitute_department + substitute_template_group_id (как одна
         запись в списке, чтобы вызывающий код не различал случаи).
         """
-        import json as _json
         raw = self.substitutes_json
-        if raw:
-            try:
-                data = _json.loads(raw)
-                if isinstance(data, list):
-                    out = []
-                    for item in data:
-                        if not isinstance(item, dict):
-                            continue
-                        dept = (item.get("department") or "").strip()
-                        gid  = item.get("template_group_id")
-                        try:
-                            gid = int(gid) if gid is not None else None
-                        except (TypeError, ValueError):
-                            gid = None
-                        if dept and gid:
-                            out.append({"department": dept, "template_group_id": gid})
-                    if out:
-                        return out
-            except (_json.JSONDecodeError, ValueError, TypeError):
-                pass
+        if isinstance(raw, list):
+            out: list[dict] = []
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                dept = (item.get("department") or "").strip()
+                gid  = item.get("template_group_id")
+                try:
+                    gid = int(gid) if gid is not None else None
+                except (TypeError, ValueError):
+                    gid = None
+                if dept and gid:
+                    out.append({"department": dept, "template_group_id": gid})
+            if out:
+                return out
         if self.substitute_department and self.substitute_template_group_id:
             return [{
                 "department":        self.substitute_department,
@@ -309,7 +306,6 @@ class DutyMark(Base):
         (если есть) копируется в legacy-поля — чтобы экспорт docx и
         прочий код, который ещё смотрит на старые колонки, не сломался.
         """
-        import json as _json
         clean = []
         for it in (items or []):
             dept = (it.get("department") or "").strip()
@@ -320,7 +316,7 @@ class DutyMark(Base):
             if dept and gid:
                 clean.append({"department": dept, "template_group_id": gid})
 
-        self.substitutes_json = _json.dumps(clean, ensure_ascii=False) if clean else None
+        self.substitutes_json = clean if clean else None
         if clean:
             self.substitute_department        = clean[0]["department"]
             self.substitute_template_group_id = clean[0]["template_group_id"]

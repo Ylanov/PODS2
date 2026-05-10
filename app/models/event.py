@@ -14,8 +14,8 @@
   через Alembic-миграцию (см. файл миграции fix_indexes).
 """
 
-import json
 from sqlalchemy import Column, Integer, String, ForeignKey, Date, Boolean, Text, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
@@ -40,7 +40,9 @@ class Event(Base):
     date           = Column(Date, nullable=True, index=True)       # ← index для фильтра по дате
     status         = Column(String, default="draft", index=True)   # ← index для фильтра по статусу
     is_template    = Column(Boolean, default=False, nullable=False, index=True)  # ← index
-    columns_config = Column(Text, nullable=True)
+    # JSONB вместо Text-with-json: на каждый рендер списка дёргается
+    # get_columns() — миллионы вызовов в день под нагрузкой.
+    columns_config = Column(JSONB, nullable=True)
     # Ссылка на шаблон-источник из которого сгенерирован этот список.
     # NULL для шаблонов и «ручных» списков. Используется:
     #   1) endpoint instantiate_template — защита от дублей (один шаблон
@@ -64,15 +66,13 @@ class Event(Base):
     )
 
     def get_columns(self) -> list:
-        if self.columns_config:
-            try:
-                return json.loads(self.columns_config)
-            except (json.JSONDecodeError, ValueError):
-                pass
+        cfg = self.columns_config
+        if isinstance(cfg, list) and cfg:
+            return cfg
         return [col.copy() for col in DEFAULT_COLUMNS]
 
     def set_columns(self, columns: list) -> None:
-        self.columns_config = json.dumps(columns, ensure_ascii=False)
+        self.columns_config = columns or None
 
 
 class Group(Base):
@@ -138,18 +138,16 @@ class Slot(Base):
     callsign    = Column(String, nullable=True)
     note        = Column(String, nullable=True)
     version     = Column(Integer, default=1, nullable=False)
-    extra_data  = Column(Text, nullable=True)   # JSON для кастомных столбцов
+    # JSONB. Slots — самая «горячая» таблица: каждый рендер сетки слотов
+    # дёргает get_extra() для substitute_note и кастомных столбцов.
+    extra_data  = Column(JSONB, nullable=True)
 
     group    = relationship("Group",    back_populates="slots")
     position = relationship("Position", back_populates="slots")
 
     def get_extra(self) -> dict:
-        if self.extra_data:
-            try:
-                return json.loads(self.extra_data)
-            except (json.JSONDecodeError, ValueError):
-                pass
-        return {}
+        data = self.extra_data
+        return data if isinstance(data, dict) else {}
 
     def set_extra(self, data: dict) -> None:
-        self.extra_data = json.dumps(data, ensure_ascii=False) if data else None
+        self.extra_data = data if data else None

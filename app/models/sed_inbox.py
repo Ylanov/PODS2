@@ -14,12 +14,12 @@ JSON-дайджест и POST'ит его в pods2. На бэке — один �
 файлы не проксирует и не кеширует).
 """
 
-import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, Integer, Text, DateTime, ForeignKey, UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -42,9 +42,9 @@ class SedInboxSnapshot(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
-    # JSON-список секций: [{key,title,url,count,items:[{node_id,title,
+    # JSONB-список секций: [{key,title,url,count,items:[{node_id,title,
     # files:[{name,url}], actions:[{kind,url}]}]}]
-    sections_json = Column(Text, nullable=False, default="[]")
+    sections_json = Column(JSONB, nullable=False, default=list)
 
     user = relationship("User")
 
@@ -56,14 +56,11 @@ class SedInboxSnapshot(Base):
     )
 
     def get_sections(self) -> list[dict]:
-        try:
-            data = json.loads(self.sections_json or "[]")
-            return data if isinstance(data, list) else []
-        except (json.JSONDecodeError, ValueError):
-            return []
+        data = self.sections_json
+        return data if isinstance(data, list) else []
 
     def set_sections(self, sections: list[dict]) -> None:
-        self.sections_json = json.dumps(sections, ensure_ascii=False)
+        self.sections_json = sections or []
 
 
 class SedLetter(Base):
@@ -96,9 +93,9 @@ class SedLetter(Base):
     body_html = Column(Text,    nullable=False, default="")
     # Структурированные поля: vid_dokumenta, srochnost, status, nomer_data,
     # adresat, ispolnitel, podpisant, kol_listov, etc. (плоский dict).
-    meta_json  = Column(Text, nullable=False, default="{}")
+    meta_json  = Column(JSONB, nullable=False, default=dict)
     # Массив {name, url, size, mime}
-    files_json = Column(Text, nullable=False, default="[]")
+    files_json = Column(JSONB, nullable=False, default=list)
     # ISO-время взятия с СЭД (для UI «обновлено N минут назад»)
     fetched_at = Column(
         DateTime(timezone=True),
@@ -115,21 +112,15 @@ class SedLetter(Base):
     )
 
     def get_meta(self) -> dict:
-        try:
-            data = json.loads(self.meta_json or "{}")
-            return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, ValueError):
-            return {}
+        data = self.meta_json
+        return data if isinstance(data, dict) else {}
 
     def set_meta(self, meta: dict) -> None:
-        self.meta_json = json.dumps(meta or {}, ensure_ascii=False)
+        self.meta_json = meta or {}
 
     def get_files(self) -> list[dict]:
-        try:
-            data = json.loads(self.files_json or "[]")
-            return data if isinstance(data, list) else []
-        except (json.JSONDecodeError, ValueError):
-            return []
+        data = self.files_json
+        return data if isinstance(data, list) else []
 
     def set_files(self, files: list[dict]) -> None:
-        self.files_json = json.dumps(files or [], ensure_ascii=False)
+        self.files_json = files or []

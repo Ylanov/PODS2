@@ -8,10 +8,10 @@ GeoJSON-строку (массив координат), геокодинг и р
 прокси-эндпоинтах (см. app/api/v1/routers/oper_map.py).
 """
 
-import json
 from datetime import datetime, timezone
 
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime
+from sqlalchemy.dialects.postgresql import JSONB
 from app.db.database import Base
 
 
@@ -56,15 +56,12 @@ class OperMapZone(Base):
     name         = Column(String,  nullable=False)
     role         = Column(String,  nullable=True)   # «Пожарные», «ДС», …
     color        = Column(String,  nullable=False, default="#ff5722")
-    polygon_json = Column(Text,    nullable=False, default="{}")
+    polygon_json = Column(JSONB,   nullable=False, default=dict)
     sort_order   = Column(Integer, nullable=False, default=0)
 
     def get_polygon(self) -> dict:
-        try:
-            data = json.loads(self.polygon_json or "{}")
-            return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, ValueError):
-            return {}
+        data = self.polygon_json
+        return data if isinstance(data, dict) else {}
 
     def set_polygon(self, polygon: dict) -> None:
-        self.polygon_json = json.dumps(polygon or {}, ensure_ascii=False)
+        self.polygon_json = polygon or {}

@@ -16,8 +16,8 @@
     для быстрого поиска конкретной строки внутри экземпляра.
 """
 
-import json
 from sqlalchemy import Column, Integer, String, Date, Text, Boolean, ForeignKey, UniqueConstraint, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
@@ -53,7 +53,9 @@ class CombatCalcTemplate(Base):
     id             = Column(Integer, primary_key=True, index=True)
     title          = Column(String, nullable=False)
     description    = Column(String, nullable=True)
-    structure_json = Column(Text, nullable=False, default="{}")
+    # JSONB: psycopg2 + SQLAlchemy сами конвертируют ↔ Python dict.
+    # Никаких json.loads/json.dumps на горячих путях.
+    structure_json = Column(JSONB, nullable=False, default=dict)
     is_active      = Column(Boolean, default=True, nullable=False)
 
     instances = relationship(
@@ -63,13 +65,11 @@ class CombatCalcTemplate(Base):
     )
 
     def get_structure(self) -> dict:
-        try:
-            return json.loads(self.structure_json)
-        except (json.JSONDecodeError, TypeError):
-            return {"sections": []}
+        data = self.structure_json
+        return data if isinstance(data, dict) else {"sections": []}
 
     def set_structure(self, data: dict) -> None:
-        self.structure_json = json.dumps(data, ensure_ascii=False)
+        self.structure_json = data or {}
 
 
 class CombatCalcInstance(Base):
