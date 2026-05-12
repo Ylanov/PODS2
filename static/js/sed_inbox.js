@@ -258,31 +258,73 @@ function _renderList(snap) {
 }
 
 /**
- * Обработчик клика по ссылке файла. Если bridge готов — preventDefault
- * и скачивание через расширение. Если нет — НИЧЕГО не трогаем, браузер
- * штатно откроет URL в новой вкладке через target="_blank" (это
- * происходит синхронно в user-gesture'е, без popup-блокировки).
+ * Обработчик клика по ссылке файла. Приоритет:
+ *   1. Файл закеширован на pods2 (data-sed-cached="1") — fetch + blob + save.
+ *      Расширение не нужно, сетевой запрос только к нашему серверу.
+ *   2. Расширение готово — postMessage → chrome.downloads с cookie СЭД.
+ *   3. Fallback — нативный target="_blank" (открывает SED-страницу с файлом).
  */
 function _onFileLinkClick(e, a) {
-    if (!STATE.bridgeReady) return;   // нативный target=_blank
-    e.preventDefault();
-    e.stopPropagation();
-    const url  = a.href;
     const name = a.dataset.sedFileName || '';
-    _requestSedDownload(url, name).then(res => {
-        if (res.ok) {
-            window.showSnackbar?.('Файл скачивается…', 'success');
-        } else if (res.error === 'extension-timeout') {
-            // Bridge ready был, но расширение не ответило за 5с — возможно
-            // повисла service worker'а. Откроем вкладку, но в новом
-            // user-gesture'е это сделать нельзя из async-callback, так что
-            // показываем снэкбар с просьбой кликнуть ещё раз.
-            window.showSnackbar?.('Расширение не отвечает. Кликните ещё раз — откроем в СЭД.', 'warn');
-            STATE.bridgeReady = false;   // следующий клик пойдёт нативом
-        } else if (res.error && res.error !== 'already-pending') {
-            window.showSnackbar?.(`Ошибка скачивания: ${res.error}`, 'error');
+
+    // Кейс 1: закешировано на pods2 — фетчим напрямую с нашего бэка.
+    if (a.dataset.sedCached === '1') {
+        e.preventDefault();
+        e.stopPropagation();
+        _downloadCachedFile(a.href, name);
+        return;
+    }
+
+    // Кейс 2: расширение установлено — пускаем через него.
+    if (STATE.bridgeReady) {
+        e.preventDefault();
+        e.stopPropagation();
+        const url = a.href;
+        _requestSedDownload(url, name).then(res => {
+            if (res.ok) {
+                window.showSnackbar?.('Файл скачивается…', 'success');
+            } else if (res.error === 'extension-timeout') {
+                window.showSnackbar?.('Расширение не отвечает. Кликните ещё раз — откроем в СЭД.', 'warn');
+                STATE.bridgeReady = false;
+            } else if (res.error && res.error !== 'already-pending') {
+                window.showSnackbar?.(`Ошибка скачивания: ${res.error}`, 'error');
+            }
+        });
+        return;
+    }
+    // Кейс 3: ничего не перехватываем — target="_blank" сделает своё.
+}
+
+
+/**
+ * Качает закешированный файл с pods2 через Bearer-токен, создаёт blob-URL
+ * и триггерит save-as. Не открывает новых вкладок — браузер просто сохраняет
+ * файл в папку загрузок.
+ */
+async function _downloadCachedFile(href, fileName) {
+    const token = localStorage.getItem('token') || '';
+    try {
+        const r = await fetch(href, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!r.ok) {
+            window.showSnackbar?.(`Сервер ответил ${r.status}`, 'error');
+            return;
         }
-    });
+        const blob = await r.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const link = Object.assign(document.createElement('a'), {
+            href:     objUrl,
+            download: fileName || 'file',
+        });
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objUrl);
+        window.showSnackbar?.('Файл скачан с pods2.', 'success');
+    } catch (err) {
+        window.showSnackbar?.(`Ошибка: ${err?.message || err}`, 'error');
+    }
 }
 
 function _renderSection(section) {
@@ -486,18 +528,37 @@ function _renderLetter(modal, letter) {
         : '';
 
     // ─── Файлы (карточки с иконкой) ──────────────────────────────────────
+    // Если файл закеширован на pods2 (local_id+status='ok') — рендерим
+    // ссылку на /api/v1/sed/file/{id} и клик пойдёт через blob+save-as,
+    // без расширения. Иначе fallback на SED-URL (как раньше).
     const files = letter.files || [];
-    const filesHtml = files.map(f => `
-        <a class="sed-letter-file" href="${_esc(f.url)}"
-           target="_blank" rel="noopener noreferrer"
-           data-sed-file-name="${_esc(f.name || '')}"
-           title="Скачать (через расширение — минуя pdf-viewer СЭД)">
-            <span class="sed-letter-file__icon">${_fileIcon(f.name)}</span>
-            <span class="sed-letter-file__name">${_esc(f.name || 'Файл')}</span>
-            ${f.size ? `<span class="sed-letter-file__size">${_fmtSize(f.size)}</span>` : ''}
-            <span class="sed-letter-file__dl">⬇</span>
-        </a>
-    `).join('');
+    const filesHtml = files.map(f => {
+        const cached = f.local_id && f.status === 'ok';
+        const href = cached
+            ? `/api/v1/sed/file/${f.local_id}`
+            : f.url;
+        const statusBadge =
+            f.status === 'ok'      ? '<span class="sed-letter-file__badge sed-letter-file__badge--ok" title="Файл закеширован на pods2 — качается напрямую">✓</span>' :
+            f.status === 'pending' ? '<span class="sed-letter-file__badge sed-letter-file__badge--pending" title="Файл качается расширением — попробуйте через минуту">⏳</span>' :
+            f.status === 'failed'  ? '<span class="sed-letter-file__badge sed-letter-file__badge--failed" title="Расширение не смогло скачать — откроется в СЭД">⚠</span>' :
+            '';
+        const tipTitle = cached
+            ? 'Скачать (закеширован на pods2)'
+            : 'Скачать (через расширение — или fallback на СЭД)';
+        return `
+            <a class="sed-letter-file" href="${_esc(href)}"
+               target="_blank" rel="noopener noreferrer"
+               data-sed-file-name="${_esc(f.name || '')}"
+               data-sed-cached="${cached ? '1' : '0'}"
+               data-sed-local-id="${cached ? f.local_id : ''}"
+               title="${_esc(tipTitle)}">
+                <span class="sed-letter-file__icon">${_fileIcon(f.name)}</span>
+                <span class="sed-letter-file__name">${_esc(f.name || 'Файл')}</span>
+                ${f.size ? `<span class="sed-letter-file__size">${_fmtSize(f.size)}</span>` : ''}
+                ${statusBadge}
+                <span class="sed-letter-file__dl">⬇</span>
+            </a>`;
+    }).join('');
 
     // ─── Тело: переписываем относительные URL'ы (страховка) ──────────────
     const bodyFixed = (letter.body_html || '')

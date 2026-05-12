@@ -62,6 +62,21 @@ class Settings(BaseSettings):
     # её чаще ~1/sec.
     ANALYTICS_RATE_LIMIT:    str = "30/minute"
 
+    # ─── СЭД-файлы (кеш бинарников) ───────────────────────────────────────────
+    # Каталог на диске для blob'ов (mount volume seddata в docker-compose).
+    SED_FILES_DIR:           str = "/data/sed_files"
+    # Максимальный размер одного файла — отвергаем большие, чтобы расширение
+    # не залило диск гигантским PDF'ом случайно.
+    SED_FILE_MAX_SIZE:       int = 20 * 1024 * 1024   # 20 МБ
+    # TTL: файлы с fetched_at старше этого — кандидаты на удаление через
+    # cleanup-endpoint (или будущий cron).
+    SED_FILE_RETENTION_DAYS: int = 90
+    # Максимум попыток скачать — после этого расширение перестаёт пробовать.
+    SED_FILE_MAX_ATTEMPTS:   int = 5
+    # Rate-limit на загрузку (расширение шлёт по 30 файлов за тик).
+    SED_FILE_UPLOAD_RATE_LIMIT: str = "600/hour"
+    SED_FILE_DOWNLOAD_RATE_LIMIT: str = "1200/hour"
+
     # ─── Доступ к модулям отделов ─────────────────────────────────────────────
     # Каждый модуль (форма 3-СВЯЗЬ, гос. закупки, учёт МНИ, проф. подготовка)
     # привязывается к конкретным username'ам через .env. Через запятую:

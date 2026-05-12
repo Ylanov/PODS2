@@ -772,6 +772,30 @@
 .sed-letter-file:hover .sed-letter-file__dl {
     color: var(--md-primary);
 }
+/* Бейдж статуса кеширования файла на pods2 */
+.sed-letter-file__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.sed-letter-file__badge--ok {
+    background: rgba(76, 175, 80, 0.18);
+    color: #2e7d32;
+}
+.sed-letter-file__badge--pending {
+    background: rgba(255, 152, 0, 0.18);
+    color: #e65100;
+}
+.sed-letter-file__badge--failed {
+    background: rgba(244, 67, 54, 0.18);
+    color: #c62828;
+}
 
 /* ─── Тело письма (Drupal-разметка) ─────────────────────────────────── */
 .sed-letter-body {

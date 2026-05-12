@@ -286,6 +286,11 @@ async function fetchAndSendLetters(sections, settings) {
     // Остальные подтянутся в следующем тике (через 5 минут).
     const TICK_LIMIT = 30;
 
+    // Собираем все файлы из обработанных писем — после рассылки letter'ов
+    // запустим отдельную фазу: скачать файлы из СЭД и upload в pods2.
+    const allFiles = [];
+    const seenFileUrls = new Set();
+
     for (const nodeId of queue.slice(0, TICK_LIMIT)) {
         if (sentSet.has(nodeId)) continue;
         let html;
@@ -316,6 +321,12 @@ async function fetchAndSendLetters(sections, settings) {
             if (r.ok) {
                 sentCount += 1;
                 sentSet.add(nodeId);
+                // Подбираем файлы для последующей загрузки.
+                for (const f of (letter.files || [])) {
+                    if (!f?.url || seenFileUrls.has(f.url)) continue;
+                    seenFileUrls.add(f.url);
+                    allFiles.push({ url: f.url, name: f.name || "file" });
+                }
             } else {
                 failCount += 1;
             }
@@ -336,7 +347,182 @@ async function fetchAndSendLetters(sections, settings) {
     if (sentCount > 0 || failCount > 0) {
         await saveStatus({
             kind:    sentCount ? "ok" : "warn",
-            message: `Тела писем: загружено ${sentCount}${failCount ? `, ошибок ${failCount}` : ""}.`,
+            message: `Тела писем: загружено ${sentCount}${failCount ? `, ошибок ${failCount}` : ""}. Качаем файлы…`,
         });
     }
+
+    // Фаза 2: качаем файлы из СЭД и грузим в pods2-кеш. В фоне — если упадёт,
+    // не блокирует основной флоу (letter'ы уже в pods2).
+    if (allFiles.length) {
+        syncFiles(allFiles, settings).catch(err => {
+            console.warn("[sed-bridge] syncFiles:", err);
+        });
+    }
+}
+
+
+// ─── Кеш файлов СЭД на pods2 ─────────────────────────────────────────────
+
+/**
+ * Скачивает каждый файл из СЭД через cookie-сессию пользователя и
+ * upload'ит в pods2 (POST /api/v1/sed/file multipart). pods2 хранит blob
+ * на диске и потом отдаёт юзеру с /sed/file/{id} — больше не нужно
+ * открывать sed.mchs.ru, чтобы скачать вложение.
+ *
+ * Дедупликация:
+ *   • Сначала спрашиваем у pods2 (GET /sed/file/by-urls): какие из URL'ов
+ *     уже закешированы (status=ok) или провалены окончательно (failed +
+ *     attempts >= MAX). Их пропускаем.
+ *   • Локальный set "uploaded_urls" в storage.local — мягкий short-circuit
+ *     чтобы не обращаться к pods2 за каждым уже-известным URL'ом.
+ *
+ * Retry:
+ *   • При 404 один раз пробуем альтернативный путь /system/files/ ↔
+ *     /systems3/files/ (Drupal алиасит).
+ *   • При ошибке шлём POST /sed/file/failed — pods2 ведёт счётчик attempts.
+ *   • Следующий 5-минутный тик подберёт failed-with-pending'и и попробует
+ *     снова. После SED_FILE_MAX_ATTEMPTS на сервере останется failed.
+ */
+async function syncFiles(files, settings) {
+    const podsUrl = settings.pods2_url.replace(/\/+$/, "");
+    const token   = settings.pods2_token;
+    if (!files.length || !podsUrl || !token) return;
+
+    // 1. Узнаём статусы оптом — урезаем лишнюю работу.
+    let statuses = [];
+    try {
+        const params = new URLSearchParams({ urls: files.map(f => f.url).join("\n") });
+        const r = await fetch(`${podsUrl}/api/v1/sed/file/by-urls?${params}`, {
+            headers: { "Authorization": `Bearer ${token}` },
+        });
+        if (r.ok) statuses = await r.json();
+    } catch { /* пофиг — попробуем все */ }
+
+    const knownByUrl = new Map(statuses.map(s => [s.sed_url, s]));
+    const MAX_ATTEMPTS = 5;
+    // По одному файлу за раз — СЭД медленный, проще не убивать его параллелизмом.
+    const PER_TICK_LIMIT = 30;
+    let okCount   = 0;
+    let failCount = 0;
+
+    for (const f of files.slice(0, PER_TICK_LIMIT)) {
+        const known = knownByUrl.get(f.url);
+        if (known) {
+            if (known.status === "ok") continue;
+            if (known.status === "failed" && (known.attempts || 0) >= MAX_ATTEMPTS) continue;
+        }
+
+        const dl = await downloadSedFile(f.url);
+        if (!dl.ok) {
+            failCount += 1;
+            await reportFileFailed(podsUrl, token, f.url, f.name, dl.error);
+            await new Promise(r => setTimeout(r, 400));
+            continue;
+        }
+
+        const upOk = await uploadFileToPods(podsUrl, token, f.url, f.name, dl.blob);
+        if (upOk) okCount += 1;
+        else failCount += 1;
+
+        // 400ms между файлами — СЭД отдаёт PDF'ки по 1-2 МБ, не давим её.
+        await new Promise(r => setTimeout(r, 400));
+    }
+
+    if (okCount || failCount) {
+        await saveStatus({
+            kind:    okCount ? "ok" : "warn",
+            message: `Файлы: закешировано ${okCount}${failCount ? `, ошибок ${failCount}` : ""}.`,
+        });
+    }
+}
+
+
+/**
+ * Качает blob файла с sed.mchs.ru через cookie-сессию пользователя.
+ * При 404 один раз пробует альтернативный путь Drupal'а (system <-> systems3).
+ * Возвращает { ok, blob, error, status }.
+ */
+async function downloadSedFile(url) {
+    const tried = [url];
+    // Эвристика «другого места»: SED иногда отдаёт файл из /systems3/files/,
+    // иногда — из /system/files/ (Drupal-default). Если первый 404 —
+    // пробуем альтернативный.
+    if (/\/systems3\/files\//i.test(url)) {
+        tried.push(url.replace(/\/systems3\/files\//i, "/system/files/"));
+    } else if (/\/system\/files\//i.test(url)) {
+        tried.push(url.replace(/\/system\/files\//i, "/systems3/files/"));
+    }
+    let lastError = "";
+    for (const u of tried) {
+        try {
+            const r = await fetch(u, {
+                credentials: "include",
+                redirect:    "follow",
+                cache:       "no-store",
+            });
+            if (r.status === 401 || r.status === 403) {
+                return { ok: false, error: `СЭД отказал (${r.status}) — сессия?`, status: r.status };
+            }
+            if (r.status === 404) {
+                lastError = `404 на ${u.slice(0, 100)}`;
+                continue;
+            }
+            if (!r.ok) {
+                lastError = `HTTP ${r.status}`;
+                continue;
+            }
+            // Проверка что это бинарный файл, а не HTML-страница логина:
+            // Content-Type должен НЕ быть text/html (СЭД иногда возвращает 200
+            // с логин-формой если cookie протухла).
+            const ct = (r.headers.get("content-type") || "").toLowerCase();
+            if (ct.startsWith("text/html")) {
+                return { ok: false, error: "СЭД отдал HTML вместо файла (сессия?)" };
+            }
+            const blob = await r.blob();
+            if (!blob || !blob.size) {
+                lastError = "Пустой ответ";
+                continue;
+            }
+            return { ok: true, blob };
+        } catch (err) {
+            lastError = String(err?.message || err);
+        }
+    }
+    return { ok: false, error: lastError || "Не удалось скачать" };
+}
+
+
+async function uploadFileToPods(podsUrl, token, sedUrl, name, blob) {
+    try {
+        const fd = new FormData();
+        fd.append("sed_url", sedUrl);
+        fd.append("name",    name || "file");
+        fd.append("file",    blob, name || "file");
+        const r = await fetch(`${podsUrl}/api/v1/sed/file`, {
+            method:  "POST",
+            headers: { "Authorization": `Bearer ${token}` },
+            body:    fd,
+        });
+        return r.ok;
+    } catch {
+        return false;
+    }
+}
+
+
+async function reportFileFailed(podsUrl, token, sedUrl, name, error) {
+    try {
+        await fetch(`${podsUrl}/api/v1/sed/file/failed`, {
+            method:  "POST",
+            headers: {
+                "Content-Type":  "application/json",
+                "Authorization": `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                sed_url: sedUrl,
+                name:    name || "file",
+                error:   String(error || "").slice(0, 500),
+            }),
+        });
+    } catch { /* ignore — следующий тик попробует */ }
 }

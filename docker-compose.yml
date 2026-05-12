@@ -82,6 +82,7 @@ services:
 
     volumes:
       - .:/code   # ← оставь для dev, убери для production
+      - seddata:/data/sed_files   # кеш файлов СЭД (BLOB'ы по 20МБ макс)
 
     expose:
       - "8000"
@@ -122,3 +123,4 @@ networks:
 
 volumes:
   pgdata:
+  seddata:
