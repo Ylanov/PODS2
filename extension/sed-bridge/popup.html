@@ -60,6 +60,10 @@
             background: #4a7c6f; color: #fff; border-color: #3a6358;
         }
         .btn-primary:hover { background: #3a6358; }
+        .btn-warn {
+            background: #c97b2e; color: #fff; border-color: #a85f1a;
+        }
+        .btn-warn:hover { background: #a85f1a; }
     </style>
 </head>
 <body>
@@ -80,6 +84,9 @@
 <div class="actions">
     <button class="btn-primary" id="sync-btn">Синхр. сейчас</button>
     <button id="opts-btn">Настройки</button>
+</div>
+<div class="actions">
+    <button id="pause-btn" title="Останавливает все фоновые запросы к СЭД">⏸ Пауза</button>
 </div>
 
 <script src="popup.js" type="module"></script>

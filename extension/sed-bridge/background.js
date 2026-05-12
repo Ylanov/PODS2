@@ -11,7 +11,10 @@ import { extractCount, extractItems, extractLetter, isLoginPage } from "./parser
 
 const SED_BASE = "https://sed.mchs.ru";
 const ALARM    = "sed-sync";
-const PERIOD_MIN = 5;
+// Период синхронизации. Раньше 5 минут — оказалось слишком часто после
+// добавления загрузки файлов (10-50МБ трафика на тик). 10 минут даёт
+// вдвое меньшую нагрузку на СЭД при практически той же актуальности.
+const PERIOD_MIN = 10;
 
 // Список секций по умолчанию. Можно расширить в options-странице,
 // но 8 разделов покрывают типовой workflow начальника центра.
@@ -82,7 +85,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return true;   // async
     }
     if (msg?.type === "get_status") {
-        chrome.storage.local.get(["last_status", "last_status_at", "last_total"]).then(sendResponse);
+        chrome.storage.local.get([
+            "last_status", "last_status_at", "last_total", "paused",
+        ]).then(sendResponse);
+        return true;
+    }
+    // Пауза / возобновление. paused=true — syncNow выходит сразу.
+    // paused=false — следующий тик alarm'а или ручной sync_now запустят.
+    if (msg?.type === "set_paused") {
+        chrome.storage.local.set({ paused: !!msg.value }).then(async () => {
+            if (msg.value) {
+                try { await chrome.action.setBadgeText({ text: "⏸" }); } catch {}
+                await saveStatus({
+                    kind: "config",
+                    message: "Расширение на паузе.",
+                });
+            } else {
+                try { await chrome.action.setBadgeText({ text: "" }); } catch {}
+                await saveStatus({
+                    kind: "ok",
+                    message: "Возобновлено. Следующий тик через ≤10 мин — или жмите «Синхр. сейчас».",
+                });
+            }
+            sendResponse({ ok: true, paused: !!msg.value });
+        });
         return true;
     }
     // Скачивание файла из СЭД, инициированное pods2 UI через content-script.
@@ -155,6 +181,20 @@ async function fetchSed(path) {
 
 async function syncNow() {
     const settings = await getSettings();
+
+    // Пауза — пользователь явно отключил синхронизацию через popup.
+    // alarm всё равно тикает (мы не отменяем его, чтобы при unpause
+    // не пересоздавать с нуля), но сам цикл выходит сразу.
+    const { paused } = await chrome.storage.local.get(["paused"]);
+    if (paused) {
+        await saveStatus({
+            kind: "config",
+            message: "Расширение на паузе. Нажмите «Продолжить» в popup для возобновления.",
+        });
+        try { await chrome.action.setBadgeText({ text: "⏸" }); } catch {}
+        return { sent: false, reason: "paused" };
+    }
+
     const sections = (settings.sections && settings.sections.length)
         ? settings.sections
         : DEFAULT_SECTIONS;
@@ -281,10 +321,11 @@ async function fetchAndSendLetters(sections, settings) {
     const podsUrl = settings.pods2_url.replace(/\/+$/, "");
     let sentCount = 0;
     let failCount = 0;
-    // Лимит на тик: 30 писем за раз. Иначе при 100+ непрочитанных
-    // первый запуск делал бы сотни запросов в СЭД и pods2 одновременно.
-    // Остальные подтянутся в следующем тике (через 5 минут).
-    const TICK_LIMIT = 30;
+    // Лимит на тик: 10 писем за раз. Раньше было 30 — оказалось много при
+    // первом прогоне (100+ непрочитанных давали 30 GET'ов /node/N подряд,
+    // плюс сразу же 30 GET'ов файлов). Снизили до 10, чтобы не давить СЭД.
+    // Остальные подтянутся в следующих тиках (раз в 10 минут).
+    const TICK_LIMIT = 10;
 
     // Собираем все файлы из обработанных писем — после рассылки letter'ов
     // запустим отдельную фазу: скачать файлы из СЭД и upload в pods2.
@@ -400,8 +441,13 @@ async function syncFiles(files, settings) {
 
     const knownByUrl = new Map(statuses.map(s => [s.sed_url, s]));
     const MAX_ATTEMPTS = 5;
-    // По одному файлу за раз — СЭД медленный, проще не убивать его параллелизмом.
-    const PER_TICK_LIMIT = 30;
+    // По одному файлу за раз — СЭД медленный, проще не убивать его
+    // параллелизмом. 10 файлов за тик × 6 тиков в час = 60 файлов/час
+    // максимум для одного пользователя.
+    const PER_TICK_LIMIT = 10;
+    // 1 секунда между файлами — щадящий темп. PDF'ки по 1-2 МБ × 10
+    // файлов = 10-20 МБ трафика за тик, размазанные по 10+ сек.
+    const SLEEP_BETWEEN_MS = 1000;
     let okCount   = 0;
     let failCount = 0;
 
@@ -416,7 +462,7 @@ async function syncFiles(files, settings) {
         if (!dl.ok) {
             failCount += 1;
             await reportFileFailed(podsUrl, token, f.url, f.name, dl.error);
-            await new Promise(r => setTimeout(r, 400));
+            await new Promise(r => setTimeout(r, SLEEP_BETWEEN_MS));
             continue;
         }
 
@@ -424,8 +470,7 @@ async function syncFiles(files, settings) {
         if (upOk) okCount += 1;
         else failCount += 1;
 
-        // 400ms между файлами — СЭД отдаёт PDF'ки по 1-2 МБ, не давим её.
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, SLEEP_BETWEEN_MS));
     }
 
     if (okCount || failCount) {

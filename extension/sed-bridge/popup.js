@@ -32,6 +32,18 @@ function showStatus(status) {
     el.textContent = status.message || status.kind;
 }
 
+function renderPauseBtn(paused) {
+    const btn = $("pause-btn");
+    if (!btn) return;
+    if (paused) {
+        btn.textContent = "▶ Продолжить";
+        btn.className   = "btn-primary";
+    } else {
+        btn.textContent = "⏸ Пауза";
+        btn.className   = "btn-warn";
+    }
+}
+
 async function refresh() {
     const data = await new Promise(res => {
         chrome.runtime.sendMessage({ type: "get_status" }, (r) => res(r || {}));
@@ -39,6 +51,7 @@ async function refresh() {
     showStatus(data.last_status);
     $("total").textContent = (data.last_total ?? 0) > 0 ? data.last_total : "—";
     $("last").textContent  = fmtAgo(data.last_status_at);
+    renderPauseBtn(!!data.paused);
 }
 
 $("sync-btn").addEventListener("click", () => {
@@ -57,6 +70,16 @@ $("sync-btn").addEventListener("click", () => {
 
 $("opts-btn").addEventListener("click", () => {
     chrome.runtime.openOptionsPage();
+});
+
+$("pause-btn")?.addEventListener("click", async () => {
+    const data = await new Promise(res => {
+        chrome.runtime.sendMessage({ type: "get_status" }, (r) => res(r || {}));
+    });
+    const next = !data.paused;
+    chrome.runtime.sendMessage({ type: "set_paused", value: next }, async () => {
+        await refresh();
+    });
 });
 
 refresh();
