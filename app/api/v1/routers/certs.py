@@ -150,15 +150,18 @@ class HeartbeatIn(BaseModel):
 
 class AgentTokenOut(BaseModel):
     """Запись токена для админки (без самого токена — только метаданные)."""
-    id:           int
-    user_id:      int
-    username:     str
-    description:  Optional[str]
-    issued_at:    datetime
-    expires_at:   datetime
-    last_seen_at: Optional[datetime]
-    last_seen_ip: Optional[str]
-    revoked:      bool
+    id:             int
+    user_id:        int
+    username:       str
+    description:    Optional[str]
+    issued_at:      datetime
+    expires_at:     datetime
+    last_seen_at:   Optional[datetime]
+    last_seen_ip:   Optional[str]
+    revoked:        bool
+    block_reason:   Optional[str] = None
+    bound_mac:      Optional[str] = None
+    bound_hostname: Optional[str] = None
 
 
 # ─── Хелперы ──────────────────────────────────────────────────────────────────
@@ -243,21 +246,38 @@ def _sanitize_container_name(name: str) -> str:
     return base
 
 
+_MAC_NORMALIZE_RE = re.compile(r"[^0-9A-Fa-f]")
+
+
+def _normalize_mac(raw: Optional[str]) -> Optional[str]:
+    """
+    Приводит MAC к виду 'AABBCCDDEEFF' (без разделителей, uppercase).
+    Это даёт устойчивость к разным форматам: AA:BB:..., AA-BB-..., aa:bb:...
+    Возвращает None если меньше 12 hex-символов (битый формат).
+    """
+    if not raw:
+        return None
+    cleaned = _MAC_NORMALIZE_RE.sub("", raw).upper()
+    return cleaned if len(cleaned) == 12 else None
+
+
 def get_current_agent(
     request: Request,
     db: Session = Depends(get_db),
     token: str  = Depends(oauth2_scheme),
 ) -> tuple[User, AgentToken]:
     """
-    Аутентификация агента (Windows-службы) по долгоживущему токену.
+    Аутентификация агента (Windows-службы) по долгоживущему токену + MAC.
 
     Используется отдельный механизм (не JWT), потому что:
       • токен живёт год — отзыв через blacklist в JWT неудобен;
-      • в админке хочется видеть «когда последний раз пинговал агент» —
-        для этого нужна запись в БД и обновление last_seen_at.
+      • в админке хочется видеть «когда последний раз пинговал агент»;
+      • поверх токена работает MAC-привязка — при первом обращении агент
+        шлёт X-Agent-MAC, сервер запоминает; при последующих сравнивает.
+        Это защищает от компрометации через копирование config.json на
+        другую машину: токен есть, но MAC другой → 403.
 
-    Сам токен (raw) на сервере не хранится — хранится SHA256 от него,
-    при запросе хешируем и ищем match.
+    Сам токен (raw) на сервере не хранится — только SHA256 от него.
     """
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     agent_token = (
@@ -280,8 +300,47 @@ def get_current_agent(
     if not user or not user.is_active:
         raise HTTPException(status_code=403, detail="Аккаунт пользователя деактивирован.")
 
-    # Обновляем last_seen для админки. Не делаем commit здесь — пусть endpoint
-    # сам решит когда коммитить (внутри транзакции своего запроса).
+    # ─── MAC-привязка ────────────────────────────────────────────────────────
+    # Агент шлёт MAC primary-сетевой-карты в заголовке X-Agent-MAC.
+    # Формат любой (AA:BB:..., AA-BB-...,aabbcc...) — нормализуем.
+    incoming_mac = _normalize_mac(request.headers.get("X-Agent-MAC"))
+    incoming_host = (request.headers.get("X-Agent-Hostname") or "")[:255]
+
+    if agent_token.bound_mac is None:
+        # Первое обращение — запоминаем. Если MAC не пришёл — не блокируем
+        # (старые агенты или ручные curl-проверки админа), но и не запоминаем.
+        if incoming_mac:
+            agent_token.bound_mac      = incoming_mac
+            agent_token.bound_hostname = incoming_host or None
+            logger.info(
+                "Agent token #%s bound to MAC=%s hostname=%s (user=%s)",
+                agent_token.id, incoming_mac, incoming_host, user.username,
+            )
+    else:
+        # Уже привязан — сравниваем. MAC не пришёл → пропускаем (curl-проверки),
+        # MAC пришёл и не совпал → блокируем токен.
+        if incoming_mac and incoming_mac != agent_token.bound_mac:
+            agent_token.revoked      = True
+            agent_token.revoked_at   = _now()
+            agent_token.block_reason = (
+                f"MAC mismatch: ждали {agent_token.bound_mac}, "
+                f"пришёл {incoming_mac} (hostname={incoming_host or '-'})"
+            )
+            db.commit()
+            logger.warning(
+                "Agent token #%s blocked: %s",
+                agent_token.id, agent_token.block_reason,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Токен заблокирован: MAC устройства не совпадает с тем, "
+                    "на котором агент был установлен. Возможно, config.json был "
+                    "скопирован на другую машину. Обратитесь к администратору."
+                ),
+            )
+
+    # Обновляем last_seen для админки. Commit делает endpoint в конце запроса.
     agent_token.last_seen_at = _now()
     client_ip = request.client.host if request.client else None
     if client_ip:
@@ -571,15 +630,18 @@ def admin_list_agent_tokens(db: Session = Depends(get_db)):
     )
     return [
         AgentTokenOut(
-            id           = t.id,
-            user_id      = t.user_id,
-            username     = t.user.username if t.user else "",
-            description  = t.description,
-            issued_at    = t.issued_at,
-            expires_at   = t.expires_at,
-            last_seen_at = t.last_seen_at,
-            last_seen_ip = t.last_seen_ip,
-            revoked      = t.revoked,
+            id             = t.id,
+            user_id        = t.user_id,
+            username       = t.user.username if t.user else "",
+            description    = t.description,
+            issued_at      = t.issued_at,
+            expires_at     = t.expires_at,
+            last_seen_at   = t.last_seen_at,
+            last_seen_ip   = t.last_seen_ip,
+            revoked        = t.revoked,
+            block_reason   = t.block_reason,
+            bound_mac      = t.bound_mac,
+            bound_hostname = t.bound_hostname,
         )
         for t in rows
     ]
@@ -861,19 +923,23 @@ def agent_heartbeat(
 _INSTALL_BAT_TEMPLATE = r"""@echo off
 REM ───────────────────────────────────────────────────────────────────────
 REM   PODS2 Agent — установщик
-REM   Запускать от имени АДМИНИСТРАТОРА (нужна запись в HKLM).
+REM   Запускать от имени АДМИНИСТРАТОРА (нужна запись в HKLM\WOW6432Node).
 REM
-REM   Этот скрипт сразу выполняет первую синхронизацию (импорт ключей в
-REM   реестр + установка сертификата) и регистрирует scheduled task,
-REM   который повторяет sync каждые 5 минут под текущим пользователем.
+REM   Шаги:
+REM     1) копирует sync.ps1 и config.json в C:\Program Files\PODS2Agent\
+REM     2) шифрует токен в config.json через DPAPI (LocalMachine scope) —
+REM        после этого файл бесполезен на любой ДРУГОЙ машине;
+REM     3) делает первый sync — импорт ключей в реестр + сертификатов;
+REM     4) ставит scheduled task на каждые 5 минут с /rl HIGHEST
+REM        (повышенные привилегии нужны для записи в HKLM).
 REM ───────────────────────────────────────────────────────────────────────
 SETLOCAL ENABLEDELAYEDEXPANSION
 
-REM 0. Проверка прав администратора (net session возвращает 0 у админа)
+REM 0. Проверка прав администратора
 net session >nul 2>&1
 if %errorLevel% NEQ 0 (
     echo [ОШИБКА] install.bat должен запускаться от имени Администратора.
-    echo Щёлкните правой кнопкой по install.bat -^> "Запуск от имени администратора".
+    echo Щёлкните правой кнопкой -^> "Запуск от имени администратора".
     pause
     exit /b 1
 )
@@ -883,35 +949,36 @@ echo === PODS2 Agent setup ===
 echo Installation dir: %INSTALL_DIR%
 echo.
 
-REM 1. Папка установки
+REM 1. Папка установки + копирование файлов
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
-
-REM 2. Копируем config.json и sync.ps1 (главный движок sync'а)
 copy /Y "%~dp0config.json" "%INSTALL_DIR%\config.json" >nul
 copy /Y "%~dp0sync.ps1"    "%INSTALL_DIR%\sync.ps1"    >nul
 
-REM 3. Сразу первая синхронизация под текущим залогиненным юзером.
-REM    ВАЖНО: КриптоПро 5 ищет контейнеры в HKLM\WOW6432Node\...\Users\<SID>\
-REM    под SID активного юзера, поэтому sync.ps1 должен запускаться под
-REM    user'ом (а НЕ под SYSTEM). %USERNAME% сейчас = тот кто запустил bat.
+REM 2. Первый sync. sync.ps1 сам зашифрует токен через DPAPI при первом запуске,
+REM    подхватит manifest, импортирует ключи в реестр, сохранит state.json.
 echo Запускаем первую синхронизацию...
 powershell -ExecutionPolicy Bypass -File "%INSTALL_DIR%\sync.ps1"
 
-REM 4. Scheduled task для повторения каждые 5 минут.
-REM    /ru "%USERDOMAIN%\%USERNAME%" — задача запускается под user'ом.
-REM    /it — interactive: только когда user залогинен (типично для рабочих ПК).
-echo Регистрируем задачу планировщика на каждые 5 минут...
+REM 3. Чистим устаревший Folder-reader от предыдущей версии установщика (если был)
+reg delete "HKLM\SOFTWARE\Crypto Pro\Settings\Readers\PODS2Folder" /f >nul 2>&1
+if exist "C:\ProgramData\PODS2Keys" rmdir /S /Q "C:\ProgramData\PODS2Keys" >nul 2>&1
+
+REM 4. Scheduled task на каждые 5 минут — под текущим юзером, /rl HIGHEST
+REM    нужен потому что запись в HKLM\WOW6432Node\Crypto Pro требует admin.
+REM    В корпоративной сети, где user = local admin, это работает без UAC.
+echo Регистрируем задачу планировщика "PODS2 Cert Sync"...
 schtasks /create /tn "PODS2 Cert Sync" ^
     /tr "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%INSTALL_DIR%\sync.ps1\"" ^
     /sc minute /mo 5 ^
-    /ru "%USERDOMAIN%\%USERNAME%" /it ^
+    /ru "%USERDOMAIN%\%USERNAME%" /it /rl HIGHEST ^
     /f >nul
 
 echo.
 echo === Установка завершена ===
+echo Токен зашифрован через DPAPI — config.json бесполезен на других машинах.
 echo Сертификаты подгружены, КриптоПро их видит.
 echo Следующая автоматическая синхронизация — через 5 минут.
-echo Запустить вручную можно через: schtasks /run /tn "PODS2 Cert Sync"
+echo Запустить вручную: schtasks /run /tn "PODS2 Cert Sync"
 pause
 ENDLOCAL
 """
@@ -926,35 +993,138 @@ ENDLOCAL
 #  • POST'ит /agent/heartbeat с результатом для аудита в админке.
 # Запускается из install.bat первый раз + каждые 5 минут через scheduled task.
 _SYNC_PS1_TEMPLATE = r"""# PODS2 Cert Sync — синхронизация контейнеров КриптоПро из PODS2 в реестр.
+#
+# Что делает:
+#  • при первом запуске шифрует токен в config.json через DPAPI (LocalMachine);
+#  • получает MAC primary-карты и hostname, шлёт их в заголовках X-Agent-MAC /
+#    X-Agent-Hostname (сервер использует для bind-проверки на стороне БД);
+#  • diff-sync: state.json хранит что уже установлено, sync ставит только
+#    разницу (install/update/remove). Без шума и без перезаписи существующего.
+#
+# Запускается из install.bat первый раз + каждые 5 минут через scheduled task.
 $ErrorActionPreference = 'Stop'
 
-$here       = Split-Path -Parent $MyInvocation.MyCommand.Path
-$configPath = Join-Path $here "config.json"
-$logPath    = Join-Path $here "sync.log"
+$here        = Split-Path -Parent $MyInvocation.MyCommand.Path
+$configPath  = Join-Path $here "config.json"
+$statePath   = Join-Path $here "state.json"
+$logPath     = Join-Path $here "sync.log"
 
 function Log($msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $msg
     $line | Tee-Object -FilePath $logPath -Append | Out-Null
 }
 
+# ─── DPAPI helpers (LocalMachine scope: расшифровывается только на этой машине) ──
+function Protect-Token($plain) {
+    $bytes  = [System.Text.Encoding]::UTF8.GetBytes($plain)
+    $sealed = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, 'LocalMachine')
+    return [Convert]::ToBase64String($sealed)
+}
+
+function Unprotect-Token($b64) {
+    $sealed = [Convert]::FromBase64String($b64)
+    $bytes  = [System.Security.Cryptography.ProtectedData]::Unprotect($sealed, $null, 'LocalMachine')
+    return [System.Text.Encoding]::UTF8.GetString($bytes)
+}
+
 try {
-    if (-not (Test-Path $configPath)) {
-        Log "config.json не найден рядом с sync.ps1"; exit 1
+    if (-not (Test-Path $configPath)) { Log "config.json не найден"; exit 1 }
+
+    $cfg = Get-Content $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+    # ─── 1. DPAPI шифрование при первом запуске ─────────────────────────────
+    # При свежей установке поле token — plain (сервер не знает наш machine key).
+    # Шифруем и перезаписываем config.json. После этого файл не работает на
+    # другой машине: DPAPI LocalMachine привязывает blob к ОС.
+    if (-not $cfg.token_encrypted) {
+        Log "Первый запуск: шифрую токен через DPAPI (LocalMachine)"
+        $cfg.token = Protect-Token $cfg.token
+        $cfg | Add-Member -NotePropertyName token_encrypted -NotePropertyValue $true -Force
+        $cfg | ConvertTo-Json -Depth 5 | Set-Content -Path $configPath -Encoding UTF8 -Force
     }
 
-    $cfg     = Get-Content $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $headers = @{ "Authorization" = "Bearer $($cfg.token)" }
-    $mySID   = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $token  = Unprotect-Token $cfg.token
+    $mySID  = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
-    Log "Sync start (server=$($cfg.server_url), user=$($cfg.username), SID=$mySID)"
+    # ─── 2. MAC primary physical adapter ────────────────────────────────────
+    # Берём первую активную физическую карту (Ethernet/Wi-Fi, не виртуальную).
+    # MAC шлём как заголовок — сервер запоминает при первом обращении и
+    # сравнивает на последующих.
+    $adapter  = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+                Where-Object { $_.Status -eq 'Up' } |
+                Sort-Object ifIndex | Select-Object -First 1
+    $macRaw   = if ($adapter) { $adapter.MacAddress } else { "" }
+    $hostname = $env:COMPUTERNAME
 
+    $headers = @{
+        "Authorization"    = "Bearer $token"
+        "X-Agent-MAC"      = $macRaw
+        "X-Agent-Hostname" = $hostname
+    }
+
+    Log "Sync start (server=$($cfg.server_url), user=$($cfg.username), SID=$mySID, MAC=$macRaw, host=$hostname)"
+
+    # ─── 3. Манифест ────────────────────────────────────────────────────────
     $manifest = Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/sync" -Headers $headers
     Log "  получено ключей в манифесте: $($manifest.keys.Count)"
 
+    # ─── 4. Загружаем локальный state ──────────────────────────────────────
+    $state = if (Test-Path $statePath) {
+        Get-Content $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } else {
+        [PSCustomObject]@{ installed = @() }
+    }
+    if (-not $state.installed) { $state | Add-Member -NotePropertyName installed -NotePropertyValue @() -Force }
+
+    # ─── 5. Diff ────────────────────────────────────────────────────────────
+    $manifestByThumb = @{}
+    foreach ($k in $manifest.keys) { $manifestByThumb[$k.thumbprint] = $k }
+    $stateByThumb = @{}
+    foreach ($s in $state.installed) { $stateByThumb[$s.thumbprint] = $s }
+
+    $toInstall = @()
+    $toUpdate  = @()
+    $toRemove  = @()
+    foreach ($k in $manifest.keys) {
+        if (-not $stateByThumb.ContainsKey($k.thumbprint)) {
+            $toInstall += $k
+        } elseif ($stateByThumb[$k.thumbprint].updated_at -ne $k.updated_at) {
+            $toUpdate += $k
+        }
+    }
+    foreach ($s in $state.installed) {
+        if (-not $manifestByThumb.ContainsKey($s.thumbprint)) { $toRemove += $s }
+    }
+
+    Log "  diff: +$($toInstall.Count) ~$($toUpdate.Count) -$($toRemove.Count)"
+
+    # ─── 6. Удаляем то, чего больше нет в манифесте ────────────────────────
+    foreach ($s in $toRemove) {
+        try {
+            $regPath = "HKLM:\SOFTWARE\WOW6432Node\Crypto Pro\Settings\Users\$mySID\Keys\$($s.container_name)"
+            Remove-Item $regPath -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem Cert:\CurrentUser\My |
+                Where-Object { $_.Thumbprint -eq $s.thumbprint.ToUpper() } |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+            Log "  - удалён $($s.container_name)"
+        } catch {
+            Log "  ! не удалось удалить $($s.container_name): $_"
+        }
+    }
+
+    # ─── 7. Устанавливаем/обновляем ────────────────────────────────────────
     $synced = @()
     $failed = @()
-
-    foreach ($k in $manifest.keys) {
+    $newInstalled = @()
+    # Сохраняем неизменённые
+    foreach ($s in $state.installed) {
+        if ($manifestByThumb.ContainsKey($s.thumbprint) -and
+            $manifestByThumb[$s.thumbprint].updated_at -eq $s.updated_at) {
+            $newInstalled += $s
+            $synced       += $s.thumbprint
+        }
+    }
+    foreach ($k in ($toInstall + $toUpdate)) {
         try {
             $tempZip = Join-Path $env:TEMP "podscert_$($k.id).zip"
             $tempDir = Join-Path $env:TEMP "podscert_$($k.id)"
@@ -968,21 +1138,27 @@ try {
             if (-not $folder) { throw "В архиве нет папки xxx.000" }
 
             # Контейнер → HKLM\WOW6432Node\Crypto Pro\Settings\Users\<SID>\Keys\<name>
-            # (КриптоПро 5 CSP под капотом 32-bit и читает реестр через WOW redirection).
             $regPath = "HKLM:\SOFTWARE\WOW6432Node\Crypto Pro\Settings\Users\$mySID\Keys\$($k.container_name)"
+            Remove-Item $regPath -Recurse -Force -ErrorAction SilentlyContinue
             New-Item -Path $regPath -Force | Out-Null
             Get-ChildItem $folder.FullName -File | ForEach-Object {
                 $data = [System.IO.File]::ReadAllBytes($_.FullName)
                 New-ItemProperty -Path $regPath -Name $_.Name -PropertyType Binary -Value $data -Force | Out-Null
             }
 
-            # Сертификат → личное хранилище Windows (привязка по public key автоматическая)
+            # Сертификат → личное хранилище Windows
             $cerPath = Join-Path $env:TEMP "podscert_$($k.id).cer"
             Invoke-WebRequest -Uri "$($cfg.server_url)$($k.cert_url)" -Headers $headers -OutFile $cerPath
             & certutil -user -addstore My $cerPath | Out-Null
             Remove-Item $cerPath
             Remove-Item $tempDir -Recurse -Force
 
+            $newInstalled += [PSCustomObject]@{
+                thumbprint     = $k.thumbprint
+                container_name = $k.container_name
+                updated_at     = $k.updated_at
+                registered_at  = (Get-Date).ToUniversalTime().ToString("o")
+            }
             $synced += $k.thumbprint
             Log "  ✓ $($k.container_name) ($($k.thumbprint.Substring(0,8))...)"
         } catch {
@@ -991,10 +1167,22 @@ try {
         }
     }
 
-    # Heartbeat: сервер увидит «когда последний раз пинговал агент» в админке.
-    $body = @{ synced_thumbprints = $synced; failed_thumbprints = $failed; agent_version = "ps1-1.0" } | ConvertTo-Json
+    # ─── 8. Сохраняем новый state ──────────────────────────────────────────
+    $newState = [PSCustomObject]@{
+        installed     = $newInstalled
+        last_sync_at  = (Get-Date).ToUniversalTime().ToString("o")
+    }
+    $newState | ConvertTo-Json -Depth 5 | Set-Content -Path $statePath -Encoding UTF8 -Force
+
+    # ─── 9. Heartbeat ──────────────────────────────────────────────────────
+    $body = @{
+        synced_thumbprints = $synced
+        failed_thumbprints = $failed
+        agent_version      = "ps1-2.0"
+    } | ConvertTo-Json
     try {
-        Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/heartbeat" -Headers $headers -Method Post -Body $body -ContentType "application/json" | Out-Null
+        Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/heartbeat" `
+            -Headers $headers -Method Post -Body $body -ContentType "application/json" | Out-Null
     } catch {
         Log "  heartbeat failed: $_"
     }
