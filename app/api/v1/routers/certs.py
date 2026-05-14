@@ -46,7 +46,7 @@ from app.api.dependencies import (
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.database import get_db
-from app.models.crypto_key import AgentToken, CryptoKey, CryptoKeyUsage
+from app.models.crypto_key import AgentCommand, AgentToken, CryptoKey, CryptoKeyUsage
 from app.models.user import User
 from app.services.cert_parser import parse_certificate
 from app.services.vault_client import storage
@@ -148,10 +148,51 @@ class HeartbeatIn(BaseModel):
     agent_version:       str = "1.0"
 
 
+class CommandOut(BaseModel):
+    """Одна pending-команда в poll-ответе."""
+    id:      int
+    command: str
+    params:  Optional[dict] = None
+
+
 class PollOut(BaseModel):
-    """Лёгкий ответ /agent/poll — только timestamp."""
+    """Лёгкий ответ /agent/poll — timestamp + список команд от админа."""
     force_sync_at: Optional[datetime] = None
     server_time:   datetime
+    commands:      List[CommandOut] = Field(default_factory=list)
+
+
+# Whitelist допустимых команд — без этого админ мог бы попросить агента
+# выполнить произвольный shell. Список расширяется по мере добавления операций.
+_ALLOWED_COMMANDS = frozenset({
+    "activate_windows_hwid",
+    "activate_office_ohook",
+    "get_activation_status",
+})
+
+
+class CommandCreateIn(BaseModel):
+    command: str = Field(..., max_length=64)
+    params:  Optional[dict] = None
+
+
+class CommandResultIn(BaseModel):
+    status: str = Field(..., max_length=20)   # 'success' | 'failed'
+    result: Optional[str] = None
+
+
+class CommandLogOut(BaseModel):
+    """Запись в журнале команд для админки."""
+    id:            int
+    agent_token_id: int
+    username:      Optional[str]
+    hostname:      Optional[str]
+    command:       str
+    status:        str
+    result:        Optional[str]
+    created_at:    datetime
+    completed_at:  Optional[datetime]
+    created_by:    Optional[str]
 
 
 class UsageEventIn(BaseModel):
@@ -676,6 +717,74 @@ def admin_force_sync_user(user_id: int, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
+@admin_router.post(
+    "/admin/agent-tokens/{token_id}/command",
+    status_code=201,
+    summary="Поставить команду агенту в очередь (активация Windows/Office)",
+)
+def admin_create_command(
+    token_id:    int,
+    payload:     CommandCreateIn,
+    db:          Session = Depends(get_db),
+    current:     User    = Depends(get_current_active_admin),
+):
+    if payload.command not in _ALLOWED_COMMANDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неизвестная команда. Разрешены: {sorted(_ALLOWED_COMMANDS)}",
+        )
+    t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Токен не найден.")
+    if t.revoked:
+        raise HTTPException(status_code=400, detail="Токен отозван — команда не может быть выполнена.")
+
+    cmd = AgentCommand(
+        agent_token_id = token_id,
+        command        = payload.command,
+        params         = payload.params,
+        created_by_id  = current.id,
+    )
+    db.add(cmd)
+    db.commit()
+    return {"id": cmd.id, "status": "pending"}
+
+
+@admin_router.get(
+    "/admin/commands",
+    response_model=List[CommandLogOut],
+    summary="Журнал команд агентам (активации и др.) — последние N",
+)
+def admin_list_commands(
+    days:  int = 30,
+    limit: int = 200,
+    db:    Session = Depends(get_db),
+):
+    cutoff = _now() - timedelta(days=max(1, min(days, 365)))
+    rows = (
+        db.query(AgentCommand)
+        .filter(AgentCommand.created_at >= cutoff)
+        .order_by(AgentCommand.created_at.desc())
+        .limit(max(1, min(limit, 1000)))
+        .all()
+    )
+    return [
+        CommandLogOut(
+            id             = c.id,
+            agent_token_id = c.agent_token_id,
+            username       = c.agent_token.user.username if c.agent_token and c.agent_token.user else None,
+            hostname       = c.agent_token.bound_hostname if c.agent_token else None,
+            command        = c.command,
+            status         = c.status,
+            result         = c.result,
+            created_at     = c.created_at,
+            completed_at   = c.completed_at,
+            created_by     = c.created_by.username if c.created_by else None,
+        )
+        for c in rows
+    ]
+
+
 @admin_router.get(
     "/admin/usage",
     response_model=List[UsageOut],
@@ -935,7 +1044,7 @@ agent_router = APIRouter(tags=["Ключи и сертификаты (агент
 @agent_router.get(
     "/agent/poll",
     response_model=PollOut,
-    summary="Лёгкая проверка: нужен ли sync (опрашивается раз в минуту)",
+    summary="Лёгкая проверка: нужен ли sync + список команд от админа",
 )
 @limiter.limit(lambda: settings.CRYPTO_AGENT_SYNC_RATE_LIMIT)
 def agent_poll(
@@ -944,13 +1053,57 @@ def agent_poll(
     auth:    tuple   = Depends(get_current_agent),
 ):
     """
-    Возвращает force_sync_at у токена. Агент сохраняет последнее значение
-    в state.json — если оно изменилось с прошлого тика, делает полный sync.
-    Запрос идёт раз в минуту и весит ~200 байт, никакой нагрузки на Vault.
+    Возвращает: force_sync_at у токена (для diff-sync) + pending команды
+    (активация Win/Office), которые админ поставил в очередь этому агенту.
+    Запрос идёт раз в минуту, лёгкий.
     """
     _user, token = auth
+
+    pending = (
+        db.query(AgentCommand)
+        .filter(
+            AgentCommand.agent_token_id == token.id,
+            AgentCommand.status == "pending",
+        )
+        .order_by(AgentCommand.created_at.asc())
+        .limit(10)
+        .all()
+    )
     db.commit()  # фиксируем last_seen_at, проставленный в get_current_agent
-    return PollOut(force_sync_at=token.force_sync_at, server_time=_now())
+    return PollOut(
+        force_sync_at = token.force_sync_at,
+        server_time   = _now(),
+        commands      = [CommandOut(id=c.id, command=c.command, params=c.params) for c in pending],
+    )
+
+
+@agent_router.post(
+    "/agent/command/{cmd_id}/result",
+    status_code=204,
+    summary="Агент отчитывается о выполнении команды",
+)
+def agent_command_result(
+    cmd_id:  int,
+    payload: CommandResultIn,
+    request: Request,
+    db:      Session = Depends(get_db),
+    auth:    tuple   = Depends(get_current_agent),
+):
+    _user, token = auth
+    cmd = (
+        db.query(AgentCommand)
+        .filter(AgentCommand.id == cmd_id, AgentCommand.agent_token_id == token.id)
+        .first()
+    )
+    if not cmd:
+        raise HTTPException(status_code=404, detail="Команда не найдена.")
+    if payload.status not in {"success", "failed"}:
+        raise HTTPException(status_code=400, detail="status должен быть success или failed.")
+    cmd.status       = payload.status
+    cmd.result       = (payload.result or "")[:65535]
+    cmd.completed_at = _now()
+    db.commit()
+    return Response(status_code=204)
 
 
 @agent_router.get(
@@ -1260,6 +1413,90 @@ function Unprotect-Token($b64) {
     return [System.Text.Encoding]::UTF8.GetString($bytes)
 }
 
+
+# ─── Команды от админа (активация Windows/Office через MAS) ──────────────
+#
+# Whitelist — никаких произвольных команд, только эти три:
+function Invoke-AgentCommand {
+    param([string]$Command, $Params)
+
+    switch ($Command) {
+        'get_activation_status'   { return Get-ActivationStatus }
+        'activate_windows_hwid'   { return Invoke-MasMethod 'HWID' }
+        'activate_office_ohook'   { return Invoke-MasMethod 'Ohook' }
+        default                   { throw "Unknown command: $Command" }
+    }
+}
+
+function Get-ActivationStatus {
+    $win = ''
+    $office = ''
+    try { $win = (& cscript //nologo "$env:SystemRoot\System32\slmgr.vbs" /xpr 2>&1 | Out-String).Trim() } catch { $win = "slmgr error: $_" }
+
+    $osppPaths = @(
+        "$env:ProgramFiles\Microsoft Office\Office16\OSPP.VBS",
+        "${env:ProgramFiles(x86)}\Microsoft Office\Office16\OSPP.VBS"
+    )
+    foreach ($p in $osppPaths) {
+        if (Test-Path $p) {
+            try { $office = (& cscript //nologo $p /dstatus 2>&1 | Out-String).Trim() } catch { $office = "ospp error: $_" }
+            break
+        }
+    }
+    if (-not $office) { $office = "OSPP.VBS не найден (Office не установлен?)" }
+
+    return ("=== Windows ===`n$win`n`n=== Office ===`n$office")
+}
+
+function Invoke-MasMethod {
+    param([string]$Method)   # 'HWID' или 'Ohook'
+
+    $masDir  = Join-Path $env:TEMP "MAS"
+    $masFile = Join-Path $masDir "MAS_AIO.cmd"
+    if (-not (Test-Path $masDir)) { New-Item -ItemType Directory -Path $masDir -Force | Out-Null }
+
+    # MAS All-In-One CMD — официальный канал распространения.
+    # massgravel поддерживает прямую ссылку на raw — это та же версия что в releases.
+    $url = "https://raw.githubusercontent.com/massgravel/Microsoft-Activation-Scripts/master/MAS/All-In-One-Version-KL/MAS_AIO.cmd"
+
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $masFile -UseBasicParsing -ErrorAction Stop
+    } catch {
+        throw "Не удалось скачать MAS: $_  (доступ к GitHub есть?)"
+    }
+
+    # MAS_AIO.cmd поддерживает CLI-флаги: /HWID, /KMS38, /Ohook, /KMS-Renewal, etc.
+    # Запускаем silent: /S — без интерактивных prompt'ов.
+    $argList = @('/c', "`"$masFile`"", "/$Method", '/S')
+    $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList $argList `
+        -Wait -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput "$masDir\out.log" `
+        -RedirectStandardError  "$masDir\err.log"
+
+    $stdout = if (Test-Path "$masDir\out.log") { Get-Content "$masDir\out.log" -Raw -ErrorAction SilentlyContinue } else { "" }
+    $stderr = if (Test-Path "$masDir\err.log") { Get-Content "$masDir\err.log" -Raw -ErrorAction SilentlyContinue } else { "" }
+
+    # Сразу после активации — снимаем status для verification.
+    $status = Get-ActivationStatus
+
+    # Cleanup MAS-файла (он triggered antivirus, не оставляем на диске).
+    Remove-Item $masDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    $report = @"
+=== MAS /$Method (exit code: $($proc.ExitCode)) ===
+STDOUT:
+$stdout
+
+STDERR:
+$stderr
+
+=== Status after ===
+$status
+"@
+    if ($proc.ExitCode -ne 0) { throw $report }
+    return $report
+}
+
 try {
     if (-not (Test-Path $configPath)) { Log "config.json не найден"; exit 1 }
 
@@ -1312,6 +1549,37 @@ try {
     $poll        = Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/poll" -Headers $headers
     $serverForce = $poll.force_sync_at
     $localForce  = if ($state) { $state.last_force_sync_at } else { $null }
+
+    # ─── Команды от админа (активация Windows/Office) ─────────────────────
+    # Выполняем ДО решения "skip sync" — команды должны исполняться даже
+    # когда полный sync не нужен.
+    if ($poll.commands -and $poll.commands.Count -gt 0) {
+        Log "Получено команд от админа: $($poll.commands.Count)"
+        foreach ($cmd in $poll.commands) {
+            try {
+                Log "  выполняю команду #$($cmd.id): $($cmd.command)"
+                $result = Invoke-AgentCommand -Command $cmd.command -Params $cmd.params
+                $body = @{ status = 'success'; result = $result } | ConvertTo-Json -Depth 5
+                Invoke-RestMethod `
+                    -Uri "$($cfg.server_url)/api/v1/certs/agent/command/$($cmd.id)/result" `
+                    -Headers $headers -Method Post -Body $body `
+                    -ContentType "application/json" | Out-Null
+                Log "  ✓ команда #$($cmd.id) выполнена"
+            } catch {
+                $errMsg = $_.Exception.Message
+                Log "  ✗ команда #$($cmd.id) упала: $errMsg"
+                $body = @{ status = 'failed'; result = $errMsg } | ConvertTo-Json
+                try {
+                    Invoke-RestMethod `
+                        -Uri "$($cfg.server_url)/api/v1/certs/agent/command/$($cmd.id)/result" `
+                        -Headers $headers -Method Post -Body $body `
+                        -ContentType "application/json" | Out-Null
+                } catch {
+                    Log "  !! не удалось отправить отчёт об ошибке: $_"
+                }
+            }
+        }
+    }
 
     if ($state -and $state.installed -and ($serverForce -eq $localForce)) {
         Log "Poll: sync not needed (force_sync_at=$serverForce unchanged), exit"
@@ -1656,4 +1924,54 @@ ID токена (для админа):    {token_preview}
 
 Логи sync:  C:\\Program Files\\PODS2Agent\\sync.log
 Состояние:  C:\\Program Files\\PODS2Agent\\state.json
+
+═══════════════════════════════════════════════════════════════════════════
+АКТИВАЦИЯ WINDOWS / OFFICE (для администратора)
+═══════════════════════════════════════════════════════════════════════════
+
+Агент умеет по команде из админки PODS2 запустить активацию Windows
+(HWID) и Office (Ohook) через MAS — Microsoft Activation Scripts от
+massgravel (github.com/massgravel/Microsoft-Activation-Scripts).
+
+Как пользоваться:
+  1. Админка → "Ключи и сертификаты" → "Установленные агенты".
+  2. На строке нужной машины нажми 🪟 (Windows) или 📄 (Office).
+  3. Команда в очереди → агент в течение минуты её заберёт, скачает MAS
+     с GitHub, выполнит /HWID или /Ohook и отчитается в "Журнал команд".
+
+ТРЕБОВАНИЯ (без них активация не пройдёт):
+
+1. ИНТЕРНЕТ-ДОСТУП НА КЛИЕНТСКОМ ПК
+   ─────────────────────────────────────────────────────────────────────
+   Агент скачивает MAS с raw.githubusercontent.com. HWID-метод
+   дополнительно ходит на Microsoft за цифровой лицензией.
+   Если корпсеть закрыта — активация не пройдёт.
+
+2. ДОПОЛНИТЕЛЬНЫЕ ИСКЛЮЧЕНИЯ В КАСПЕРСКОМ (KSC)
+   ─────────────────────────────────────────────────────────────────────
+   MAS детектится антивирусами как HackTool:Win32/AutoKMS. К исключениям
+   из основного раздела README добавь:
+
+      Объект:    %TEMP%\\MAS\\*
+      Угроза:    HackTool*, RiskTool*, UnwantedSoftware*
+
+   В Application Control / HIPS разрешить:
+      • C:\\Windows\\System32\\cmd.exe (родитель — powershell.exe от PODS2Agent)
+      • Запись в HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion
+        \\SoftwareProtectionPlatform\\* (туда пишется HWID-лицензия)
+      • Запись в HKLM\\SOFTWARE\\Microsoft\\Office\\* (Ohook-патчи)
+
+3. БЕЗ ПРЕДВАРИТЕЛЬНОЙ АКТИВАЦИИ
+   ─────────────────────────────────────────────────────────────────────
+   На "грязной" Windows HWID работает в 99% случаев. Если в системе уже
+   стояла какая-то активация (триал, retail key, KMS) — может потребоваться
+   деактивация: запрос статуса (кнопка ℹ) покажет текущее состояние.
+
+ЮРИДИЧЕСКОЕ ПРИМЕЧАНИЕ
+
+MAS обходит лицензирование Microsoft. В контексте корпоративного
+использования это нарушение EULA. Применимо в основном для тех контур,
+где легально купить Windows/Office невозможно (санкционные ограничения).
+Используйте на свой риск; рекомендованная альтернатива — миграция на
+российские ОС (Astra Linux, ALT, ROSA) и офисы (MyOffice, P7-Office).
 """
