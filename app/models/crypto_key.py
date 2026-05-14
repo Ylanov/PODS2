@@ -167,6 +167,11 @@ class AgentToken(Base):
     bound_hostname = Column(String(255), nullable=True)
     # Причина блокировки, если revoked=True по MAC mismatch (а не вручную из админки).
     block_reason  = Column(String(255), nullable=True)
+    # Pull-on-command модель: агент опрашивает /agent/poll раз в минуту;
+    # если force_sync_at изменился — делает полный sync. Ставится админом
+    # (кнопка "Обновить подпись") либо автоматически при upload/patch/delete
+    # ключа этого юзера. NULL = пока ничего не требует обновления.
+    force_sync_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User")
 

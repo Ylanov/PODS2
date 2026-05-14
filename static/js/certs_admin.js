@@ -105,7 +105,8 @@ function renderAgentsTable() {
             : `<span class="certs-badge certs-badge--active">Активен</span>`;
         const actions = a.revoked
             ? ''
-            : `<button class="btn btn-text btn-xs" data-agent-revoke="${a.id}" title="Отозвать токен (агент перестанет работать сразу)">⊘</button>`;
+            : `<button class="btn btn-text btn-xs" data-agent-force="${a.id}" title="Обновить подпись (агент подтянет изменения в течение минуты)">↻</button>
+               <button class="btn btn-text btn-xs" data-agent-revoke="${a.id}" title="Отозвать токен (агент перестанет работать сразу)">⊘</button>`;
         return `
             <tr data-agent-id="${a.id}">
                 <td>${escapeHtml(a.username)}</td>
@@ -120,6 +121,25 @@ function renderAgentsTable() {
     document.querySelectorAll('[data-agent-revoke]').forEach(btn => {
         btn.addEventListener('click', () => handleAgentRevoke(parseInt(btn.dataset.agentRevoke, 10)));
     });
+    document.querySelectorAll('[data-agent-force]').forEach(btn => {
+        btn.addEventListener('click', () => handleAgentForceSync(parseInt(btn.dataset.agentForce, 10)));
+    });
+}
+
+
+async function handleAgentForceSync(id) {
+    const a = STATE.agents.find(x => x.id === id);
+    if (!a) return;
+    try {
+        await api.post(`/certs/admin/agent-tokens/${id}/force-sync`, {});
+        window.showSnackbar?.(
+            `Команда отправлена. Агент «${a.description || a.username}» подтянет изменения в течение минуты.`,
+            'success',
+        );
+        await loadAgents();
+    } catch (err) {
+        window.showError?.('Не удалось отправить команду: ' + err.message);
+    }
 }
 
 

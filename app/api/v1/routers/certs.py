@@ -148,6 +148,12 @@ class HeartbeatIn(BaseModel):
     agent_version:       str = "1.0"
 
 
+class PollOut(BaseModel):
+    """Лёгкий ответ /agent/poll — только timestamp."""
+    force_sync_at: Optional[datetime] = None
+    server_time:   datetime
+
+
 class AgentTokenOut(BaseModel):
     """Запись токена для админки (без самого токена — только метаданные)."""
     id:             int
@@ -226,6 +232,26 @@ def _content_disposition(fname: str) -> str:
     ascii_safe = re.sub(r"[^A-Za-z0-9._-]+", "_", fname).strip("_") or "file"
     encoded    = quote(fname, safe="")
     return f'attachment; filename="{ascii_safe}"; filename*=UTF-8\'\'{encoded}'
+
+
+def _bump_force_sync(db: Session, user_id: Optional[int]) -> None:
+    """
+    Помечает все активные токены пользователя как «требуется sync».
+    Вызывается при upload/patch/delete ключа, чтобы агенты при следующем
+    poll (раз в минуту) подтянули изменения.
+    """
+    if not user_id:
+        return
+    now = _now()
+    (
+        db.query(AgentToken)
+        .filter(
+            AgentToken.user_id == user_id,
+            AgentToken.revoked == False,                      # noqa: E712
+            AgentToken.expires_at > now,
+        )
+        .update({AgentToken.force_sync_at: now}, synchronize_session=False)
+    )
 
 
 def _sanitize_container_name(name: str) -> str:
@@ -511,6 +537,8 @@ async def upload_key(
         uploaded_by_id = current_user.id,
     )
     db.add(key)
+    # Сигналим всем агентам владельца, что нужно подтянуть новый ключ.
+    _bump_force_sync(db, owner_user_id)
     try:
         db.commit()
     except Exception:
@@ -571,6 +599,10 @@ def admin_patch(
     if not key:
         raise HTTPException(status_code=404, detail="Ключ не найден.")
 
+    # Запоминаем кто был владельцем до изменений — чтобы дёрнуть его агента
+    # тоже, даже если меняем owner на другого юзера (старый должен удалить ключ).
+    prev_owner_id = key.owner_user_id
+
     if payload.owner_user_id is not None:
         # owner_user_id=0 → разрешено как «снять владельца». Иначе проверяем.
         if payload.owner_user_id == 0:
@@ -589,6 +621,11 @@ def admin_patch(
         if payload.status not in {"active", "revoked", "expired"}:
             raise HTTPException(status_code=400, detail="Недопустимый статус.")
         key.status = payload.status
+
+    # Сигналим обоим — и старому, и новому владельцу (если меняли).
+    _bump_force_sync(db, prev_owner_id)
+    if key.owner_user_id != prev_owner_id:
+        _bump_force_sync(db, key.owner_user_id)
 
     db.commit()
     db.refresh(key)
@@ -611,7 +648,10 @@ def admin_delete(key_id: int, db: Session = Depends(get_db)):
     except Exception as exc:
         logger.exception("Vault delete failed for key_id=%s", key_id)
         raise HTTPException(status_code=503, detail=f"Не удалось удалить из хранилища: {exc}")
+    owner_id = key.owner_user_id
     db.delete(key)
+    # Сигналим агенту бывшего владельца — пусть удалит у себя из реестра.
+    _bump_force_sync(db, owner_id)
     db.commit()
     return Response(status_code=204)
 
@@ -663,6 +703,33 @@ def admin_revoke_agent_token(token_id: int, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
+@admin_router.post(
+    "/admin/agent-tokens/{token_id}/force-sync",
+    status_code=204,
+    summary="Команда агенту: обновить подпись (sync при следующем poll)",
+)
+def admin_force_sync_agent(token_id: int, db: Session = Depends(get_db)):
+    t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Токен не найден.")
+    if t.revoked:
+        raise HTTPException(status_code=400, detail="Токен отозван — sync невозможен.")
+    t.force_sync_at = _now()
+    db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.post(
+    "/admin/users/{user_id}/force-sync",
+    status_code=204,
+    summary="Команда всем агентам пользователя: обновить подпись",
+)
+def admin_force_sync_user(user_id: int, db: Session = Depends(get_db)):
+    _bump_force_sync(db, user_id)
+    db.commit()
+    return Response(status_code=204)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # USER ROUTER — кабинет пользователя
 # ═══════════════════════════════════════════════════════════════════════════
@@ -689,6 +756,24 @@ def list_my_keys(
         .all()
     )
     return [_to_out(k) for k in rows]
+
+
+@user_router.post(
+    "/me/force-sync",
+    status_code=204,
+    summary="Кнопка «Обновить сейчас» в кабинете юзера — bump force_sync_at у своих токенов",
+)
+def user_force_sync(
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    Пользователь сам инициирует пересинхронизацию агентов на своих ПК
+    (например, после получения нового сертификата от админа).
+    """
+    _bump_force_sync(db, current_user.id)
+    db.commit()
+    return Response(status_code=204)
 
 
 @user_router.post(
@@ -748,10 +833,14 @@ def get_install_package(
     )
 
     # 3. ZIP в памяти.
+    #    install.bat — тонкий launcher (поднимает UAC и зовёт install.ps1).
+    #    install.ps1 — основной установщик.
+    #    sync.ps1   — движок синхронизации (poll-first, diff-based).
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("config.json", json.dumps(config, indent=2, ensure_ascii=False))
-        zf.writestr("install.bat", _INSTALL_BAT_TEMPLATE)
+        zf.writestr("install.bat", _INSTALL_BAT_LAUNCHER)
+        zf.writestr("install.ps1", _INSTALL_PS1_TEMPLATE)
         zf.writestr("sync.ps1",    _SYNC_PS1_TEMPLATE)
         zf.writestr("README.txt",  readme)
     buf.seek(0)
@@ -769,6 +858,27 @@ def get_install_package(
 # ═══════════════════════════════════════════════════════════════════════════
 
 agent_router = APIRouter(tags=["Ключи и сертификаты (агент)"])
+
+
+@agent_router.get(
+    "/agent/poll",
+    response_model=PollOut,
+    summary="Лёгкая проверка: нужен ли sync (опрашивается раз в минуту)",
+)
+@limiter.limit(lambda: settings.CRYPTO_AGENT_SYNC_RATE_LIMIT)
+def agent_poll(
+    request: Request,
+    db:      Session = Depends(get_db),
+    auth:    tuple   = Depends(get_current_agent),
+):
+    """
+    Возвращает force_sync_at у токена. Агент сохраняет последнее значение
+    в state.json — если оно изменилось с прошлого тика, делает полный sync.
+    Запрос идёт раз в минуту и весит ~200 байт, никакой нагрузки на Vault.
+    """
+    _user, token = auth
+    db.commit()  # фиксируем last_seen_at, проставленный в get_current_agent
+    return PollOut(force_sync_at=token.force_sync_at, server_time=_now())
 
 
 @agent_router.get(
@@ -920,67 +1030,64 @@ def agent_heartbeat(
 # Шаблоны: install.bat и README.txt
 # ═══════════════════════════════════════════════════════════════════════════
 
-_INSTALL_BAT_TEMPLATE = r"""@echo off
-REM ───────────────────────────────────────────────────────────────────────
-REM   PODS2 Agent — установщик
-REM   Запускать от имени АДМИНИСТРАТОРА (нужна запись в HKLM\WOW6432Node).
-REM
-REM   Шаги:
-REM     1) копирует sync.ps1 и config.json в C:\Program Files\PODS2Agent\
-REM     2) шифрует токен в config.json через DPAPI (LocalMachine scope) —
-REM        после этого файл бесполезен на любой ДРУГОЙ машине;
-REM     3) делает первый sync — импорт ключей в реестр + сертификатов;
-REM     4) ставит scheduled task на каждые 5 минут с /rl HIGHEST
-REM        (повышенные привилегии нужны для записи в HKLM).
-REM ───────────────────────────────────────────────────────────────────────
-SETLOCAL ENABLEDELAYEDEXPANSION
-
-REM 0. Проверка прав администратора
+_INSTALL_BAT_LAUNCHER = r"""@echo off
+REM Тонкий лаунчер: поднимает UAC и зовёт install.ps1 (основной установщик).
+REM Меньше кода в .bat = меньше внимания антивирусов.
 net session >nul 2>&1
 if %errorLevel% NEQ 0 (
-    echo [ОШИБКА] install.bat должен запускаться от имени Администратора.
-    echo Щёлкните правой кнопкой -^> "Запуск от имени администратора".
-    pause
-    exit /b 1
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
 )
-
-set "INSTALL_DIR=C:\Program Files\PODS2Agent"
-echo === PODS2 Agent setup ===
-echo Installation dir: %INSTALL_DIR%
-echo.
-
-REM 1. Папка установки + копирование файлов
-if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
-copy /Y "%~dp0config.json" "%INSTALL_DIR%\config.json" >nul
-copy /Y "%~dp0sync.ps1"    "%INSTALL_DIR%\sync.ps1"    >nul
-
-REM 2. Первый sync. sync.ps1 сам зашифрует токен через DPAPI при первом запуске,
-REM    подхватит manifest, импортирует ключи в реестр, сохранит state.json.
-echo Запускаем первую синхронизацию...
-powershell -ExecutionPolicy Bypass -File "%INSTALL_DIR%\sync.ps1"
-
-REM 3. Чистим устаревший Folder-reader от предыдущей версии установщика (если был)
-reg delete "HKLM\SOFTWARE\Crypto Pro\Settings\Readers\PODS2Folder" /f >nul 2>&1
-if exist "C:\ProgramData\PODS2Keys" rmdir /S /Q "C:\ProgramData\PODS2Keys" >nul 2>&1
-
-REM 4. Scheduled task на каждые 5 минут — под текущим юзером, /rl HIGHEST
-REM    нужен потому что запись в HKLM\WOW6432Node\Crypto Pro требует admin.
-REM    В корпоративной сети, где user = local admin, это работает без UAC.
-echo Регистрируем задачу планировщика "PODS2 Cert Sync"...
-schtasks /create /tn "PODS2 Cert Sync" ^
-    /tr "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%INSTALL_DIR%\sync.ps1\"" ^
-    /sc minute /mo 5 ^
-    /ru "%USERDOMAIN%\%USERNAME%" /it /rl HIGHEST ^
-    /f >nul
-
-echo.
-echo === Установка завершена ===
-echo Токен зашифрован через DPAPI — config.json бесполезен на других машинах.
-echo Сертификаты подгружены, КриптоПро их видит.
-echo Следующая автоматическая синхронизация — через 5 минут.
-echo Запустить вручную: schtasks /run /tn "PODS2 Cert Sync"
+cd /d "%~dp0"
+powershell -ExecutionPolicy Bypass -File "%~dp0install.ps1"
 pause
-ENDLOCAL
+"""
+
+
+_INSTALL_PS1_TEMPLATE = r"""# PODS2 Agent — основной установщик
+# Запускается из install.bat уже с правами Администратора.
+$ErrorActionPreference = 'Stop'
+$here       = Split-Path -Parent $MyInvocation.MyCommand.Path
+$installDir = "C:\Program Files\PODS2Agent"
+
+Write-Host "═══ PODS2 Agent setup ═══"
+Write-Host "Installation dir: $installDir`n"
+
+# 1. Папка установки + копирование sync.ps1 и config.json
+if (-not (Test-Path $installDir)) {
+    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+}
+Copy-Item (Join-Path $here "config.json") (Join-Path $installDir "config.json") -Force
+Copy-Item (Join-Path $here "sync.ps1")    (Join-Path $installDir "sync.ps1")    -Force
+
+# 2. Чистка артефактов от старых версий установщика
+Remove-Item "HKLM:\SOFTWARE\Crypto Pro\Settings\Readers\PODS2Folder" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "C:\ProgramData\PODS2Keys" -Recurse -Force -ErrorAction SilentlyContinue
+
+# 3. Первый sync. sync.ps1 сам зашифрует токен через DPAPI при первом
+#    запуске, подхватит manifest, импортирует ключи в реестр.
+Write-Host "Первая синхронизация..."
+& powershell -ExecutionPolicy Bypass -File (Join-Path $installDir "sync.ps1")
+
+# 4. Scheduled task: КАЖДУЮ МИНУТУ запускаем sync.ps1.
+#    Сам sync.ps1 сначала делает лёгкий /agent/poll и тихо exit'ит если
+#    обновления не требуются. Полный sync — только когда админ нажал
+#    «Обновить подпись» или загрузил новый ключ.
+#    Это убирает регулярные изменения реестра, на которые реагирует Касперский.
+Write-Host "Регистрируем задачу планировщика..."
+$taskUser = "$env:USERDOMAIN\$env:USERNAME"
+$taskCmd  = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$installDir\sync.ps1`""
+schtasks /create /tn "PODS2 Cert Sync" /tr $taskCmd `
+    /sc minute /mo 1 /ru $taskUser /it /rl HIGHEST /f | Out-Null
+
+Write-Host ""
+Write-Host "═══ Установка завершена ═══"
+Write-Host "Агент проверяет команды от админа каждую минуту."
+Write-Host "Когда админ нажмёт «Обновить подпись» или назначит новый ключ —"
+Write-Host "агент подхватит изменения в течение минуты."
+Write-Host ""
+Write-Host "Запустить sync вручную: schtasks /run /tn `"PODS2 Cert Sync`""
+Write-Host "Логи:                   $installDir\sync.log"
 """
 
 
@@ -1062,18 +1169,37 @@ try {
         "X-Agent-Hostname" = $hostname
     }
 
-    Log "Sync start (server=$($cfg.server_url), user=$($cfg.username), SID=$mySID, MAC=$macRaw, host=$hostname)"
-
-    # ─── 3. Манифест ────────────────────────────────────────────────────────
-    $manifest = Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/sync" -Headers $headers
-    Log "  получено ключей в манифесте: $($manifest.keys.Count)"
-
-    # ─── 4. Загружаем локальный state ──────────────────────────────────────
+    # ─── 3. Poll: нужен ли sync? ──────────────────────────────────────────
+    # Лёгкий запрос — сервер возвращает force_sync_at (timestamp). Если он
+    # такой же как в state.json — sync не нужен, просто exit. Это убирает
+    # ненужные обращения к Vault и записи в реестр (которые провоцируют
+    # антивирусы). Полный sync делается ТОЛЬКО когда:
+    #   • первый запуск (нет state.json),
+    #   • админ нажал «Обновить подпись» в админке,
+    #   • админ загрузил/переназначил/отозвал ключ юзера.
     $state = if (Test-Path $statePath) {
         Get-Content $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
     } else {
-        [PSCustomObject]@{ installed = @() }
+        $null
     }
+
+    $poll        = Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/poll" -Headers $headers
+    $serverForce = $poll.force_sync_at
+    $localForce  = if ($state) { $state.last_force_sync_at } else { $null }
+
+    if ($state -and $state.installed -and ($serverForce -eq $localForce)) {
+        Log "Poll: sync not needed (force_sync_at=$serverForce unchanged), exit"
+        exit 0
+    }
+
+    Log "Sync start (server=$($cfg.server_url), user=$($cfg.username), SID=$mySID, MAC=$macRaw, host=$hostname)"
+    Log "  reason: server force_sync_at=$serverForce, local=$localForce"
+
+    # ─── 4. Манифест ───────────────────────────────────────────────────────
+    $manifest = Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/sync" -Headers $headers
+    Log "  получено ключей в манифесте: $($manifest.keys.Count)"
+
+    if (-not $state) { $state = [PSCustomObject]@{ installed = @() } }
     if (-not $state.installed) { $state | Add-Member -NotePropertyName installed -NotePropertyValue @() -Force }
 
     # ─── 5. Diff ────────────────────────────────────────────────────────────
@@ -1168,9 +1294,12 @@ try {
     }
 
     # ─── 8. Сохраняем новый state ──────────────────────────────────────────
+    # last_force_sync_at = серверная отметка, с которой мы синхронизировались.
+    # При следующем poll сравним: если сервер вернёт тот же — sync не нужен.
     $newState = [PSCustomObject]@{
-        installed     = $newInstalled
-        last_sync_at  = (Get-Date).ToUniversalTime().ToString("o")
+        installed          = $newInstalled
+        last_sync_at       = (Get-Date).ToUniversalTime().ToString("o")
+        last_force_sync_at = $serverForce
     }
     $newState | ConvertTo-Json -Depth 5 | Set-Content -Path $statePath -Encoding UTF8 -Force
 
@@ -1203,35 +1332,84 @@ _README_TEMPLATE = """PODS2 Agent
 Токен действителен до:     {expires_at}
 ID токена (для админа):    {token_preview}
 
-ИНСТРУКЦИЯ
+УСТАНОВКА — ОДИН КЛИК
 ───────────────────────────────────────────────────────────────────────────
 
 1. Распакуйте архив в любую временную папку (например, на рабочий стол).
-2. Щёлкните правой кнопкой по install.bat → «Запуск от имени Администратора».
-3. После завершения установки агент запустится автоматически.
-4. В течение 5 минут все назначенные вам ключи появятся в КриптоПро —
-   они будут видны в «Управление контейнерами» в считывателе «PODS2Folder».
-5. Подписывайте документы как обычно (Word/Excel/КриптоАРМ/электронные торги).
+2. Двойной клик по install.bat — Windows запросит подтверждение администратора
+   (UAC). Нажмите «Да».
+3. Откроется окно установки, дождитесь сообщения «Установка завершена».
+4. Готово. КриптоПро видит ваши сертификаты, можно подписывать в Word/Excel/
+   КриптоАРМ/электронных торгах как обычно.
 
-ЕСЛИ ВЫДАЛО ОШИБКУ «agent.exe не найден»
+КАК ОБНОВЛЯЮТСЯ КЛЮЧИ
 ───────────────────────────────────────────────────────────────────────────
 
-Обратитесь к администратору — он соберёт бинарник агента и пришлёт его
-отдельно. После получения положите файл agent.exe в папку
-C:\\Program Files\\PODS2Agent\\ и запустите install.bat повторно.
+Агент не делает ничего сам — он только проверяет команды от админа раз
+в минуту (легкий запрос, ~200 байт). Когда админ загружает вам новый
+сертификат или нажимает «Обновить подпись», агент в течение минуты
+подгружает изменения автоматически.
+
+В вашем кабинете на сайте есть кнопка «Обновить сейчас» — нажмите её,
+если изменения нужны прямо сейчас.
 
 ВАЖНО О БЕЗОПАСНОСТИ
 ───────────────────────────────────────────────────────────────────────────
 
-• Файл config.json содержит ваш персональный токен — НЕ передавайте его
-  никому. Если файл утёк, попросите администратора отозвать токен через
-  админку (Ключи и сертификаты → Установленные агенты → Отозвать).
+• Токен в config.json зашифрован через DPAPI (LocalMachine scope) — файл
+  бесполезен на любой другой машине, расшифровать его невозможно.
 
-• Ключи на вашей машине лежат в незашифрованной форме (так требует КриптоПро
-  для подписания). Не оставляйте машину без блокировки.
+• Дополнительно: токен привязан к MAC-адресу вашей сетевой карты. Если
+  кто-то скопирует config.json на другой компьютер, токен будет немедленно
+  заблокирован, а в админке появится запись «MAC mismatch».
 
-ПРИ ПРОБЛЕМАХ
+• Не передавайте никому файл config.json даже зашифрованным. Если что-то
+  пошло не так — обратитесь к админу, он отзовёт токен через админку.
+
+═══════════════════════════════════════════════════════════════════════════
+ДЛЯ АДМИНИСТРАТОРА: НАСТРОЙКА КАСПЕРСКОГО (KSC / KES)
+═══════════════════════════════════════════════════════════════════════════
+
+Касперский может блокировать install.bat и/или sync.ps1 из-за того что
+скрипты не имеют цифровой подписи и работают с реестром HKLM. Чтобы агент
+работал на всех машинах в сети, **один раз** настройте политику KSC:
+
+1. ИСКЛЮЧЕНИЯ для папки и процессов
+   ─────────────────────────────────────────────────────────────────────
+   KSC → Политики → Антивирусная защита → Исключения сканирования и
+   доверенная зона → Параметры:
+
+      Объект:    C:\\Program Files\\PODS2Agent\\*
+      Объект:    %TEMP%\\podscert_*
+      Угроза:    *
+      Компоненты: Файловый антивирус, Веб-антивирус, Защита от
+                  программ-вымогателей, Анализ поведения, AMSI-защита
+
+2. ДОВЕРЕННЫЕ ПРОЦЕССЫ
+   ─────────────────────────────────────────────────────────────────────
+   В тех же исключениях добавьте как «Доверенный процесс»:
+
+      C:\\Program Files\\PODS2Agent\\sync.ps1
+      C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe
+        (только когда родительский процесс — schtasks.exe / Task Scheduler)
+
+3. РАЗРЕШИТЬ PowerShell ExecutionPolicy=Bypass
+   ─────────────────────────────────────────────────────────────────────
+   KSC → Контроль программ → если включён whitelisting — добавьте
+   sync.ps1 как разрешённый скрипт.
+
+4. ЕСЛИ ИСПОЛЬЗУЕТСЯ HIPS (Host Intrusion Prevention)
+   ─────────────────────────────────────────────────────────────────────
+   Разрешите powershell.exe запись в:
+     HKLM\\SOFTWARE\\WOW6432Node\\Crypto Pro\\Settings\\Users\\*
+     Cert:\\CurrentUser\\My
+
+После настройки политики на одной машине — раскатайте её на все ПК
+через KSC, install.bat будет проходить без вмешательства антивируса.
+
+ЛОГИ ПРИ ПРОБЛЕМАХ
 ───────────────────────────────────────────────────────────────────────────
 
-Логи службы: C:\\Program Files\\PODS2Agent\\agent.log
+Логи sync:  C:\\Program Files\\PODS2Agent\\sync.log
+Состояние:  C:\\Program Files\\PODS2Agent\\state.json
 """
