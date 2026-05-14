@@ -22,6 +22,7 @@ const STATE = {
     users:          [],
     agents:         [],
     usage:          [],
+    commands:       [],
     usageDays:      7,
     filterStatus:   '',
     searchQuery:    '',
@@ -34,7 +35,7 @@ const STATE = {
 export async function initCryptoCerts() {
     if (STATE.initialized) {
         // Повторное открытие — просто рефрешим таблицы.
-        await Promise.all([loadKeys(), loadAgents(), loadUsage()]);
+        await Promise.all([loadKeys(), loadAgents(), loadUsage(), loadCommands()]);
         return;
     }
     STATE.initialized = true;
@@ -43,7 +44,77 @@ export async function initCryptoCerts() {
     setupFilters();
     setupUsageFilter();
 
-    await Promise.all([loadKeys(), loadUsers(), loadAgents(), loadUsage()]);
+    await Promise.all([loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadCommands()]);
+}
+
+
+async function loadCommands() {
+    try {
+        const rows = await api.get('/certs/admin/commands?days=30&limit=200');
+        STATE.commands = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+        console.error('[certs] loadCommands', err);
+        STATE.commands = [];
+    }
+    renderCommandsTable();
+}
+
+
+function renderCommandsTable() {
+    const tbody = document.getElementById('commands-tbody');
+    const badge = document.getElementById('commands-count-badge');
+    if (!tbody) return;
+
+    const pending = STATE.commands.filter(c => c.status === 'pending').length;
+    const failed  = STATE.commands.filter(c => c.status === 'failed' ).length;
+    if (badge) {
+        const parts = [`всего: ${STATE.commands.length}`];
+        if (pending) parts.push(`⏳ pending: ${pending}`);
+        if (failed)  parts.push(`✗ failed: ${failed}`);
+        badge.textContent = parts.join(' · ');
+    }
+
+    if (STATE.commands.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="certs-empty">Пока никаких команд не отправлено.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = STATE.commands.map(c => {
+        const statusBadge =
+            c.status === 'success' ? '<span class="certs-badge certs-badge--active">success</span>' :
+            c.status === 'failed'  ? '<span class="certs-badge certs-badge--revoked">failed</span>' :
+            c.status === 'pending' ? '<span class="certs-badge certs-badge--expired">pending</span>' :
+                                     `<span class="certs-badge">${escapeHtml(c.status)}</span>`;
+        const resultBtn = c.result
+            ? `<button class="btn btn-text btn-xs" data-show-result="${c.id}" title="Показать результат">📋</button>`
+            : '';
+        return `
+            <tr>
+                <td>${formatDateTime(c.created_at)}</td>
+                <td>${escapeHtml(c.username || '—')}</td>
+                <td>${escapeHtml(c.hostname || '—')}</td>
+                <td><code>${escapeHtml(commandLabel(c.command))}</code></td>
+                <td>${statusBadge}</td>
+                <td>${resultBtn}</td>
+            </tr>`;
+    }).join('');
+
+    document.querySelectorAll('[data-show-result]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const c = STATE.commands.find(x => x.id === parseInt(btn.dataset.showResult, 10));
+            if (c) alert(`${commandLabel(c.command)} — ${c.status}\n\n${c.result || '(нет вывода)'}`);
+        });
+    });
+}
+
+
+function commandLabel(cmd) {
+    const map = {
+        activate_windows_hwid:   'Активация Windows (HWID)',
+        activate_office_ohook:   'Активация Office (Ohook)',
+        get_activation_status:   'Запрос статуса',
+    };
+    return map[cmd] || cmd;
 }
 
 
@@ -166,8 +237,11 @@ function renderAgentsTable() {
             : `<span class="certs-badge certs-badge--active">Активен</span>`;
         const actions = a.revoked
             ? ''
-            : `<button class="btn btn-text btn-xs" data-agent-force="${a.id}" title="Обновить подпись (агент подтянет изменения в течение минуты)">↻</button>
-               <button class="btn btn-text btn-xs" data-agent-revoke="${a.id}" title="Отозвать токен (агент перестанет работать сразу)">⊘</button>`;
+            : `<button class="btn btn-text btn-xs" data-agent-force="${a.id}"      title="Обновить подпись (агент подтянет изменения в течение минуты)">↻</button>
+               <button class="btn btn-text btn-xs" data-agent-status="${a.id}"     title="Запросить статус активации Windows и Office">ℹ</button>
+               <button class="btn btn-text btn-xs" data-agent-actwin="${a.id}"     title="Активировать Windows (HWID через MAS)">🪟</button>
+               <button class="btn btn-text btn-xs" data-agent-actoff="${a.id}"     title="Активировать Office (Ohook через MAS)">📄</button>
+               <button class="btn btn-text btn-xs" data-agent-revoke="${a.id}"     title="Отозвать токен (агент перестанет работать сразу)">⊘</button>`;
         return `
             <tr data-agent-id="${a.id}">
                 <td>${escapeHtml(a.username)}</td>
@@ -185,6 +259,32 @@ function renderAgentsTable() {
     document.querySelectorAll('[data-agent-force]').forEach(btn => {
         btn.addEventListener('click', () => handleAgentForceSync(parseInt(btn.dataset.agentForce, 10)));
     });
+    document.querySelectorAll('[data-agent-status]').forEach(btn => {
+        btn.addEventListener('click', () => sendAgentCommand(parseInt(btn.dataset.agentStatus, 10), 'get_activation_status', 'запрос статуса'));
+    });
+    document.querySelectorAll('[data-agent-actwin]').forEach(btn => {
+        btn.addEventListener('click', () => sendAgentCommand(parseInt(btn.dataset.agentActwin, 10), 'activate_windows_hwid', 'активация Windows'));
+    });
+    document.querySelectorAll('[data-agent-actoff]').forEach(btn => {
+        btn.addEventListener('click', () => sendAgentCommand(parseInt(btn.dataset.agentActoff, 10), 'activate_office_ohook', 'активация Office'));
+    });
+}
+
+
+async function sendAgentCommand(tokenId, command, label) {
+    const a = STATE.agents.find(x => x.id === tokenId);
+    if (!a) return;
+    const confirmMsg = command === 'get_activation_status'
+        ? `Запросить статус активации с ${a.bound_hostname || a.username}?`
+        : `Поставить команду «${label}» на ${a.bound_hostname || a.username}?\n\nАгент скачает MAS из GitHub и запустит. Результат появится в журнале команд через 1-2 минуты.\n\nВажно: на машине должен быть доступ к интернету (GitHub) И исключения KSC для MAS.`;
+    if (!confirm(confirmMsg)) return;
+    try {
+        await api.post(`/certs/admin/agent-tokens/${tokenId}/command`, { command });
+        window.showSnackbar?.(`Команда «${label}» поставлена в очередь. Агент выполнит в течение минуты.`, 'success', 6000);
+        await loadCommands();
+    } catch (err) {
+        window.showError?.('Не удалось: ' + err.message);
+    }
 }
 
 

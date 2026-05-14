@@ -27,6 +27,7 @@ from sqlalchemy import (
     Column, Integer, BigInteger, String, DateTime, ForeignKey, Boolean, Text,
     UniqueConstraint, Index,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -225,3 +226,48 @@ class CryptoKeyUsage(Base):
 
     user = relationship("User")
     key  = relationship("CryptoKey")
+
+
+class AgentCommand(Base):
+    """
+    Команда от админа агенту — активация Windows/Office через MAS.
+
+    Workflow:
+      1. Админ кликает "Активировать Windows" → POST .../command → row created
+         со status='pending'.
+      2. Агент в /agent/poll (раз в минуту) получает массив pending команд
+         для своего token_id, по одной выполняет.
+      3. После выполнения агент POST'ит .../result с status='success'|'failed'
+         и stdout/stderr в `result`.
+      4. Админ видит результат в "Журнале команд" в админке.
+
+    `command` — whitelist значений на стороне backend (не произвольный shell).
+    """
+    __tablename__ = "agent_commands"
+
+    id              = Column(BigInteger, primary_key=True, index=True)
+    agent_token_id  = Column(
+        BigInteger,
+        ForeignKey("agent_tokens.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    command         = Column(String(64),  nullable=False)
+    params          = Column(JSONB,       nullable=True)
+    status          = Column(String(20),  nullable=False, default="pending")
+    result          = Column(Text,        nullable=True)
+    created_by_id   = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at      = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    started_at      = Column(DateTime(timezone=True), nullable=True)
+    completed_at    = Column(DateTime(timezone=True), nullable=True)
+
+    agent_token = relationship("AgentToken")
+    created_by  = relationship("User")
