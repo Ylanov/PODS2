@@ -254,37 +254,7 @@ function bindEvents() {
     document.getElementById('login-form')?.addEventListener('submit', auth.handleLogin);
     document.getElementById('logout-btn')?.addEventListener('click', auth.logout);
 
-    // Admin Mode Switcher (кнопка переключения вид админа ↔ вид управления)
-    document.getElementById('admin-mode-btn')?.addEventListener('click', (e) => {
-        const btn = e.currentTarget;
-        if (btn.dataset.currentView === 'admin') {
-            ui.showView('department-view');
-            btn.dataset.currentView = 'dept';
-            btn.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                    <polyline points="9 22 9 12 15 12 15 22"/>
-                </svg>
-                <span>В панель админа</span>
-            `;
-            switchDeptTab('lists');
-            if (document.getElementById('dept-event-id')?.value) {
-                department.loadMySlots();
-            }
-        } else {
-            ui.showView('admin-view');
-            btn.dataset.currentView = 'admin';
-            btn.innerHTML = `
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-                <span>Режим заполнения</span>
-            `;
-        }
-    });
+    // (кнопка «Режим заполнения» удалена — админ работает только в admin-view)
 
     // ── Вкладки панели Администратора ────────────────────────────────────────
     // Порядок соответствует кнопкам .tab-btn в index.html.
