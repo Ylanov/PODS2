@@ -15,28 +15,19 @@ const BASE_DELAY          = 1_000;
 
 function connect() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl    = `${protocol}//${window.location.host}/ws`;
-
-    console.log(`🔌 Connecting to WebSocket: ${wsUrl}`);
+    // Передаём JWT в query — единственный источник истины для сервера, кто
+    // подключился. Раньше шли отдельным identify-сообщением, и любой клиент
+    // мог сказать "я user 42" — это была cross-user leak.
+    const token   = localStorage.getItem('token') || '';
+    const wsUrl   = `${protocol}//${window.location.host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`;
 
     ws = new WebSocket(wsUrl);
 
     ws.onopen = function () {
-        console.log('✅ WebSocket connected');
         reconnectAttempts = 0;
         lastPongTimestamp = Date.now();
         startHeartbeat();
-
-        // Идентифицируемся для получения персональных уведомлений
-        // через канал push_to_user. currentUser устанавливается в auth.js.
-        if (window.currentUser?.id) {
-            try {
-                ws.send(JSON.stringify({
-                    type: 'identify',
-                    user_id: window.currentUser.id,
-                }));
-            } catch (_) { /* noop */ }
-        }
+        // Никакого identify — user_id сервер уже знает из токена в URL.
 
         // Восстанавливаем все активные room-подписки после реконнекта.
         // Без этого после короткого отрыва WS пользователь перестал бы
@@ -50,32 +41,33 @@ function connect() {
 
             if (data.type === 'pong') {
                 lastPongTimestamp = Date.now();
-                console.log('💓 pong received');
+                return;
+            }
+
+            // Defence-in-depth: если в сообщении явно указан user_id и он не
+            // совпадает с текущим — пропускаем. Сервер уже фильтрует, но
+            // дополнительная проверка на клиенте не повредит (вдруг прокси
+            // как-то перепутал соединения).
+            if (data.user_id !== undefined &&
+                window.currentUser?.id &&
+                data.user_id !== window.currentUser.id) {
                 return;
             }
 
             if (data.action === 'update') {
-                console.log('📩 WS message [update]:', data);
                 document.dispatchEvent(
                     new CustomEvent('datachanged', { detail: { eventId: data.event_id } })
                 );
-                // Уведомляем дашборд об изменении — обновится только если вкладка открыта
                 import('./dashboard.js').then(m => m.onWsUpdate()).catch(() => {});
             }
 
-            if (data.action === 'combat_calc_update' || data.action === 'combat_calc_slot_update') {
-                console.log(`📩 WS message [${data.action}]:`, data);
+            else if (data.action === 'combat_calc_update' || data.action === 'combat_calc_slot_update') {
                 document.dispatchEvent(
                     new CustomEvent('datachanged', { detail: data })
                 );
             }
 
-            // Персона из общей базы изменилась — denorm-копии в МНИ и других
-            // местах могут устареть. Тригерим единое 'datachanged' и
-            // дополнительный 'person-update' для модулей, которым нужна
-            // именно эта реакция.
-            if (data.action === 'person_update') {
-                console.log('📩 WS message [person_update]:', data);
+            else if (data.action === 'person_update') {
                 document.dispatchEvent(
                     new CustomEvent('datachanged', { detail: data })
                 );
@@ -84,43 +76,50 @@ function connect() {
                 );
             }
 
-            // Персональное уведомление — тригерим перезагрузку ленты.
-            // Сервер шлёт только флаг, сама запись уже в БД.
-            if (data.action === 'notification_new') {
-                console.log('🔔 WS message [notification_new]:', data);
-                window._refreshNotifications?.();
+            // Персональное уведомление: дебаунсим вызовы — при batch'е из
+            // нескольких событий (например, после массовой операции админа)
+            // делаем один запрос к /notifications вместо N.
+            else if (data.action === 'notification_new') {
+                _scheduleNotifRefresh();
             }
 
-            // Обновился снимок СЭД-дайджеста — пересчитать бейдж
-            if (data.action === 'sed_snapshot_updated') {
+            else if (data.action === 'sed_snapshot_updated') {
                 import('./sed_inbox.js')
                     .then(m => m.onSedWsUpdate?.())
                     .catch(() => {});
             }
 
-            // Кто-то в системе поменял слот/отметку в списках оповещения —
-            // если у нас вкладка alert_lists открыта, перезагружаем сетку.
-            if (data.action === 'alert_lists_update') {
-                console.log('📩 WS message [alert_lists_update]:', data);
+            else if (data.action === 'alert_lists_update') {
                 import('./alert_lists.js')
                     .then(m => m.onAlertListsWsUpdate?.(data.list_id))
                     .catch(() => {});
             }
 
         } catch (error) {
-            console.error('❌ WS JSON parse error:', error);
+            console.error('WS message error:', error);
         }
     };
 
     ws.onclose = function (event) {
-        console.warn(`⚠️ WebSocket closed: code=${event.code}, reason=${event.reason}`);
         stopHeartbeat();
         scheduleReconnect();
     };
 
-    ws.onerror = function (error) {
-        console.error('🔥 WebSocket error:', error);
+    ws.onerror = function () {
+        // onclose всё равно вызовется и запустит reconnect
     };
+}
+
+
+// Debounce для пушей `notification_new` — если за короткий промежуток
+// прилетело несколько событий, делаем один запрос к /notifications.
+let _notifRefreshTimer = null;
+function _scheduleNotifRefresh() {
+    if (_notifRefreshTimer) return;
+    _notifRefreshTimer = setTimeout(() => {
+        _notifRefreshTimer = null;
+        window._refreshNotifications?.();
+    }, 500);
 }
 
 // ─── Реконнект с экспоненциальной задержкой ───────────────────────────────────
