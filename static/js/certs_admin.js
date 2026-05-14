@@ -209,24 +209,28 @@ function renderTable() {
 
 
 function rowHtml(k) {
-    const validTo  = k.valid_to ? formatDate(k.valid_to) : '—';
-    const owner    = k.owner_username
+    const owner = k.owner_username
         ? escapeHtml(k.owner_username)
         : '<span class="certs-free">— свободный —</span>';
-    const cn       = escapeHtml(k.subject_cn || '—');
-    const inn      = k.subject_inn
+    const cn    = escapeHtml(k.subject_cn || '—');
+    const inn   = k.subject_inn
         ? `<div class="certs-inn">ИНН: ${escapeHtml(k.subject_inn)}</div>` : '';
-    const status   = statusBadge(k.status);
-    const isExpired = k.valid_to && new Date(k.valid_to) < new Date();
-    const expHint  = isExpired && k.status === 'active'
-        ? '<span class="certs-expired-hint" title="Срок истёк — статус надо обновить">!</span>' : '';
+    const status = statusBadge(k.status);
+
+    // Цветовая индикация срока — главный визуальный сигнал админу.
+    const exp = expiryInfo(k.valid_to);
+    const dateCell = `
+        <span class="certs-expiry certs-expiry--${exp.kind}">
+            ${formatDate(k.valid_to)}
+        </span>
+        <div class="certs-expiry-hint certs-expiry-hint--${exp.kind}">${exp.label}</div>`;
 
     return `
-        <tr data-key-id="${k.id}">
+        <tr data-key-id="${k.id}" class="certs-row certs-row--${exp.kind}">
             <td><code class="certs-container-cell">${escapeHtml(k.container_name)}</code></td>
             <td>${owner}</td>
             <td>${cn}${inn}</td>
-            <td>${validTo} ${expHint}</td>
+            <td>${dateCell}</td>
             <td>${status}</td>
             <td class="certs-actions">
                 <button class="btn btn-text btn-xs" data-act="reassign" title="Переназначить">↻</button>
@@ -234,6 +238,25 @@ function rowHtml(k) {
                 <button class="btn btn-text btn-xs" data-act="delete"   title="Удалить">🗑</button>
             </td>
         </tr>`;
+}
+
+
+/**
+ * Возвращает {kind, label, days} — состояние срока действия.
+ *   ok       — > 30 дней
+ *   warn     — 14..30 дней
+ *   urgent   — 1..14 дней
+ *   expired  — <= 0
+ */
+function expiryInfo(validTo) {
+    if (!validTo) return { kind: 'ok', label: '', days: null };
+    const now  = new Date();
+    const exp  = new Date(validTo);
+    const days = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+    if (days <= 0)  return { kind: 'expired', label: 'срок истёк',                  days };
+    if (days <= 14) return { kind: 'urgent',  label: `осталось ${days} дн.`,        days };
+    if (days <= 30) return { kind: 'warn',    label: `истекает через ${days} дн.`,  days };
+    return                  { kind: 'ok',     label: `${days} дн. до истечения`,    days };
 }
 
 
@@ -250,7 +273,21 @@ function statusBadge(status) {
 
 function updateCountBadge() {
     const el = document.getElementById('certs-count-badge');
-    if (el) el.textContent = STATE.keys.length;
+    if (!el) return;
+
+    const total   = STATE.keys.length;
+    const expired = STATE.keys.filter(k => expiryInfo(k.valid_to).kind === 'expired').length;
+    const urgent  = STATE.keys.filter(k => expiryInfo(k.valid_to).kind === 'urgent' ).length;
+    const warn    = STATE.keys.filter(k => expiryInfo(k.valid_to).kind === 'warn'   ).length;
+
+    // Сегменты показываем только если есть что — иначе просто число.
+    const parts = [`всего: ${total}`];
+    if (urgent)  parts.push(`🔴 срочно: ${urgent}`);
+    if (warn)    parts.push(`🟡 скоро: ${warn}`);
+    if (expired) parts.push(`⚫ истёк: ${expired}`);
+
+    el.textContent = parts.join(' · ');
+    el.title = 'срочно — до 14 дн., скоро — до 30 дн., истёк — нужно отозвать или загрузить новый';
 }
 
 
@@ -333,7 +370,6 @@ function resetForm() {
     document.getElementById('certs-container-name').value      = '';
     document.getElementById('certs-cer-input').value           = '';
     document.getElementById('certs-owner').value               = '';
-    document.getElementById('certs-purpose').value             = '';
     document.getElementById('certs-note').value                = '';
 
     const filesEl = document.getElementById('certs-container-files');
@@ -466,7 +502,6 @@ async function submitNewKey() {
     const submitBtn   = document.getElementById('certs-submit-btn');
     const containerNm = document.getElementById('certs-container-name')?.value || '';
     const ownerId     = document.getElementById('certs-owner')?.value || '';
-    const purpose     = document.getElementById('certs-purpose')?.value || '';
     const note        = document.getElementById('certs-note')?.value || '';
 
     if (!STATE.selectedCerData || STATE.selectedContainerFiles.length === 0) {
@@ -482,8 +517,7 @@ async function submitNewKey() {
     }
     fd.append('container_name', containerNm);
     if (ownerId) fd.append('owner_user_id', ownerId);
-    if (purpose) fd.append('purpose',        purpose);
-    if (note)    fd.append('note',           note);
+    if (note)    fd.append('note',          note);
 
     submitBtn.disabled = true;
     try {
