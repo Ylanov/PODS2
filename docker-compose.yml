@@ -123,16 +123,28 @@ services:
       # Dev-режим: единый root-token, эталонный для PODS2 в .env.
       VAULT_DEV_ROOT_TOKEN_ID: "${VAULT_TOKEN:-pods2-dev-root-token}"
       VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      # VAULT_ADDR нужен `vault status` в healthcheck — без него CLI пробует
+      # подключиться к https://127.0.0.1:8200 (TLS), а у нас в dev-режиме
+      # слушатель plain http без сертификата.
+      VAULT_ADDR: "http://127.0.0.1:8200"
 
     volumes:
       - vaultdata:/vault/file
 
     healthcheck:
-      # /v1/sys/health возвращает 200 если Vault initialized + unsealed + active.
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8200/v1/sys/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      # `vault status` — нативный CLI самого Vault, доступен в образе без
+      # дополнительных утилит. Возвращает exit 0 когда initialized+unsealed
+      # (что и есть нормальное состояние dev-сервера через ~2 сек после старта).
+      # Не используем /v1/sys/health через wget — он отдаёт разные HTTP-коды
+      # (200/501/503) для разных состояний, wget --spider считает всё кроме
+      # 200 за неуспех, и healthcheck зависал на инициализации.
+      test:        ["CMD", "vault", "status"]
+      interval:    10s
+      timeout:     5s
+      retries:     5
+      # Vault dev-серверу нужно ~2-3 секунды на init+unseal. start_period
+      # говорит docker не считать неудачи в этот период как fail-counted.
+      start_period: 15s
 
     networks:
       - backend
