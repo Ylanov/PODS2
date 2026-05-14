@@ -886,6 +886,58 @@ def admin_get_bootstrap_script(
     )
 
 
+@admin_router.delete(
+    "/admin/cleanup/agent-tokens-revoked",
+    status_code=204,
+    summary="Удалить ВСЕ отозванные токены агентов (чистка журнала)",
+)
+def admin_cleanup_revoked_agents(db: Session = Depends(get_db)):
+    """
+    Безопасная очистка: удаляем только revoked-токены. Активные не трогаем.
+    Связанные с ними agent_commands и crypto_key_usage уйдут по CASCADE
+    (поскольку у них FK ON DELETE CASCADE / SET NULL).
+    """
+    db.query(AgentToken).filter(AgentToken.revoked == True).delete(synchronize_session=False)  # noqa: E712
+    db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.delete(
+    "/admin/cleanup/commands",
+    status_code=204,
+    summary="Очистить весь журнал команд (включая pending)",
+)
+def admin_cleanup_commands(db: Session = Depends(get_db)):
+    db.query(AgentCommand).delete(synchronize_session=False)
+    db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.delete(
+    "/admin/cleanup/usage",
+    status_code=204,
+    summary="Очистить журнал использования ключей",
+)
+def admin_cleanup_usage(db: Session = Depends(get_db)):
+    db.query(CryptoKeyUsage).delete(synchronize_session=False)
+    db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.delete(
+    "/admin/cleanup/enrollment-tokens-inactive",
+    status_code=204,
+    summary="Удалить отозванные и истёкшие установочные токены",
+)
+def admin_cleanup_enrollment_tokens(db: Session = Depends(get_db)):
+    now = _now()
+    db.query(EnrollmentToken).filter(
+        (EnrollmentToken.revoked == True) | (EnrollmentToken.expires_at < now)  # noqa: E712
+    ).delete(synchronize_session=False)
+    db.commit()
+    return Response(status_code=204)
+
+
 @admin_router.post(
     "/admin/agent-tokens/{token_id}/assign-user",
     response_model=AgentTokenOut,

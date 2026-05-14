@@ -2027,12 +2027,16 @@
                             <h2>Журнал использования</h2>
                             <span id="usage-count-badge" class="certs-count-badge">—</span>
                         </div>
-                        <select id="usage-filter-days">
-                            <option value="1">за сутки</option>
-                            <option value="7" selected>за неделю</option>
-                            <option value="30">за месяц</option>
-                            <option value="90">за 3 месяца</option>
-                        </select>
+                        <div style="display:flex; gap:8px;">
+                            <select id="usage-filter-days">
+                                <option value="1">за сутки</option>
+                                <option value="7" selected>за неделю</option>
+                                <option value="30">за месяц</option>
+                                <option value="90">за 3 месяца</option>
+                            </select>
+                            <button id="usage-cleanup-btn" class="btn btn-text btn-sm" type="button"
+                                    title="Удалить весь журнал использования">🗑</button>
+                        </div>
                     </div>
                     <div class="data-table-wrap">
                         <table class="certs-table">
@@ -2065,14 +2069,18 @@
                             </svg>
                             <h2>Установочные токены</h2>
                         </div>
-                        <button id="enroll-create-btn" class="btn btn-success btn-sm" type="button"
-                                title="Создать общий токен для массовой раскатки агентов через PowerShell">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
-                                <path d="M12 5v14M5 12h14"/>
-                            </svg>
-                            Создать
-                        </button>
+                        <div style="display:flex; gap:8px;">
+                            <button id="enroll-cleanup-btn" class="btn btn-text btn-sm" type="button"
+                                    title="Удалить отозванные и истёкшие установочные токены">🗑 неактивные</button>
+                            <button id="enroll-create-btn" class="btn btn-success btn-sm" type="button"
+                                    title="Создать общий токен для массовой раскатки агентов через PowerShell">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                                    <path d="M12 5v14M5 12h14"/>
+                                </svg>
+                                Создать
+                            </button>
+                        </div>
                     </div>
                     <div id="enroll-tokens-list" class="certs-files-list" style="margin:0 20px 12px;">
                         <div class="certs-empty">Загрузка…</div>
@@ -2092,6 +2100,8 @@
                             <h2>Установленные агенты</h2>
                             <span id="agents-count-badge" class="certs-count-badge">—</span>
                         </div>
+                        <button id="agents-cleanup-btn" class="btn btn-text btn-sm" type="button"
+                                title="Удалить все отозванные токены агентов (активные не трогать)">🗑 отозванные</button>
                     </div>
                     <div class="data-table-wrap">
                         <table class="certs-table">
@@ -2124,6 +2134,8 @@
                             <h2>Журнал команд агентам</h2>
                             <span id="commands-count-badge" class="certs-count-badge">—</span>
                         </div>
+                        <button id="commands-cleanup-btn" class="btn btn-text btn-sm" type="button"
+                                title="Очистить весь журнал команд (включая pending)">🗑</button>
                     </div>
                     <div class="data-table-wrap">
                         <table class="certs-table">
