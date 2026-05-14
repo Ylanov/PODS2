@@ -323,6 +323,59 @@
 }
 
 
+/* ─── Цветовая индикация срока ────────────────────────────────────────── */
+
+.certs-row--urgent  td { background: rgba(192, 48, 48, 0.04); }
+.certs-row--expired td { background: rgba(0, 0, 0, 0.04);    color: var(--md-on-surface-variant); }
+
+.certs-expiry {
+    font-weight: 500;
+}
+.certs-expiry--ok       { color: var(--md-on-surface); }
+.certs-expiry--warn     { color: var(--md-warning, #BA7517); }
+.certs-expiry--urgent   { color: var(--md-error,   #C03030); font-weight: 600; }
+.certs-expiry--expired  { color: var(--md-on-surface-hint);  text-decoration: line-through; }
+
+.certs-expiry-hint {
+    margin-top: 2px;
+    font-size: 0.72rem;
+    line-height: 1.2;
+}
+.certs-expiry-hint--ok       { color: var(--md-on-surface-hint); }
+.certs-expiry-hint--warn     { color: var(--md-warning, #BA7517); }
+.certs-expiry-hint--urgent   { color: var(--md-error,   #C03030); font-weight: 500; }
+.certs-expiry-hint--expired  { color: var(--md-error,   #C03030); }
+
+
+/* ─── Алерт-плашка в карточке юзера ───────────────────────────────────── */
+
+.my-certs-card__alert {
+    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: var(--md-radius-sm);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+.my-certs-card__alert--warn {
+    background: rgba(186, 117, 23, 0.10);
+    color: var(--md-warning, #BA7517);
+    border-left: 3px solid var(--md-warning, #BA7517);
+}
+.my-certs-card__alert--urgent {
+    background: rgba(192, 48, 48, 0.10);
+    color: var(--md-error, #C03030);
+    border-left: 3px solid var(--md-error, #C03030);
+}
+.my-certs-card__alert--expired {
+    background: rgba(192, 48, 48, 0.14);
+    color: var(--md-error, #C03030);
+    border-left: 3px solid var(--md-error, #C03030);
+    font-weight: 500;
+}
+.my-certs-card--urgent  { background: rgba(192, 48, 48, 0.02); }
+.my-certs-card--expired { background: rgba(0, 0, 0, 0.03); }
+
+
 /* ─── Действия в строке ────────────────────────────────────────────────── */
 
 .certs-actions {

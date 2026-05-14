@@ -83,21 +83,29 @@ function renderList(keys) {
 
 
 function cardHtml(k) {
-    const validTo  = formatDate(k.valid_to);
-    const cn       = escapeHtml(k.subject_cn || '—');
-    const issuer   = escapeHtml(k.issuer_cn || '—');
-    const status   = statusLabel(k.status, k.valid_to);
-    const inn      = k.subject_inn
+    const validTo = formatDate(k.valid_to);
+    const cn      = escapeHtml(k.subject_cn || '—');
+    const issuer  = escapeHtml(k.issuer_cn || '—');
+    const status  = statusLabel(k.status, k.valid_to);
+    const inn     = k.subject_inn
         ? `<div>ИНН: <code>${escapeHtml(k.subject_inn)}</code></div>` : '';
-    const note     = k.note
+    const note    = k.note
         ? `<div>Комментарий: ${escapeHtml(k.note)}</div>` : '';
 
+    // Подсказка по сроку — главное что нужно юзеру знать.
+    const exp     = expiryInfo(k.valid_to);
+    const expLine = exp.kind === 'expired'
+        ? `<div class="my-certs-card__alert my-certs-card__alert--expired">⚠ <b>Срок сертификата истёк.</b> Обратитесь к администратору для замены.</div>`
+        : exp.kind === 'urgent'
+            ? `<div class="my-certs-card__alert my-certs-card__alert--urgent">⚠ <b>Срок истекает через ${exp.days} ${plural(exp.days, ['день', 'дня', 'дней'])}.</b> Попросите администратора подготовить новый сертификат.</div>`
+            : exp.kind === 'warn'
+                ? `<div class="my-certs-card__alert my-certs-card__alert--warn">Срок истекает через ${exp.days} ${plural(exp.days, ['день', 'дня', 'дней'])}. Хорошее время позаботиться о замене.</div>`
+                : '';
+
     return `
-        <div class="my-certs-card">
+        <div class="my-certs-card my-certs-card--${exp.kind}">
             <div class="my-certs-card__top">
-                <div class="my-certs-card__name">
-                    ${escapeHtml(k.container_name)}
-                </div>
+                <div class="my-certs-card__name">${escapeHtml(k.container_name)}</div>
                 ${status}
             </div>
             <div class="my-certs-card__details">
@@ -107,7 +115,28 @@ function cardHtml(k) {
                 ${inn}
                 ${note}
             </div>
+            ${expLine}
         </div>`;
+}
+
+
+function expiryInfo(validTo) {
+    if (!validTo) return { kind: 'ok', days: null };
+    const days = Math.ceil((new Date(validTo) - new Date()) / (1000 * 60 * 60 * 24));
+    if (days <= 0)  return { kind: 'expired', days };
+    if (days <= 14) return { kind: 'urgent',  days };
+    if (days <= 30) return { kind: 'warn',    days };
+    return                  { kind: 'ok',     days };
+}
+
+
+function plural(n, forms) {
+    const a = Math.abs(n) % 100;
+    const b = a % 10;
+    if (a > 10 && a < 20) return forms[2];
+    if (b > 1  && b < 5)  return forms[1];
+    if (b === 1)          return forms[0];
+    return forms[2];
 }
 
 
