@@ -1991,7 +1991,7 @@
                                autocomplete="off">
                     </div>
 
-                    <!-- Таблица -->
+                    <!-- Таблица ключей -->
                     <div class="data-table-wrap">
                         <table class="certs-table">
                             <thead>
@@ -2005,6 +2005,39 @@
                                 </tr>
                             </thead>
                             <tbody id="certs-tbody">
+                                <tr><td colspan="6" class="certs-empty">Загрузка…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- ────────────────────────────────────────────────── -->
+                    <!-- Установленные агенты: таблица токенов с MAC-binding -->
+                    <!-- ────────────────────────────────────────────────── -->
+                    <div class="certs-toolbar" style="margin-top:24px;">
+                        <div class="certs-toolbar__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                                <line x1="8" y1="21" x2="16" y2="21"/>
+                                <line x1="12" y1="17" x2="12" y2="21"/>
+                            </svg>
+                            <h2>Установленные агенты</h2>
+                            <span id="agents-count-badge" class="certs-count-badge">—</span>
+                        </div>
+                    </div>
+                    <div class="data-table-wrap">
+                        <table class="certs-table">
+                            <thead>
+                                <tr>
+                                    <th>Пользователь</th>
+                                    <th>Машина</th>
+                                    <th>Привязка (MAC)</th>
+                                    <th>Последний пинг</th>
+                                    <th>Статус</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="agents-tbody">
                                 <tr><td colspan="6" class="certs-empty">Загрузка…</td></tr>
                             </tbody>
                         </table>

@@ -158,6 +158,16 @@ class AgentToken(Base):
     revoked       = Column(Boolean, nullable=False, default=False)
     revoked_at    = Column(DateTime(timezone=True), nullable=True)
 
+    # MAC-привязка: при первом обращении агента запоминаем MAC primary-карты
+    # и hostname. На последующих запросах сравниваем — если не совпадают,
+    # токен считается утёкшим (например, скопировали config.json на другой ПК).
+    # bound_mac=NULL пока агент не сообщил MAC ни разу (или явно сбросили
+    # после re-binding в админке).
+    bound_mac     = Column(String(32),  nullable=True)
+    bound_hostname = Column(String(255), nullable=True)
+    # Причина блокировки, если revoked=True по MAC mismatch (а не вручную из админки).
+    block_reason  = Column(String(255), nullable=True)
+
     user = relationship("User")
 
     __table_args__ = (

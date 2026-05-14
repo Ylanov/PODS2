@@ -20,6 +20,7 @@ import { api, ApiError } from './api.js';
 const STATE = {
     keys:           [],
     users:          [],
+    agents:         [],
     filterStatus:   '',
     searchQuery:    '',
     initialized:    false,
@@ -30,8 +31,8 @@ const STATE = {
 
 export async function initCryptoCerts() {
     if (STATE.initialized) {
-        // Повторное открытие — просто рефрешим таблицу.
-        await loadKeys();
+        // Повторное открытие — просто рефрешим таблицы.
+        await Promise.all([loadKeys(), loadAgents()]);
         return;
     }
     STATE.initialized = true;
@@ -39,7 +40,7 @@ export async function initCryptoCerts() {
     setupCreateForm();
     setupFilters();
 
-    await Promise.all([loadKeys(), loadUsers()]);
+    await Promise.all([loadKeys(), loadUsers(), loadAgents()]);
 }
 
 
@@ -60,6 +61,100 @@ async function loadKeys() {
     }
     renderTable();
     updateCountBadge();
+}
+
+
+async function loadAgents() {
+    try {
+        const rows = await api.get('/certs/admin/agent-tokens');
+        STATE.agents = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+        console.error('[certs] loadAgents', err);
+        STATE.agents = [];
+    }
+    renderAgentsTable();
+}
+
+
+function renderAgentsTable() {
+    const tbody = document.getElementById('agents-tbody');
+    const badge = document.getElementById('agents-count-badge');
+    if (!tbody) return;
+    if (badge) badge.textContent = STATE.agents.length;
+
+    if (STATE.agents.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="certs-empty">Никто ещё не установил агента</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = STATE.agents.map(a => {
+        const machine = a.bound_hostname
+            ? `<code class="certs-container-cell">${escapeHtml(a.bound_hostname)}</code>` +
+              (a.description ? `<div class="certs-inn">${escapeHtml(a.description)}</div>` : '')
+            : `<span class="certs-free">${escapeHtml(a.description || '—')}</span>`;
+        const mac = a.bound_mac
+            ? `<code>${escapeHtml(formatMac(a.bound_mac))}</code>`
+            : '<span class="certs-free">не привязан</span>';
+        const lastSeen = a.last_seen_at
+            ? `${formatDateTime(a.last_seen_at)}` +
+              (a.last_seen_ip ? `<div class="certs-inn">${escapeHtml(a.last_seen_ip)}</div>` : '')
+            : '<span class="certs-free">не пинговал</span>';
+        const status = a.revoked
+            ? `<span class="certs-badge certs-badge--revoked">Отозван</span>` +
+              (a.block_reason ? `<div class="certs-inn" title="${escapeHtml(a.block_reason)}">⚠ ${escapeHtml(truncate(a.block_reason, 50))}</div>` : '')
+            : `<span class="certs-badge certs-badge--active">Активен</span>`;
+        const actions = a.revoked
+            ? ''
+            : `<button class="btn btn-text btn-xs" data-agent-revoke="${a.id}" title="Отозвать токен (агент перестанет работать сразу)">⊘</button>`;
+        return `
+            <tr data-agent-id="${a.id}">
+                <td>${escapeHtml(a.username)}</td>
+                <td>${machine}</td>
+                <td>${mac}</td>
+                <td>${lastSeen}</td>
+                <td>${status}</td>
+                <td class="certs-actions">${actions}</td>
+            </tr>`;
+    }).join('');
+
+    document.querySelectorAll('[data-agent-revoke]').forEach(btn => {
+        btn.addEventListener('click', () => handleAgentRevoke(parseInt(btn.dataset.agentRevoke, 10)));
+    });
+}
+
+
+async function handleAgentRevoke(id) {
+    const a = STATE.agents.find(x => x.id === id);
+    if (!a) return;
+    if (!confirm(`Отозвать токен агента «${a.description || a.username}»?\n\nАгент перестанет работать сразу. Юзеру придётся скачать новый install-пакет.`)) return;
+    try {
+        await api.post(`/certs/admin/agent-tokens/${id}/revoke`, {});
+        window.showSnackbar?.('Токен отозван', 'success');
+        await loadAgents();
+    } catch (err) {
+        window.showError?.('Не удалось отозвать: ' + err.message);
+    }
+}
+
+
+function formatMac(raw) {
+    if (!raw) return '';
+    const hex = raw.replace(/[^0-9A-F]/gi, '').toUpperCase();
+    if (hex.length !== 12) return raw;
+    return hex.match(/.{2}/g).join(':');
+}
+
+
+function formatDateTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+
+function truncate(s, n) {
+    return s.length > n ? s.substring(0, n - 1) + '…' : s;
 }
 
 
