@@ -18,6 +18,100 @@
     margin-top: 4px;
 }
 
+/* ── Полоса дат над сеткой карточек ── */
+.dept-date-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 8px 2px 16px;
+    margin-bottom: 14px;
+    /* Скрываем horizontal scrollbar по умолчанию, видимый при hover */
+    scrollbar-width: thin;
+    scrollbar-color: var(--md-outline-variant) transparent;
+}
+
+.dept-date-tab {
+    flex-shrink: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 10px 18px 10px 14px;
+    min-width: 92px;
+    border-radius: var(--md-radius-md);
+    border: 1.5px solid var(--md-outline-variant);
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s, transform 0.08s;
+}
+
+.dept-date-tab:hover {
+    border-color: var(--md-primary);
+}
+
+.dept-date-tab:active {
+    transform: scale(0.97);
+}
+
+.dept-date-tab.active {
+    background: var(--md-primary);
+    color: var(--md-on-primary, white);
+    border-color: var(--md-primary);
+}
+
+/* Сегодняшний день — лёгкая подсветка даже когда не активный */
+.dept-date-tab.is-today:not(.active) {
+    border-color: var(--md-primary);
+    background: rgba(74, 124, 111, 0.08);
+}
+
+/* Прошедшие — приглушённые */
+.dept-date-tab.is-muted {
+    opacity: 0.6;
+}
+
+.dept-date-tab__label {
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.dept-date-tab__date {
+    font-size: 0.72rem;
+    opacity: 0.85;
+    line-height: 1.2;
+}
+
+/* Счётчик карточек в правом верхнем углу */
+.dept-date-tab__count {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    min-width: 18px;
+    padding: 1px 5px;
+    border-radius: 9px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.4;
+    text-align: center;
+    background: var(--md-surface-variant);
+    color: var(--md-on-surface-variant);
+}
+
+.dept-date-tab.active .dept-date-tab__count {
+    background: rgba(255, 255, 255, 0.22);
+    color: inherit;
+}
+
+.dept-date-tab.is-today:not(.active) .dept-date-tab__count {
+    background: var(--md-primary);
+    color: var(--md-on-primary, white);
+}
+
+
 /* ── Сетка карточек ── */
 .dept-event-grid {
     display: grid;
@@ -28,6 +122,8 @@
 
 @media (max-width: 560px) {
     .dept-event-grid { grid-template-columns: 1fr; }
+    .dept-date-tab { min-width: 78px; padding: 8px 14px 8px 12px; }
+    .dept-date-tab__label { font-size: 0.78rem; }
 }
 
 /* ── Карточка-кнопка ── */
