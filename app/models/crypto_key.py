@@ -181,3 +181,47 @@ class AgentToken(Base):
         # WHERE user_id=? AND revoked=false AND expires_at>now()
         Index("ix_agent_tokens_active", "user_id", "revoked", "expires_at"),
     )
+
+
+class CryptoKeyUsage(Base):
+    """
+    Журнал использования ключей — кто, когда, какой контейнер, с какой машины.
+
+    Заполняется агентом: sync.ps1 читает Windows Event Log (CAPI2/Crypto-Pro),
+    извлекает события подписи и POST'ит сюда батчем. На сервере отображается
+    в админке во вкладке "Ключи и сертификаты" под таблицей агентов.
+
+    НЕ содержит имени файла или содержимого подписи — Event Log такое не
+    логирует. Только: кто/когда/какой контейнер/с какой машины/каким приложением.
+    """
+    __tablename__ = "crypto_key_usage"
+
+    id              = Column(BigInteger, primary_key=True, index=True)
+    # Юзер по токену агента, который прислал событие.
+    user_id         = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # NULL если ключ уже удалён или container_name не сматчили.
+    key_id          = Column(
+        BigInteger,
+        ForeignKey("crypto_keys.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Имя контейнера сохраняем всегда — даже без key_id запись остаётся
+    # в журнале как факт использования.
+    container_name  = Column(String(255), nullable=False)
+    event_time      = Column(DateTime(timezone=True), nullable=False)
+    event_type      = Column(String(50),  nullable=True)
+    hostname        = Column(String(255), nullable=True)
+    source_process  = Column(String(255), nullable=True)
+    reported_at     = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    user = relationship("User")
+    key  = relationship("CryptoKey")

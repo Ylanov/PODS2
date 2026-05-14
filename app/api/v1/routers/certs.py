@@ -46,7 +46,7 @@ from app.api.dependencies import (
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.database import get_db
-from app.models.crypto_key import AgentToken, CryptoKey
+from app.models.crypto_key import AgentToken, CryptoKey, CryptoKeyUsage
 from app.models.user import User
 from app.services.cert_parser import parse_certificate
 from app.services.vault_client import storage
@@ -152,6 +152,31 @@ class PollOut(BaseModel):
     """Лёгкий ответ /agent/poll — только timestamp."""
     force_sync_at: Optional[datetime] = None
     server_time:   datetime
+
+
+class UsageEventIn(BaseModel):
+    """Одно событие из Windows Event Log, которое прислал агент."""
+    container_name: str = Field(..., max_length=255)
+    event_time:     datetime
+    event_type:     Optional[str] = Field(None, max_length=50)
+    source_process: Optional[str] = Field(None, max_length=255)
+
+
+class UsageBatchIn(BaseModel):
+    """Батч событий — за один тик агент шлёт всё что нашёл в Event Log."""
+    events: List[UsageEventIn] = Field(default_factory=list)
+
+
+class UsageOut(BaseModel):
+    """Запись журнала для админки/юзера."""
+    id:             int
+    user_id:        Optional[int]
+    username:       Optional[str]
+    container_name: str
+    event_time:     datetime
+    event_type:     Optional[str]
+    hostname:       Optional[str]
+    source_process: Optional[str]
 
 
 class AgentTokenOut(BaseModel):
@@ -651,6 +676,45 @@ def admin_force_sync_user(user_id: int, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
+@admin_router.get(
+    "/admin/usage",
+    response_model=List[UsageOut],
+    summary="Журнал использования ключей (кто/когда/какой контейнер/с какой машины)",
+)
+def admin_get_usage(
+    user_id:        Optional[int] = None,
+    container_name: Optional[str] = None,
+    days:           int = 30,
+    limit:          int = 500,
+    db:             Session = Depends(get_db),
+):
+    """
+    Возвращает события использования за последние `days` дней.
+    Параметры — точечная фильтрация: по юзеру и/или по контейнеру.
+    """
+    cutoff = _now() - timedelta(days=max(1, min(days, 365)))
+    q = db.query(CryptoKeyUsage).filter(CryptoKeyUsage.event_time >= cutoff)
+    if user_id:
+        q = q.filter(CryptoKeyUsage.user_id == user_id)
+    if container_name:
+        q = q.filter(CryptoKeyUsage.container_name == container_name)
+    rows = q.order_by(CryptoKeyUsage.event_time.desc()).limit(max(1, min(limit, 2000))).all()
+
+    return [
+        UsageOut(
+            id             = r.id,
+            user_id        = r.user_id,
+            username       = r.user.username if r.user else None,
+            container_name = r.container_name,
+            event_time     = r.event_time,
+            event_type     = r.event_type,
+            hostname       = r.hostname,
+            source_process = r.source_process,
+        )
+        for r in rows
+    ]
+
+
 # ─── Эндпоинты с {key_id}:int ────────────────────────────────────────────
 # Должны идти ПОСЛЕ всех маршрутов /admin/<строка>... — см. комментарий
 # про порядок выше.
@@ -1013,6 +1077,49 @@ def agent_download_cert(
 
 
 @agent_router.post(
+    "/agent/usage",
+    status_code=204,
+    summary="Батч событий использования ключей из Windows Event Log",
+)
+def agent_report_usage(
+    payload: UsageBatchIn,
+    request: Request,
+    db:      Session = Depends(get_db),
+    auth:    tuple   = Depends(get_current_agent),
+):
+    """
+    Принимает массив событий подписи, найденных агентом в Event Log.
+    Матчит каждое событие с CryptoKey по (user_id, container_name);
+    если матча нет — всё равно сохраняем (контейнер мог быть отозван
+    или удалён, но факт использования останется в журнале).
+    """
+    user, token = auth
+    hostname = token.bound_hostname
+
+    # Pre-load all this user's keys for fast container_name lookup.
+    keys = (
+        db.query(CryptoKey)
+        .filter(CryptoKey.owner_user_id == user.id)
+        .all()
+    )
+    by_name = {k.container_name: k.id for k in keys}
+
+    for ev in payload.events:
+        usage = CryptoKeyUsage(
+            user_id        = user.id,
+            key_id         = by_name.get(ev.container_name),
+            container_name = ev.container_name[:255],
+            event_time     = ev.event_time,
+            event_type     = (ev.event_type or "")[:50] or None,
+            hostname       = hostname,
+            source_process = (ev.source_process or "")[:255] or None,
+        )
+        db.add(usage)
+    db.commit()
+    return Response(status_code=204)
+
+
+@agent_router.post(
     "/agent/heartbeat",
     status_code=204,
     summary="Агент сообщает что синхронизация прошла (для аудита)",
@@ -1071,6 +1178,17 @@ Copy-Item (Join-Path $here "sync.ps1")    (Join-Path $installDir "sync.ps1")    
 # 2. Чистка артефактов от старых версий установщика
 Remove-Item "HKLM:\SOFTWARE\Crypto Pro\Settings\Readers\PODS2Folder" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "C:\ProgramData\PODS2Keys" -Recurse -Force -ErrorAction SilentlyContinue
+
+# 2.5 Включаем CAPI2 audit log — будем парсить события подписи для журнала
+#     использования в админке (kto/kogda/какой контейнер).
+#     Microsoft-Windows-CAPI2/Operational пишет события всех CryptoAPI вызовов,
+#     включая ГОСТ-провайдер КриптоПро.
+try {
+    wevtutil sl Microsoft-Windows-CAPI2/Operational /e:true /rt:false /q:true | Out-Null
+    Write-Host "CAPI2 audit включён — журнал использования будет собираться."
+} catch {
+    Write-Host "[WARN] Не удалось включить CAPI2 audit: $_"
+}
 
 # 3. Первый sync. sync.ps1 сам зашифрует токен через DPAPI при первом
 #    запуске, подхватит manifest, импортирует ключи в реестр.
@@ -1315,7 +1433,7 @@ try {
     $body = @{
         synced_thumbprints = $synced
         failed_thumbprints = $failed
-        agent_version      = "ps1-2.0"
+        agent_version      = "ps1-3.0"
     } | ConvertTo-Json
     try {
         Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/heartbeat" `
@@ -1328,6 +1446,124 @@ try {
 } catch {
     Log "FATAL: $_"
     exit 1
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Журнал использования: читаем Windows Event Log и шлём батчем на сервер.
+# Это второй независимый блок — он запускается каждый тик (даже когда основной
+# sync пропущен по poll), потому что события могут появляться постоянно.
+# Если что-то падает — НЕ роняем весь скрипт, просто логируем.
+# ═══════════════════════════════════════════════════════════════════════════
+try {
+    # Перечитываем state.json — могли его обновить в первом блоке.
+    $state = if (Test-Path $statePath) {
+        Get-Content $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } else {
+        $null
+    }
+    if (-not $state) { $state = [PSCustomObject]@{} }
+
+    # Откуда читать события. При первом запуске — последний час (чтобы не
+    # тащить весь Event Log за всю историю). Потом — от прошлого тика.
+    $lastReported = if ($state.PSObject.Properties.Name -contains 'last_usage_reported_at') {
+        try { [DateTime]::Parse($state.last_usage_reported_at) }
+        catch { (Get-Date).AddHours(-1) }
+    } else {
+        (Get-Date).AddHours(-1)
+    }
+
+    # Конфиг для read — два source: Microsoft-Windows-CAPI2/Operational
+    # (стандартный канал CryptoAPI; в нём провайдеры всех CSP отчитываются)
+    # и Application с провайдером Crypto-Pro (тут КриптоПро может писать
+    # свои события если включён аудит cpconfig'ом).
+    $events = @()
+    foreach ($filter in @(
+        @{ LogName = 'Microsoft-Windows-CAPI2/Operational'; StartTime = $lastReported },
+        @{ LogName = 'Application'; ProviderName = 'Crypto-Pro';   StartTime = $lastReported }
+    )) {
+        try {
+            $events += Get-WinEvent -FilterHashtable $filter -ErrorAction Stop
+        } catch {
+            # ErrorAction Stop конвертирует "No events match" в exception —
+            # это норма, не лог.
+        }
+    }
+
+    # Отбираем события, где удалось извлечь имя контейнера.
+    $usageEvents = @()
+    foreach ($e in $events) {
+        try {
+            $xml = [xml]$e.ToXml()
+            $container = $null
+
+            # 1) КриптоПро в Crypto-Pro Provider — имя контейнера обычно
+            #    в TextNode после префикса "Container: ". Парсим грубо.
+            if ($e.ProviderName -eq 'Crypto-Pro') {
+                $msg = $e.Message
+                if ($msg -match 'Container[:\s]+(\S+)') { $container = $Matches[1] }
+                if ($msg -match 'sign|подпис|hash') {
+                    $eventType = 'sign'
+                } else {
+                    $eventType = 'crypto_op'
+                }
+            }
+            # 2) CAPI2 — в SignHash события (EventID 70/30) бывает KeyName.
+            elseif ($e.Id -in 70, 30, 11) {
+                $ud = $xml.Event.UserData
+                $node = $null
+                if ($ud) {
+                    # Берём первый XML-элемент UserData как payload.
+                    $node = $ud.ChildNodes | Select-Object -First 1
+                }
+                if ($node) {
+                    $container = $node.KeyContainerName
+                    if (-not $container) { $container = $node.KeyName }
+                }
+                $eventType = if ($e.Id -eq 70) { 'sign' } else { 'crypto_op' }
+            }
+
+            if ($container) {
+                # Process name из ProcessID (best-effort).
+                # NB: переменная $pid в PowerShell — read-only автоматическая
+                # (PID текущего процесса), поэтому называем $procId.
+                $procName = $null
+                try {
+                    $procId = $e.ProcessId
+                    if ($procId) {
+                        $p = Get-Process -Id $procId -ErrorAction SilentlyContinue
+                        if ($p) { $procName = $p.ProcessName }
+                    }
+                } catch {}
+
+                $usageEvents += @{
+                    container_name = $container
+                    event_time     = $e.TimeCreated.ToUniversalTime().ToString("o")
+                    event_type     = $eventType
+                    source_process = $procName
+                }
+            }
+        } catch {
+            # Битый event — пропускаем.
+        }
+    }
+
+    if ($usageEvents.Count -gt 0) {
+        $body = @{ events = $usageEvents } | ConvertTo-Json -Depth 5 -Compress
+        try {
+            Invoke-RestMethod -Uri "$($cfg.server_url)/api/v1/certs/agent/usage" `
+                -Headers $headers -Method Post -Body $body -ContentType "application/json" | Out-Null
+            Log "Usage: отправлено событий $($usageEvents.Count)"
+        } catch {
+            Log "Usage: send failed: $_"
+        }
+    }
+
+    # Сохраняем «теперь» как точку отсчёта на следующий тик.
+    $state | Add-Member -NotePropertyName last_usage_reported_at `
+        -NotePropertyValue (Get-Date).ToUniversalTime().ToString("o") -Force
+    $state | ConvertTo-Json -Depth 5 | Set-Content -Path $statePath -Encoding UTF8 -Force
+} catch {
+    Log "Usage block error (non-fatal): $_"
 }
 """
 
