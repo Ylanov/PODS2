@@ -74,6 +74,18 @@ async def lifespan(app: FastAPI):
                 print(f"📦 Auto-closed {closed} past active event(s)")
         except Exception as error:
             print(f"⚠️  expire_past_active_events: {error}")
+
+        # Чистка устаревших журналов crypto-keys (usage / commands / revoked tokens).
+        # Гонять при каждом старте приложения — даёт авто-очистку при ежедневных
+        # рестартах. Если приложение не рестартится днями, добавь cron в контейнер.
+        try:
+            from app.api.v1.routers.certs import run_periodic_cleanup
+            stats = run_periodic_cleanup(db)
+            non_zero = {k: v for k, v in stats.items() if v}
+            if non_zero:
+                print(f"🧹 crypto-keys cleanup: {non_zero}")
+        except Exception as error:
+            print(f"⚠️  crypto-keys cleanup: {error}")
     finally:
         db.close()
 

@@ -103,10 +103,26 @@ class Settings(BaseSettings):
     CRYPTO_CERT_PARSE_RATE_LIMIT:   str = "120/hour"
     # Агент пингует часто — раз в N минут. Лимит щедрый, но защищает от
     # сошедшего с ума агента который стучит каждую секунду.
+    # NB: с per-token keyfunc (см. _agent_rate_key в certs.py) лимит у
+    # каждого агента свой, а не делится на всех через корпоративный NAT.
     CRYPTO_AGENT_SYNC_RATE_LIMIT:   str = "120/hour"
+    # Enrollment редкий, но при bulk-раскатке (300 ПК сразу через
+    # Invoke-Command) все идут с одного админского IP — отдельный
+    # увеличенный лимит для этого случая.
+    CRYPTO_AGENT_ENROLL_RATE_LIMIT: str = "600/hour"
     # Сколько живёт токен агента после генерации install-пакета.
     # 365 дней = годовой цикл переустановки. Можно отзывать раньше из админки.
     CRYPTO_AGENT_TOKEN_TTL_DAYS:    int = 365
+
+    # ─── TTL для журналов (авточистка при старте + раз в сутки) ──────────────
+    # При 300 ПК журналы растут быстро: каждый poll = строка в last_seen
+    # (UPDATE, не INSERT — ок); каждая подпись = строка в crypto_key_usage
+    # (INSERT — может быть 1000+/день); каждая команда = строка в agent_commands.
+    # Эти лимиты задают сколько дней истории держать.
+    CRYPTO_USAGE_RETENTION_DAYS:    int = 90
+    CRYPTO_COMMANDS_RETENTION_DAYS: int = 30
+    # Удалять revoked agent_tokens старше N дней (для аудита оставляем).
+    CRYPTO_REVOKED_AGENT_TOKEN_TTL_DAYS: int = 180
 
     # ─── Доступ к модулям отделов ─────────────────────────────────────────────
     # Каждый модуль (форма 3-СВЯЗЬ, гос. закупки, учёт МНИ, проф. подготовка)
