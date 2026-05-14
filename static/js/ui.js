@@ -314,11 +314,23 @@ function formatDisplayDate(isoDate) {
     return `${wd}, ${dd}.${mm}`;
 }
 
+// Хранение полного набора событий между перерендерами (при клике на
+// вкладку даты заново фильтруем без HTTP-запроса).
+let _deptEventsCache = [];
+let _selectedDeptDate = null;
+// Кэш прогресса (event_id → массив slots) — чтобы при перерендере карточек
+// после переключения даты прогресс-бары сразу показались, а не мигали 0%.
+const _deptProgressCache = new Map();
+
+
 export function renderDeptEventCards(events) {
     const grid = document.getElementById('dept-event-cards');
     if (!grid) return;
 
-    if (!events || events.length === 0) {
+    _deptEventsCache = Array.isArray(events) ? events.slice() : [];
+
+    if (_deptEventsCache.length === 0) {
+        _clearDateTabs();
         grid.innerHTML = `
             <div class="dept-empty">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -330,7 +342,37 @@ export function renderDeptEventCards(events) {
         return;
     }
 
-    grid.innerHTML = events.map((event, i) => {
+    // Группируем по date (исо YYYY-MM-DD)
+    const byDate = new Map();
+    for (const e of _deptEventsCache) {
+        const d = e.date || '__no-date';
+        if (!byDate.has(d)) byDate.set(d, []);
+        byDate.get(d).push(e);
+    }
+    const sortedDates = Array.from(byDate.keys()).sort();
+
+    // Выбираем активную дату:
+    //   1) если ранее выбранная всё ещё в списке — оставляем;
+    //   2) иначе предпочтительно "сегодня";
+    //   3) иначе первая по возрастанию.
+    const todayIso = _toIsoDate(new Date());
+    if (!_selectedDeptDate || !byDate.has(_selectedDeptDate)) {
+        _selectedDeptDate = byDate.has(todayIso) ? todayIso : sortedDates[0];
+    }
+
+    _renderDateTabs(sortedDates, byDate, _selectedDeptDate);
+
+    const visible = byDate.get(_selectedDeptDate) || [];
+    // Восстанавливаем прогресс из кэша — иначе после переключения даты бары
+    // прыгают на 0% пока подгрузятся свежие данные слотов.
+    setTimeout(() => {
+        visible.forEach(ev => {
+            const cached = _deptProgressCache.get(ev.id);
+            if (cached) updateDeptCardProgress(ev.id, cached);
+        });
+    }, 0);
+
+    grid.innerHTML = visible.map((event, i) => {
         const dayLabel = getDayLabel(event.date);
         const dateStr  = formatDisplayDate(event.date);
 
@@ -365,10 +407,82 @@ export function renderDeptEventCards(events) {
     }).join('');
 }
 
+
+function _toIsoDate(d) {
+    // Локальная дата (не UTC!) в формате YYYY-MM-DD — события приходят с
+    // event.date уже в локальной зоне сервера.
+    const yyyy = d.getFullYear();
+    const mm   = String(d.getMonth() + 1).padStart(2, '0');
+    const dd   = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+
+function _renderDateTabs(dates, byDate, selected) {
+    const grid = document.getElementById('dept-event-cards');
+    if (!grid) return;
+
+    let tabsEl = document.getElementById('dept-date-tabs');
+    if (!tabsEl) {
+        tabsEl = document.createElement('div');
+        tabsEl.id = 'dept-date-tabs';
+        tabsEl.className = 'dept-date-tabs';
+        grid.parentNode.insertBefore(tabsEl, grid);
+
+        // Один обработчик — делегирование клика по табам.
+        tabsEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('.dept-date-tab');
+            if (!btn) return;
+            _selectedDeptDate = btn.dataset.date;
+            renderDeptEventCards(_deptEventsCache);
+            // После смены даты прогресс-бары надо перепопулять —
+            // но это сделают существующие WS-обновления / loadMySlots.
+            // Bootstrap: триггерим custom event, listener подхватит.
+            document.dispatchEvent(new CustomEvent('dept-date-changed', { detail: { date: _selectedDeptDate } }));
+        });
+    }
+
+    tabsEl.innerHTML = dates.map(d => {
+        const count    = byDate.get(d).length;
+        const label    = getDayLabel(d);
+        const dateOnly = formatDisplayDate(d).split(', ')[1] || formatDisplayDate(d);
+
+        const isSelected = d === selected;
+        const isToday    = label?.accent;
+        const isMuted    = label?.muted;
+
+        const topText = label?.text || formatDisplayDate(d).split(', ')[0];
+
+        const cls = [
+            'dept-date-tab',
+            isSelected ? 'active' : '',
+            isToday    ? 'is-today' : '',
+            isMuted    ? 'is-muted' : '',
+        ].filter(Boolean).join(' ');
+
+        return `
+            <button class="${cls}" data-date="${d}" type="button">
+                <span class="dept-date-tab__label">${topText}</span>
+                <span class="dept-date-tab__date">${dateOnly}</span>
+                <span class="dept-date-tab__count">${count}</span>
+            </button>`;
+    }).join('');
+}
+
+
+function _clearDateTabs() {
+    const tabsEl = document.getElementById('dept-date-tabs');
+    if (tabsEl) tabsEl.remove();
+    _selectedDeptDate = null;
+}
+
 export function updateDeptCardProgress(eventId, slots) {
+    // Кэшируем для перерендера при смене даты.
+    _deptProgressCache.set(eventId, slots);
+
     const fill  = document.getElementById(`progress-fill-${eventId}`);
     const label = document.getElementById(`progress-label-${eventId}`);
-    if (!fill || !label) return;
+    if (!fill || !label) return;  // карточка не видна (другая дата выбрана) — норма
 
     const total   = slots.length;
     const filled  = slots.filter(s => s.full_name && s.full_name.trim() !== '').length;
