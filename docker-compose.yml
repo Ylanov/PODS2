@@ -49,6 +49,12 @@ services:
     environment:
       POSTGRES_SERVER: db
       POSTGRES_PORT: 5432
+      # Vault-конфиг: приоритет — переменные из .env (если заданы),
+      # иначе те же дефолты, что и в самом vault-сервисе ниже.
+      # Это держит web и vault согласованными: оба видят один и тот же
+      # токен, и pods2 может подключиться к Vault без правок .env.
+      VAULT_URL:   "${VAULT_URL:-http://vault:8200}"
+      VAULT_TOKEN: "${VAULT_TOKEN:-pods2-dev-root-token}"
 
     depends_on:
       db:
