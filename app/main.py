@@ -26,6 +26,7 @@ from app.api.v1.routers import dept_duty
 from app.api.v1.routers import duty_window
 from app.api.v1.routers import dashboard
 from app.api.v1.routers import sed
+from app.api.v1.routers import certs
 from app.api.v1.routers import oper_map
 from app.api.v1.routers import alert_lists as alert_lists_router
 from app.api.v1.routers import tasks
@@ -155,6 +156,12 @@ app.include_router(dashboard.router,       prefix="/api/v1/admin",   tags=["Да
 app.include_router(dept_duty.router,       prefix="/api/v1/dept",    tags=["Графики наряда (управление)"])
 app.include_router(duty_window.router,     prefix="/api/v1/duty",    tags=["Окно подачи графиков"])
 app.include_router(sed.router,             prefix="/api/v1/sed",     tags=["СЭД-дайджест"])
+# Ключи и сертификаты КриптоПро — три набора эндпоинтов (admin/user/agent)
+# с одинаковым префиксом /api/v1/certs. Admin защищён get_current_active_admin,
+# user — require_permission("crypto_keys"), agent — собственным токеном.
+app.include_router(certs.admin_router,     prefix="/api/v1/certs",   tags=["Ключи и сертификаты (admin)"])
+app.include_router(certs.user_router,      prefix="/api/v1/certs",   tags=["Ключи и сертификаты"])
+app.include_router(certs.agent_router,     prefix="/api/v1/certs",   tags=["Ключи и сертификаты (агент)"])
 app.include_router(oper_map.router,        prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного"])
 app.include_router(oper_map.public_router, prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного (публичные прокси)"])
 app.include_router(alert_lists_router.router, prefix="/api/v1/alert-lists",tags=["Списки оповещения"])
@@ -228,7 +235,7 @@ _CSS_BUNDLE_ORDER = [
     "operations.css",   "comms-report.css",   "procurement.css",
     "media.css",        "training.css",       "person_conflicts.css",
     "global_search.css", "analytics.css",     "oper_map.css",
-    "alert_lists.css",
+    "alert_lists.css",   "certs.css",
 ]
 
 def _build_css_bundle() -> str:

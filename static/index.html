@@ -266,6 +266,15 @@
                         </svg>
                         Списки оповещения
                     </button>
+                    <!-- «Мои сертификаты» — permission='crypto_keys'. -->
+                    <button id="dept-mycerts-tab-btn" class="btn btn-outlined btn-sm" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                            <rect x="3" y="11" width="18" height="11" rx="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                        Мои сертификаты
+                    </button>
                 </div>
             </div>
 
@@ -277,6 +286,38 @@
             <!-- Панель «Списки оповещения»: вся разметка строится alert_lists.js -->
             <div id="dept-alert-lists-panel" class="hidden" style="padding-top:8px;">
                 <div id="alert-lists-root"></div>
+            </div>
+
+            <!-- Панель «Мои сертификаты»: список своих ключей + кнопка скачать агента.
+                 Логика в /static/js/certs_user.js. Доступ: permission='crypto_keys'. -->
+            <div id="dept-mycerts-panel" class="hidden" style="padding-top:8px;">
+                <div class="my-certs-panel">
+                    <div class="my-certs-header">
+                        <h2>Мои сертификаты</h2>
+                        <button id="my-certs-download-agent" class="btn btn-success btn-sm" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+                                 style="margin-right:4px;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Скачать агента (установить на этот ПК)
+                        </button>
+                    </div>
+                    <div id="my-certs-list">
+                        <div class="my-certs-empty">Загрузка…</div>
+                    </div>
+                    <div class="my-certs-help">
+                        <b>Как это работает.</b> Скачайте архив, распакуйте, запустите
+                        <code>install.bat</code> от имени Администратора. После установки
+                        служба PODS2Agent сама подгрузит все назначенные вам ключи
+                        в КриптоПро в течение 5 минут. Подписывайте документы как обычно.
+                        <br><br>
+                        Если вашего ключа нет в списке — обратитесь к администратору,
+                        чтобы он загрузил его в систему и привязал к вашей учётке.
+                    </div>
+                </div>
             </div>
 
             <!-- Панель «Операции» (отдел): список кнопок-операций.
@@ -1833,6 +1874,144 @@
             <div id="tab-calendar" class="hidden" role="tabpanel">
                 <div id="tasks-root" data-role="admin"></div>
             </div><!-- /#tab-calendar -->
+
+            <!-- ══════════════════════════════════════════════════════════════
+                 Tab: Ключи и сертификаты КриптоПро
+                 Централизованное хранилище: загрузка контейнеров xxx.000 в Vault,
+                 привязка к пользователям, отзыв. Юзеры скачивают агента из
+                 своего кабинета — Windows-служба синхронизирует ключи в
+                 C:\ProgramData\PODS2Keys\, КриптоПро видит их как обычные.
+                 Логика в /static/js/certs_admin.js. Доступ: только админ.
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="tab-certs" class="hidden" role="tabpanel">
+                <div class="certs-panel">
+
+                    <!-- Тулбар -->
+                    <div class="certs-toolbar">
+                        <div class="certs-toolbar__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="11" width="18" height="11" rx="2"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            <h2>Ключи и сертификаты КриптоПро</h2>
+                            <span id="certs-count-badge" class="certs-count-badge">—</span>
+                        </div>
+                        <button id="certs-toggle-create" class="btn btn-success btn-sm" type="button">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+                                 style="margin-right:4px;">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Загрузить ключ
+                        </button>
+                    </div>
+
+                    <!-- Форма создания (скрыта по умолчанию) -->
+                    <div id="certs-create-form" class="certs-create hidden">
+                        <h3 class="certs-create__title">Новый ключ</h3>
+
+                        <div class="certs-field">
+                            <label class="field-label">① Папка контейнера КриптоПро</label>
+                            <input type="file" id="certs-container-input" multiple
+                                   accept=".key,application/octet-stream"
+                                   webkitdirectory directory>
+                            <p class="certs-hint">
+                                Перетащите папку <code>xxx.000</code> в поле выбора
+                                (или нажмите и выберите все 6 файлов <code>*.key</code>:
+                                <code>header.key, masks.key, masks2.key, name.key, primary.key, primary2.key</code>).
+                            </p>
+                            <div id="certs-container-files" class="certs-files-list hidden"></div>
+                        </div>
+
+                        <div class="certs-field">
+                            <label class="field-label" for="certs-container-name">Имя контейнера</label>
+                            <input type="text" id="certs-container-name"
+                                   placeholder="buh_2026 (без расширения .000)"
+                                   autocomplete="off">
+                            <p class="certs-hint">
+                                Будет автоматически подставлено из имени папки. Можно изменить.
+                            </p>
+                        </div>
+
+                        <div class="certs-field">
+                            <label class="field-label">② Открытый сертификат (.cer)</label>
+                            <input type="file" id="certs-cer-input" accept=".cer,.crt,.der">
+                            <div id="certs-cer-preview" class="certs-cer-preview hidden">
+                                <!-- Заполняется через JS после parse-cer -->
+                            </div>
+                        </div>
+
+                        <div class="certs-field">
+                            <label class="field-label" for="certs-owner">③ Кому назначить</label>
+                            <select id="certs-owner">
+                                <option value="">— оставить свободным (назначу позже) —</option>
+                            </select>
+                        </div>
+
+                        <div class="certs-field-row">
+                            <div class="certs-field">
+                                <label class="field-label" for="certs-purpose">Назначение</label>
+                                <select id="certs-purpose">
+                                    <option value="">—</option>
+                                    <option value="kazn">Казначейство</option>
+                                    <option value="eis">ЕИС / Закупки</option>
+                                    <option value="sed">СЭД</option>
+                                    <option value="other">Прочее</option>
+                                </select>
+                            </div>
+                            <div class="certs-field certs-field--grow">
+                                <label class="field-label" for="certs-note">Комментарий</label>
+                                <input type="text" id="certs-note"
+                                       placeholder="Опционально"
+                                       autocomplete="off">
+                            </div>
+                        </div>
+
+                        <div class="certs-create__actions">
+                            <button id="certs-cancel-btn" class="btn btn-outlined btn-sm" type="button">
+                                Отмена
+                            </button>
+                            <button id="certs-submit-btn" class="btn btn-success btn-sm" type="button" disabled>
+                                Сохранить в Vault
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Фильтры -->
+                    <div class="certs-filters">
+                        <select id="certs-filter-status">
+                            <option value="">Все статусы</option>
+                            <option value="active">Активные</option>
+                            <option value="revoked">Отозванные</option>
+                            <option value="expired">Истёкшие</option>
+                        </select>
+                        <input type="text" id="certs-search"
+                               placeholder="Поиск по контейнеру / ИНН / владельцу..."
+                               autocomplete="off">
+                    </div>
+
+                    <!-- Таблица -->
+                    <div class="data-table-wrap">
+                        <table class="certs-table">
+                            <thead>
+                                <tr>
+                                    <th>Контейнер</th>
+                                    <th>Владелец</th>
+                                    <th>CN / ИНН</th>
+                                    <th>Действ. до</th>
+                                    <th>Статус</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="certs-tbody">
+                                <tr><td colspan="6" class="certs-empty">Загрузка…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                </div>
+            </div><!-- /#tab-certs -->
 
             <!-- ══════════════════════════════════════════════════════════════
                  Tab: Операции — аккордеон с редко используемыми разделами
