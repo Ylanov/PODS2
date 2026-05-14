@@ -21,10 +21,160 @@ let _initialized = false;
 export async function initMyCerts() {
     if (!_initialized) {
         _initialized = true;
-        document.getElementById('my-certs-download-agent')?.addEventListener('click', downloadAgent);
-        document.getElementById('my-certs-force-sync')   ?.addEventListener('click', forceSync);
+        document.getElementById('my-certs-force-sync')?.addEventListener('click', forceSync);
     }
-    await loadMyKeys();
+    await Promise.all([loadMyKeys(), loadStatus()]);
+}
+
+
+async function loadStatus() {
+    const el = document.getElementById('my-certs-status');
+    if (!el) return;
+    try {
+        const data = await api.get('/certs/me/agent-status');
+        renderStatus(el, data);
+    } catch (err) {
+        el.innerHTML = `<div class="my-certs-status-card my-certs-status--unknown">Не удалось получить статус агента: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+
+function renderStatus(el, data) {
+    const { agents, overall } = data;
+
+    if (overall === 'none') {
+        // Никакого агента нет — главная кнопка установки.
+        el.innerHTML = `
+            <div class="my-certs-status-card my-certs-status--offline">
+                <div class="my-certs-status-icon">●</div>
+                <div class="my-certs-status-body">
+                    <div class="my-certs-status-title">Агент ещё не установлен</div>
+                    <div class="my-certs-status-desc">
+                        Без агента сертификаты не появятся в КриптоПро.
+                        Нажми кнопку ниже — скачается файл, открой его двойным кликом
+                        и подтверди запрос Windows. Всё, готово через минуту.
+                    </div>
+                </div>
+                <button id="my-certs-install-btn" class="btn btn-success btn-lg" type="button">
+                    Установить агент
+                </button>
+            </div>`;
+        document.getElementById('my-certs-install-btn')?.addEventListener('click', installAgent);
+        return;
+    }
+
+    const labelMap = {
+        online:       'работает',
+        idle:         'молчит несколько минут',
+        offline:      'давно не пинговал',
+        never_pinged: 'не пинговал ни разу',
+    };
+    const cls = {
+        online:       'my-certs-status--online',
+        idle:         'my-certs-status--idle',
+        offline:      'my-certs-status--offline',
+        never_pinged: 'my-certs-status--idle',
+    };
+
+    const overallTitle = overall === 'online'
+        ? 'Агент работает'
+        : overall === 'idle'
+            ? 'Агент устанавливается / молчит'
+            : 'Агент не отвечает';
+
+    const overallCls = cls[overall] || 'my-certs-status--offline';
+
+    const agentsList = agents.map(a => `
+        <li>
+            <span class="my-certs-status-dot my-certs-status-dot--${a.state}"></span>
+            <code>${escapeHtml(a.hostname || '?')}</code>
+            ${a.last_seen_at ? `· последний пинг ${formatRelative(a.last_seen_at)}` : '· не пинговал'}
+            <span style="color:var(--md-on-surface-hint);">— ${labelMap[a.state]}</span>
+        </li>
+    `).join('');
+
+    el.innerHTML = `
+        <div class="my-certs-status-card ${overallCls}">
+            <div class="my-certs-status-icon">●</div>
+            <div class="my-certs-status-body">
+                <div class="my-certs-status-title">${overallTitle}</div>
+                <ul class="my-certs-status-list">${agentsList}</ul>
+            </div>
+            <button id="my-certs-install-btn" class="btn btn-outlined btn-sm" type="button"
+                    title="Установить агент на ещё один компьютер">
+                + На другой ПК
+            </button>
+        </div>`;
+    document.getElementById('my-certs-install-btn')?.addEventListener('click', installAgent);
+}
+
+
+function formatRelative(iso) {
+    const diffSec = Math.max(0, Math.floor((new Date() - new Date(iso)) / 1000));
+    if (diffSec < 60)       return `${diffSec} сек. назад`;
+    if (diffSec < 3600)     return `${Math.floor(diffSec/60)} мин. назад`;
+    if (diffSec < 86400)    return `${Math.floor(diffSec/3600)} ч. назад`;
+    return `${Math.floor(diffSec/86400)} дн. назад`;
+}
+
+
+async function installAgent() {
+    const btn = document.getElementById('my-certs-install-btn');
+    if (!btn) return;
+
+    const machine = prompt(
+        'Установка агента на этот ПК.\n\n' +
+        'Введи имя компьютера для аудита (видно админу):',
+        'PC-' + (window.currentUser?.username || '').toUpperCase(),
+    );
+    if (machine === null) return;
+
+    const oldLabel = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Готовим файл…';
+
+    try {
+        const fd = new FormData();
+        fd.append('description', machine || '');
+        const token = localStorage.getItem('token');
+        const response = await fetch('/api/v1/certs/me/install-script', {
+            method:  'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body:    fd,
+        });
+        if (!response.ok) {
+            const e = await response.json().catch(() => ({ detail: 'HTTP ' + response.status }));
+            throw new Error(e.detail || ('HTTP ' + response.status));
+        }
+        const blob = await response.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = 'pods2-agent-install.ps1';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // Понятная инструкция дальнейших действий.
+        alert(
+            'Файл pods2-agent-install.ps1 скачался.\n\n' +
+            'Что делать дальше:\n\n' +
+            '1. Открой папку «Загрузки».\n' +
+            '2. Правый клик по pods2-agent-install.ps1 → «Запустить с PowerShell».\n' +
+            '3. Windows спросит разрешение администратора — нажми «Да».\n' +
+            '4. Откроется окно с прогрессом. Дождись фразы «✓ Агент установлен».\n' +
+            '5. Закрой окно.\n\n' +
+            'Через минуту вернись на эту страницу — статус станет зелёным.',
+        );
+    } catch (err) {
+        window.showError?.('Не удалось скачать установщик: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldLabel;
+        // Обновим статус через 5 секунд (даём time админу установить)
+        setTimeout(() => loadStatus(), 5000);
+    }
 }
 
 
@@ -154,73 +304,10 @@ function statusLabel(status, validTo) {
 }
 
 
-async function downloadAgent() {
-    const btn = document.getElementById('my-certs-download-agent');
-    if (!btn) return;
-
-    const oldLabel = btn.innerHTML;
-    btn.disabled  = true;
-    btn.innerHTML = 'Готовим архив…';
-
-    try {
-        // Запрашиваем имя машины — попадёт в description токена для аудита
-        // (админ потом видит в списке агентов «PC-IVANOV — последний пинг ...»).
-        const hint    = (window.currentUser?.username || '').toUpperCase();
-        const machine = prompt(
-            'Опишите этот ПК (попадёт в журнал у администратора):\n\n' +
-            'Например: «PC-' + hint + '» или «Ноутбук бухгалтерии»',
-            'PC-' + hint,
-        );
-        if (machine === null) {
-            // Юзер отменил — выходим без запроса.
-            return;
-        }
-
-        const fd = new FormData();
-        fd.append('description', machine || '');
-
-        // api.upload не подходит: он ожидает JSON-ответ, а здесь возвращается ZIP.
-        // Делаем fetch вручную с тем же токеном из localStorage.
-        const token    = localStorage.getItem('token');
-        const headers  = token ? { 'Authorization': `Bearer ${token}` } : {};
-        const response = await fetch('/api/v1/certs/agent/install-package', {
-            method:  'POST',
-            headers,
-            body:    fd,
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({ detail: 'ошибка ' + response.status }));
-            throw new ApiError(err.detail || ('HTTP ' + response.status), response.status);
-        }
-
-        const blob = await response.blob();
-        // Имя файла — из Content-Disposition если есть, иначе сами строим.
-        const disp = response.headers.get('Content-Disposition') || '';
-        const match = /filename=["']?([^"']+)["']?/i.exec(disp);
-        const fname = match ? match[1]
-                            : `pods2-agent-${window.currentUser?.username || 'user'}.zip`;
-
-        // Принудительный download через временную ссылку.
-        const url = URL.createObjectURL(blob);
-        const a   = document.createElement('a');
-        a.href     = url;
-        a.download = fname;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        window.showSnackbar?.(
-            'Архив скачан. Распакуйте и запустите install.bat от Администратора.',
-            'success', 8000,
-        );
-    } catch (err) {
-        window.showError?.('Не удалось скачать агента: ' + err.message);
-    } finally {
-        btn.disabled  = false;
-        btn.innerHTML = oldLabel;
-    }
-}
+// downloadAgent (старый ZIP-flow) удалён — заменён installAgent выше,
+// который скачивает один .ps1 файл с self-elevation. ZIP-endpoint
+// /agent/install-package на бэке оставлен для совместимости со старыми
+// инсталляциями (если кто-то скачал ZIP до апдейта).
 
 
 // ─── Утилиты ────────────────────────────────────────────────────────────────

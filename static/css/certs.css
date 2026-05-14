@@ -469,3 +469,84 @@
 .my-certs-help b {
     color: var(--md-on-surface);
 }
+
+
+/* ─── Статус-плашка агента ───────────────────────────────────────────── */
+
+.my-certs-status {
+    padding: 0 20px;
+    margin: 12px 0;
+}
+
+.my-certs-status-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: var(--md-radius-md);
+    border: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-variant);
+}
+
+.my-certs-status--online   { background: rgba(29, 158, 117, 0.08);  border-color: rgba(29, 158, 117, 0.30); }
+.my-certs-status--idle     { background: rgba(186, 117, 23, 0.08);  border-color: rgba(186, 117, 23, 0.30); }
+.my-certs-status--offline  { background: rgba(192, 48, 48, 0.06);   border-color: rgba(192, 48, 48, 0.25); }
+.my-certs-status--unknown  { background: var(--md-surface-variant); }
+
+.my-certs-status-icon {
+    flex-shrink: 0;
+    font-size: 2rem;
+    line-height: 1;
+}
+.my-certs-status--online  .my-certs-status-icon { color: var(--md-success, #1D9E75); }
+.my-certs-status--idle    .my-certs-status-icon { color: var(--md-warning, #BA7517); }
+.my-certs-status--offline .my-certs-status-icon { color: var(--md-error,   #C03030); }
+
+.my-certs-status-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.my-certs-status-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    margin-bottom: 4px;
+}
+
+.my-certs-status-desc {
+    font-size: 0.86rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.5;
+}
+
+.my-certs-status-list {
+    margin: 4px 0 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.84rem;
+    color: var(--md-on-surface);
+}
+
+.my-certs-status-list li {
+    padding: 2px 0;
+}
+
+.my-certs-status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+.my-certs-status-dot--online       { background: var(--md-success, #1D9E75); }
+.my-certs-status-dot--idle         { background: var(--md-warning, #BA7517); }
+.my-certs-status-dot--offline      { background: var(--md-error,   #C03030); }
+.my-certs-status-dot--never_pinged { background: var(--md-on-surface-hint); }
+
+.btn-lg {
+    padding: 10px 20px !important;
+    font-size: 0.95rem !important;
+    font-weight: 600;
+}
