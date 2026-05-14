@@ -34,35 +34,47 @@ depends_on:    Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Orphan cleanup отдельно (см. предыдущие миграции — учли грабли).
+    # Bulletproof pattern: оборачиваем CREATE TABLE в plpgsql BEGIN/EXCEPTION
+    # с автоматическим savepoint. Если CREATE упадёт на orphan pg_type
+    # (duplicate_object) — exception handler дропает тип и повторяет CREATE.
+    # Это решает recurring проблему `pg_type_typname_nsp_index` collision,
+    # которая возникает после прерванной предыдущей миграции.
     op.execute("""
         DO $$
         BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_class
-                 WHERE relname = 'enrollment_tokens' AND relkind = 'r'
-            ) THEN
-                EXECUTE 'DROP TYPE IF EXISTS public.enrollment_tokens CASCADE';
-            END IF;
+            BEGIN
+                CREATE TABLE enrollment_tokens (
+                    id              BIGSERIAL PRIMARY KEY,
+                    token_hash      VARCHAR(64) NOT NULL UNIQUE,
+                    description     VARCHAR(255),
+                    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    expires_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+                    revoked         BOOLEAN NOT NULL DEFAULT FALSE,
+                    revoked_at      TIMESTAMP WITH TIME ZONE,
+                    created_by_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    enrolled_count  INTEGER NOT NULL DEFAULT 0
+                );
+            EXCEPTION
+                WHEN duplicate_table THEN
+                    -- Таблица уже создана нормально — ничего не делаем.
+                    NULL;
+                WHEN duplicate_object THEN
+                    -- Orphan-тип от прерванной предыдущей миграции — дропаем
+                    -- и создаём заново.
+                    EXECUTE 'DROP TYPE IF EXISTS public.enrollment_tokens CASCADE';
+                    CREATE TABLE enrollment_tokens (
+                        id              BIGSERIAL PRIMARY KEY,
+                        token_hash      VARCHAR(64) NOT NULL UNIQUE,
+                        description     VARCHAR(255),
+                        created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        expires_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+                        revoked         BOOLEAN NOT NULL DEFAULT FALSE,
+                        revoked_at      TIMESTAMP WITH TIME ZONE,
+                        created_by_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                        enrolled_count  INTEGER NOT NULL DEFAULT 0
+                    );
+            END;
         END $$;
-    """)
-
-    op.execute("""
-        CREATE TABLE IF NOT EXISTS enrollment_tokens (
-            id              BIGSERIAL PRIMARY KEY,
-            -- SHA256 от raw токена. Сам токен показывается админу ОДИН раз
-            -- при создании, потом восстановить нельзя.
-            token_hash      VARCHAR(64) NOT NULL UNIQUE,
-            description     VARCHAR(255),
-            created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            expires_at      TIMESTAMP WITH TIME ZONE NOT NULL,
-            revoked         BOOLEAN NOT NULL DEFAULT FALSE,
-            revoked_at      TIMESTAMP WITH TIME ZONE,
-            created_by_id   INTEGER
-                             REFERENCES users(id) ON DELETE SET NULL,
-            -- Счётчик: сколько agent_tokens было выпущено через этот enrollment.
-            enrolled_count  INTEGER NOT NULL DEFAULT 0
-        );
     """)
 
     # На AgentToken добавляем ссылку на enrollment-token (для аудита: каким
