@@ -218,6 +218,25 @@ class EnrollmentTokenCreatedOut(EnrollmentTokenOut):
     raw_token: str
 
 
+class UserAgentStatus(BaseModel):
+    """Статус одного агента в кабинете юзера."""
+    id:           int
+    hostname:     Optional[str]
+    description:  Optional[str]
+    last_seen_at: Optional[datetime]
+    state:        str   # 'never_pinged' | 'online' | 'idle' | 'offline'
+
+
+class UserAgentStatusOut(BaseModel):
+    """
+    Сводка для status-плашки в кабинете юзера.
+    `overall` — самое позитивное состояние из всех: если хоть один online,
+    то всё OK; иначе берём средний градус.
+    """
+    agents:  List[UserAgentStatus]
+    overall: str   # 'none' | 'online' | 'idle' | 'offline'
+
+
 class EnrollIn(BaseModel):
     """Что шлёт агент при первом запуске."""
     enrollment_token: str
@@ -1202,6 +1221,114 @@ def list_my_keys(
     return [_to_out(k) for k in rows]
 
 
+@user_router.get(
+    "/me/agent-status",
+    response_model=UserAgentStatusOut,
+    summary="Статус установленных агентов юзера (для плашки в кабинете)",
+)
+def get_my_agent_status(
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(get_current_user),
+):
+    """
+    Возвращает список всех активных (revoked=false) agent_tokens юзера и
+    их состояние по last_seen_at:
+      • never_pinged — токен есть, но ни разу не пинговал.
+      • online       — пинговал < 2 мин назад.
+      • idle         — пинговал 2-10 мин назад (тик scheduled task пропустился).
+      • offline      — пинговал больше 10 мин назад или revoked.
+    """
+    rows = (
+        db.query(AgentToken)
+        .filter(
+            AgentToken.user_id == current_user.id,
+            AgentToken.revoked == False,                      # noqa: E712
+            AgentToken.expires_at > _now(),
+        )
+        .order_by(AgentToken.issued_at.desc())
+        .all()
+    )
+
+    now = _now()
+    agents: list[UserAgentStatus] = []
+    has_online = False
+    has_idle   = False
+    for t in rows:
+        if not t.last_seen_at:
+            state = "never_pinged"
+        else:
+            seconds_ago = (now - t.last_seen_at).total_seconds()
+            if   seconds_ago < 120:    state = "online";  has_online = True
+            elif seconds_ago < 600:    state = "idle";    has_idle   = True
+            else:                      state = "offline"
+        agents.append(UserAgentStatus(
+            id           = t.id,
+            hostname     = t.bound_hostname,
+            description  = t.description,
+            last_seen_at = t.last_seen_at,
+            state        = state,
+        ))
+
+    if not agents:        overall = "none"
+    elif has_online:      overall = "online"
+    elif has_idle:        overall = "idle"
+    else:                 overall = "offline"
+
+    return UserAgentStatusOut(agents=agents, overall=overall)
+
+
+@user_router.post(
+    "/me/install-script",
+    summary="Скачать install.ps1 — один файл для установки агента (без ZIP)",
+)
+def get_install_script(
+    request:      Request,
+    description:  Optional[str] = Form(None),
+    db:           Session       = Depends(get_db),
+    current_user: User          = Depends(get_current_user),
+):
+    """
+    Возвращает один self-contained PowerShell-скрипт с встроенными:
+      • personal agent token (для этого юзера),
+      • полный sync.ps1 (как here-string).
+
+    Юзер: правый клик по файлу → "Запустить с PowerShell" → UAC → готово.
+    Скрипт сам elevates до admin если запустили без admin-прав.
+    """
+    # 1. Создаём персональный agent_token (как install-package, тот же flow).
+    raw_token  = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    expires_at = _now() + timedelta(days=settings.CRYPTO_AGENT_TOKEN_TTL_DAYS)
+
+    agent_token = AgentToken(
+        user_id     = current_user.id,
+        token_hash  = token_hash,
+        description = (description or f"PC of {current_user.username}")[:255],
+        expires_at  = expires_at,
+    )
+    db.add(agent_token)
+    db.commit()
+
+    # 2. Готовим скрипт. sync.ps1 встроен как here-string.
+    base = str(request.base_url).rstrip("/")
+    sync_safe = _SYNC_PS1_TEMPLATE.replace("'@\n", "'@__\n")
+    script = (
+        _USER_INSTALL_PS1_TEMPLATE
+        .replace("{{SERVER_URL}}", base)
+        .replace("{{TOKEN}}",      raw_token)
+        .replace("{{USERNAME}}",   current_user.username)
+        .replace("{{USER_ID}}",    str(current_user.id))
+        .replace("{{SYNC_PS1_CONTENT}}", sync_safe)
+    )
+
+    fname = f"pods2-agent-install-{current_user.username}.ps1"
+    return Response(
+        content    = script,
+        media_type = "text/plain; charset=utf-8",
+        headers    = {"Content-Disposition": _content_disposition(fname)},
+    )
+
+
 @user_router.post(
     "/me/force-sync",
     status_code=204,
@@ -1650,6 +1777,113 @@ def agent_heartbeat(
 # ═══════════════════════════════════════════════════════════════════════════
 # Шаблоны: install.bat и README.txt
 # ═══════════════════════════════════════════════════════════════════════════
+
+_USER_INSTALL_PS1_TEMPLATE = r"""# PODS2 Agent — установщик для пользователя.
+#
+# Как использовать:
+#   1) Правый клик по этому файлу → "Запустить с PowerShell".
+#   2) Подтверди UAC ("Да").
+#   3) Готово — через минуту твои сертификаты появятся в КриптоПро.
+
+$ErrorActionPreference = 'Stop'
+
+$ServerUrl  = '{{SERVER_URL}}'
+$Token      = '{{TOKEN}}'
+$Username   = '{{USERNAME}}'
+$UserId     = {{USER_ID}}
+$InstallDir = "C:\Program Files\PODS2Agent"
+
+# Self-elevation: если запущен НЕ от Admin, перезапускаем себя через UAC.
+# Юзеру не нужно знать про "запуск от Администратора" — система сама спросит.
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Требуются права администратора — сейчас покажу запрос Windows."
+    Start-Sleep -Seconds 1
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
+Write-Host ""
+Write-Host "  ╔════════════════════════════════════╗"
+Write-Host "  ║   PODS2 Agent — Установка           ║"
+Write-Host "  ╚════════════════════════════════════╝"
+Write-Host ""
+Write-Host "  Сервер:    $ServerUrl"
+Write-Host "  Машина:    $env:COMPUTERNAME"
+Write-Host "  Учётка:    $Username"
+Write-Host ""
+
+try {
+    # 1. Папка установки
+    if (-not (Test-Path $InstallDir)) {
+        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    }
+
+    # 2. Записываем sync.ps1 (встроен)
+    Write-Host "  [1/5] Записываю файлы агента..."
+    $syncDst = Join-Path $InstallDir "sync.ps1"
+    $syncContent = @'
+{{SYNC_PS1_CONTENT}}
+'@
+    Set-Content -Path $syncDst -Value $syncContent -Encoding UTF8 -Force
+
+    # 3. config.json (токен сразу шифруем через DPAPI LocalMachine)
+    $tokenBytes  = [System.Text.Encoding]::UTF8.GetBytes($Token)
+    $sealed      = [System.Security.Cryptography.ProtectedData]::Protect($tokenBytes, $null, 'LocalMachine')
+    $tokenSealed = [Convert]::ToBase64String($sealed)
+
+    $config = [PSCustomObject]@{
+        server_url       = $ServerUrl
+        token            = $tokenSealed
+        token_encrypted  = $true
+        username         = $Username
+        user_id          = $UserId
+        sync_interval_s  = 60
+        keys_dir         = "C:\ProgramData\PODS2Keys"
+    }
+    $config | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $InstallDir "config.json") -Encoding UTF8 -Force
+
+    # 4. Чистим артефакты от старых установок
+    Remove-Item "HKLM:\SOFTWARE\Crypto Pro\Settings\Readers\PODS2Folder" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "C:\ProgramData\PODS2Keys" -Recurse -Force -ErrorAction SilentlyContinue
+
+    # 5. CAPI2 audit (для журнала использования)
+    Write-Host "  [2/5] Включаю журналирование подписей..."
+    wevtutil sl Microsoft-Windows-CAPI2/Operational /e:true /rt:false /q:true 2>&1 | Out-Null
+
+    # 6. Первый sync (если уже есть ключи, сразу подтянутся)
+    Write-Host "  [3/5] Первая синхронизация..."
+    & powershell -ExecutionPolicy Bypass -File $syncDst
+
+    # 7. Удаляем старую задачу если была (например, после прошлой установки)
+    Write-Host "  [4/5] Регистрирую автоматическое обновление..."
+    schtasks /delete /tn "PODS2 Cert Sync" /f 2>&1 | Out-Null
+
+    # 8. Регистрируем scheduled task — каждую минуту под текущим юзером с admin привилегиями
+    $taskUser = "$env:USERDOMAIN\$env:USERNAME"
+    $taskCmd  = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$InstallDir\sync.ps1`""
+    schtasks /create /tn "PODS2 Cert Sync" /tr $taskCmd `
+        /sc minute /mo 1 /ru $taskUser /it /rl HIGHEST /f | Out-Null
+
+    Write-Host "  [5/5] Готово."
+    Write-Host ""
+    Write-Host "  ✓ Агент установлен и работает."
+    Write-Host "  ✓ Сертификаты появятся в КриптоПро в течение минуты."
+    Write-Host "  ✓ Можешь закрыть это окно."
+    Write-Host ""
+    Write-Host "  При проблемах: посмотри лог $InstallDir\sync.log"
+    Write-Host ""
+} catch {
+    Write-Host ""
+    Write-Host "  ✗ ОШИБКА: $_" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Сделай скриншот этого окна и пошли админу."
+    Write-Host ""
+}
+
+Write-Host "  Нажми Enter чтобы закрыть окно..."
+Read-Host | Out-Null
+"""
+
 
 _BOOTSTRAP_PS1_TEMPLATE = r"""# PODS2 Agent — Bootstrap (массовая раскатка через PSExec / Invoke-Command)
 #

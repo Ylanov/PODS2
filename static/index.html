@@ -305,17 +305,12 @@
                                 </svg>
                                 Обновить сейчас
                             </button>
-                            <button id="my-certs-download-agent" class="btn btn-success btn-sm" type="button">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
-                                     style="margin-right:4px;">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="7 10 12 15 17 10"/>
-                                    <line x1="12" y1="15" x2="12" y2="3"/>
-                                </svg>
-                                Скачать агента (установить на этот ПК)
-                            </button>
                         </div>
+                    </div>
+
+                    <!-- Status-плашка: видно ли работает агент или надо ставить -->
+                    <div id="my-certs-status" class="my-certs-status">
+                        <!-- Заполняется через certs_user.js:renderStatus -->
                     </div>
                     <div id="my-certs-list">
                         <div class="my-certs-empty">Загрузка…</div>
