@@ -269,13 +269,19 @@ function _renderScheduleList() {
             ? `<span class="duty-sched-item__kind duty-sched-item__kind--amg"
                      title="Дежурство в АМГ — учётный график, в слоты не подставляет">АМГ</span>`
             : '';
+        // title-атрибуты на title/sub дают tooltip на hover с полным текстом —
+        // даже если карточка обрезает по ellipsis, юзер видит наведением.
         return `
         <div class="duty-sched-item${s.id === _currentId ? ' duty-sched-item--active' : ''}"
              data-sched-id="${s.id}">
-            <div class="duty-sched-item__title">${esc(s.title)}</div>
-            ${s.position_name ? `<div class="duty-sched-item__sub">${esc(s.position_name)}</div>` : ''}
-            ${kindBadge}
-            ${scopeBadge}
+            <div class="duty-sched-item__body">
+                <div class="duty-sched-item__title" title="${esc(s.title)}">${esc(s.title)}</div>
+                ${s.position_name ? `<div class="duty-sched-item__sub" title="${esc(s.position_name)}">${esc(s.position_name)}</div>` : ''}
+            </div>
+            <div class="duty-sched-item__badges">
+                ${kindBadge}
+                ${scopeBadge}
+            </div>
             <div class="duty-sched-item__actions">
                 <button class="duty-sched-item__kind-toggle btn btn-outlined btn-xs"
                         data-sched-kind="${s.id}" data-current-kind="${kind}" type="button"

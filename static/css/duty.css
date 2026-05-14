@@ -99,14 +99,18 @@
 .duty-sched-item {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
+    gap: 8px;
+    padding: 8px 10px;
     border-radius: var(--md-radius-sm);
     cursor: pointer;
     transition: background var(--md-duration-short);
     border: 1px solid var(--md-outline-variant);
     flex-shrink: 0;
-    max-width: 240px;
+    /* было 240px — текст из 2-3 слов (например "старший оперативного")
+       не помещался даже в одну строку. 360px позволяет title в 25-30
+       символов остаться без многоточия. */
+    max-width: 360px;
+    min-width: 200px;
 }
 
 .duty-sched-item:hover {
@@ -133,14 +137,42 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    /* На случай если карточка ещё узкая (мобила) — title в две строки
+       вместо одного многоточия. Активируется отдельным media-правилом ниже. */
 }
 
-.duty-sched-item__pos {
-    font-size: 0.7rem;
+/* Sub-text идёт под title в .duty-sched-item__body. Два класса
+   (__pos для админ-вьюхи, __sub для dept-вьюхи) — общий стиль. */
+.duty-sched-item__pos,
+.duty-sched-item__sub {
+    font-size: 0.72rem;
     color: var(--md-on-surface-hint);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Бейджи (АМГ / 1 ШАБЛОН / ВСЕ СПИСКИ) — фиксированной ширины,
+   рядом друг с другом, не отъедают место у title. */
+.duty-sched-item__badges {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex-shrink: 0;
+    align-items: flex-end;
+}
+
+/* Mobile: карточки во всю ширину, переносы под padding'ом. */
+@media (max-width: 720px) {
+    .duty-sched-item {
+        max-width: 100%;
+        min-width: 0;
+        width: 100%;
+    }
+    .duty-sched-item__title {
+        white-space: normal;
+        line-height: 1.25;
+    }
 }
 
 .duty-sched-item__del {

@@ -258,13 +258,15 @@ function _renderScheduleList() {
         <div class="duty-sched-item${s.id === _currentId ? ' duty-sched-item--active' : ''}"
              data-sched-id="${s.id}">
             <div class="duty-sched-item__body">
-                <span class="duty-sched-item__title">${_esc(s.title)}</span>
+                <span class="duty-sched-item__title" title="${_esc(s.title)}">${_esc(s.title)}</span>
                 ${s.position_name
-                    ? `<span class="duty-sched-item__pos">${_esc(s.position_name)}</span>`
+                    ? `<span class="duty-sched-item__pos" title="${_esc(s.position_name)}">${_esc(s.position_name)}</span>`
                     : ''}
             </div>
-            ${kindBadge}
-            ${scopeBadge}
+            <div class="duty-sched-item__badges">
+                ${kindBadge}
+                ${scopeBadge}
+            </div>
             <div class="duty-sched-item__actions">
                 <button class="duty-sched-item__kind-toggle btn btn-outlined btn-xs"
                         data-sched-kind="${s.id}" data-current-kind="${kind}" type="button"
