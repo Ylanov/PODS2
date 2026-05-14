@@ -21,10 +21,32 @@ let _initialized = false;
 export async function initMyCerts() {
     if (!_initialized) {
         _initialized = true;
-        const btn = document.getElementById('my-certs-download-agent');
-        btn?.addEventListener('click', downloadAgent);
+        document.getElementById('my-certs-download-agent')?.addEventListener('click', downloadAgent);
+        document.getElementById('my-certs-force-sync')   ?.addEventListener('click', forceSync);
     }
     await loadMyKeys();
+}
+
+
+async function forceSync() {
+    const btn = document.getElementById('my-certs-force-sync');
+    if (!btn) return;
+    const oldLabel = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Отправляем команду…';
+    try {
+        await api.post('/certs/me/force-sync', {});
+        window.showSnackbar?.(
+            'Команда отправлена всем установленным агентам. Они подтянут изменения в течение минуты.',
+            'success', 6000,
+        );
+    } catch (err) {
+        const msg = (err instanceof ApiError) ? err.message : String(err);
+        window.showError?.('Не удалось: ' + msg);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldLabel;
+    }
 }
 
 
