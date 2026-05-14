@@ -29,6 +29,7 @@ import secrets
 import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status,
@@ -202,6 +203,26 @@ async def _read_upload(upload: UploadFile, max_size: int, label: str) -> bytes:
     if not data:
         raise HTTPException(status_code=400, detail=f"{label}: пустой файл.")
     return data
+
+
+def _content_disposition(fname: str) -> str:
+    """
+    Content-Disposition с поддержкой UTF-8 имён файлов по RFC 5987.
+
+    HTTP-заголовки в starlette кодируются в latin-1, поэтому кириллица или
+    любой не-ASCII в filename="..." вызывает UnicodeEncodeError. Чтобы
+    обеспечить корректную работу с русскоязычными username/container_name:
+      • filename="<ascii-fallback>"  — для старых клиентов;
+      • filename*=UTF-8''<percent-encoded>  — для современных браузеров.
+
+    Современные браузеры (Chrome, Edge, Firefox, Yandex) при наличии обоих
+    параметров отдают приоритет filename*= с UTF-8.
+    """
+    # ASCII-fallback: всё не [A-Za-z0-9._-] заменяем на _. Минимум 'file' если
+    # после очистки строка пустая.
+    ascii_safe = re.sub(r"[^A-Za-z0-9._-]+", "_", fname).strip("_") or "file"
+    encoded    = quote(fname, safe="")
+    return f'attachment; filename="{ascii_safe}"; filename*=UTF-8\'\'{encoded}'
 
 
 def _sanitize_container_name(name: str) -> str:
@@ -679,7 +700,7 @@ def get_install_package(
     return Response(
         content     = buf.getvalue(),
         media_type  = "application/zip",
-        headers     = {"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers     = {"Content-Disposition": _content_disposition(fname)},
     )
 
 
@@ -770,7 +791,7 @@ def agent_download_container(
     return Response(
         content    = buf.getvalue(),
         media_type = "application/zip",
-        headers    = {"Content-Disposition": f'attachment; filename="{container_name}.zip"'},
+        headers    = {"Content-Disposition": _content_disposition(f"{container_name}.zip")},
     )
 
 
@@ -808,7 +829,7 @@ def agent_download_cert(
         content    = cert_bytes,
         media_type = "application/pkix-cert",
         headers    = {
-            "Content-Disposition": f'attachment; filename="{key.container_name}.cer"',
+            "Content-Disposition": _content_disposition(f"{key.container_name}.cer"),
         },
     )
 
