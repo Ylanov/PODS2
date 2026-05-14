@@ -2011,6 +2011,48 @@
                     </div>
 
                     <!-- ────────────────────────────────────────────────── -->
+                    <!-- Журнал использования: кто/когда/какой контейнер     -->
+                    <!-- читается агентом из Windows Event Log               -->
+                    <!-- ────────────────────────────────────────────────── -->
+                    <div class="certs-toolbar" style="margin-top:24px;">
+                        <div class="certs-toolbar__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/>
+                                <line x1="16" y1="17" x2="8" y2="17"/>
+                                <polyline points="10 9 9 9 8 9"/>
+                            </svg>
+                            <h2>Журнал использования</h2>
+                            <span id="usage-count-badge" class="certs-count-badge">—</span>
+                        </div>
+                        <select id="usage-filter-days">
+                            <option value="1">за сутки</option>
+                            <option value="7" selected>за неделю</option>
+                            <option value="30">за месяц</option>
+                            <option value="90">за 3 месяца</option>
+                        </select>
+                    </div>
+                    <div class="data-table-wrap">
+                        <table class="certs-table">
+                            <thead>
+                                <tr>
+                                    <th>Время</th>
+                                    <th>Пользователь</th>
+                                    <th>Контейнер</th>
+                                    <th>Машина</th>
+                                    <th>Приложение</th>
+                                    <th>Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usage-tbody">
+                                <tr><td colspan="6" class="certs-empty">Загрузка…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- ────────────────────────────────────────────────── -->
                     <!-- Установленные агенты: таблица токенов с MAC-binding -->
                     <!-- ────────────────────────────────────────────────── -->
                     <div class="certs-toolbar" style="margin-top:24px;">

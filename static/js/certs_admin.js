@@ -21,6 +21,8 @@ const STATE = {
     keys:           [],
     users:          [],
     agents:         [],
+    usage:          [],
+    usageDays:      7,
     filterStatus:   '',
     searchQuery:    '',
     initialized:    false,
@@ -32,15 +34,74 @@ const STATE = {
 export async function initCryptoCerts() {
     if (STATE.initialized) {
         // Повторное открытие — просто рефрешим таблицы.
-        await Promise.all([loadKeys(), loadAgents()]);
+        await Promise.all([loadKeys(), loadAgents(), loadUsage()]);
         return;
     }
     STATE.initialized = true;
 
     setupCreateForm();
     setupFilters();
+    setupUsageFilter();
 
-    await Promise.all([loadKeys(), loadUsers(), loadAgents()]);
+    await Promise.all([loadKeys(), loadUsers(), loadAgents(), loadUsage()]);
+}
+
+
+function setupUsageFilter() {
+    const sel = document.getElementById('usage-filter-days');
+    sel?.addEventListener('change', async () => {
+        STATE.usageDays = parseInt(sel.value, 10) || 7;
+        await loadUsage();
+    });
+}
+
+
+async function loadUsage() {
+    try {
+        const rows = await api.get(`/certs/admin/usage?days=${STATE.usageDays}&limit=500`);
+        STATE.usage = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+        console.error('[certs] loadUsage', err);
+        STATE.usage = [];
+    }
+    renderUsageTable();
+}
+
+
+function renderUsageTable() {
+    const tbody = document.getElementById('usage-tbody');
+    const badge = document.getElementById('usage-count-badge');
+    if (!tbody) return;
+    if (badge) badge.textContent = `записей: ${STATE.usage.length}`;
+
+    if (STATE.usage.length === 0) {
+        tbody.innerHTML = `
+            <tr><td colspan="6" class="certs-empty">
+                Пока ничего не записано.<br>
+                <span style="font-size:0.78rem;">
+                    Журнал заполнится автоматически когда юзеры начнут подписывать документы
+                    (агент читает Windows Event Log и шлёт события сюда).
+                </span>
+            </td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = STATE.usage.map(u => `
+        <tr>
+            <td>${formatDateTime(u.event_time)}</td>
+            <td>${escapeHtml(u.username || '—')}</td>
+            <td><code class="certs-container-cell">${escapeHtml(u.container_name)}</code></td>
+            <td>${escapeHtml(u.hostname || '—')}</td>
+            <td>${u.source_process ? `<code>${escapeHtml(u.source_process)}</code>` : '—'}</td>
+            <td>${eventTypeLabel(u.event_type)}</td>
+        </tr>`).join('');
+}
+
+
+function eventTypeLabel(t) {
+    if (t === 'sign')       return '<span class="certs-badge certs-badge--active">подпись</span>';
+    if (t === 'crypto_op')  return '<span class="certs-free">crypto op</span>';
+    return `<span class="certs-free">${escapeHtml(t || '—')}</span>`;
 }
 
 
