@@ -35,7 +35,7 @@ const STATE = {
 
 export async function initCryptoCerts() {
     if (STATE.initialized) {
-        await Promise.all([loadKeys(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
+        await Promise.all([loadHealth(), loadKeys(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
         return;
     }
     STATE.initialized = true;
@@ -46,7 +46,58 @@ export async function initCryptoCerts() {
     setupEnrollButton();
     setupCleanupButtons();
 
-    await Promise.all([loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
+    await Promise.all([loadHealth(), loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
+}
+
+
+async function loadHealth() {
+    const el = document.getElementById('certs-health-banner');
+    if (!el) return;
+    try {
+        const h = await api.get('/certs/admin/health');
+        const total   = h.agents.total;
+        const online  = h.agents.online;
+        const idle    = h.agents.idle;
+        const offline = h.agents.offline;
+        const pendingCmds = h.commands.pending;
+
+        // Цвет баннера: зелёный если все онлайн или агентов нет; жёлтый если
+        // есть idle/offline; красный если pending команды зависли надолго.
+        const cls = total === 0 ? 'health--idle'
+                  : offline > total / 4 ? 'health--bad'
+                  : (idle > 0 || offline > 0) ? 'health--warn'
+                  : 'health--ok';
+
+        el.className = `certs-health-banner ${cls}`;
+        el.innerHTML = `
+            <div class="health-stat">
+                <div class="health-stat__val">${h.keys.active}<span class="health-stat__sub">/${h.keys.total}</span></div>
+                <div class="health-stat__lbl">ключей активных</div>
+            </div>
+            <div class="health-stat">
+                <div class="health-stat__val">${online}<span class="health-stat__sub">/${total}</span></div>
+                <div class="health-stat__lbl">агентов онлайн</div>
+            </div>
+            <div class="health-stat" title="Агенты молчат 2-10 минут — нормально между тиками">
+                <div class="health-stat__val">${idle}</div>
+                <div class="health-stat__lbl">idle</div>
+            </div>
+            <div class="health-stat" title="Агенты не пингуют > 10 минут — выключены или сломаны">
+                <div class="health-stat__val">${offline}</div>
+                <div class="health-stat__lbl">offline</div>
+            </div>
+            <div class="health-stat">
+                <div class="health-stat__val">${h.usage.last_24h}</div>
+                <div class="health-stat__lbl">подписей / 24ч</div>
+            </div>
+            <div class="health-stat" title="Команды в очереди — выполнятся при ближайшем poll агента">
+                <div class="health-stat__val">${pendingCmds}</div>
+                <div class="health-stat__lbl">в очереди</div>
+            </div>`;
+    } catch (err) {
+        el.className = 'certs-health-banner';
+        el.innerHTML = '';
+    }
 }
 
 

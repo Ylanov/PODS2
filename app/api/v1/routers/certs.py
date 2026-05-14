@@ -358,6 +358,61 @@ def _content_disposition(fname: str) -> str:
     return f'attachment; filename="{ascii_safe}"; filename*=UTF-8\'\'{encoded}'
 
 
+def run_periodic_cleanup(db: Session) -> dict:
+    """
+    Чистит устаревшие журналы. Вызывается из app.main.lifespan при старте
+    приложения; для регулярного запуска админу нужно либо рестартить
+    приложение раз в сутки, либо повесить cron внутри контейнера.
+
+    Удаляются:
+      • crypto_key_usage старше CRYPTO_USAGE_RETENTION_DAYS дней
+      • agent_commands старше CRYPTO_COMMANDS_RETENTION_DAYS дней
+      • revoked agent_tokens старше CRYPTO_REVOKED_AGENT_TOKEN_TTL_DAYS дней
+      • просроченные/отозванные enrollment_tokens старше 30 дней
+
+    Возвращает счётчики удалённого — для логов/health endpoint.
+    """
+    now = _now()
+    counters = {}
+
+    cutoff = now - timedelta(days=settings.CRYPTO_USAGE_RETENTION_DAYS)
+    counters["usage_removed"] = (
+        db.query(CryptoKeyUsage)
+        .filter(CryptoKeyUsage.event_time < cutoff)
+        .delete(synchronize_session=False)
+    )
+
+    cutoff = now - timedelta(days=settings.CRYPTO_COMMANDS_RETENTION_DAYS)
+    counters["commands_removed"] = (
+        db.query(AgentCommand)
+        .filter(AgentCommand.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+
+    cutoff = now - timedelta(days=settings.CRYPTO_REVOKED_AGENT_TOKEN_TTL_DAYS)
+    counters["revoked_tokens_removed"] = (
+        db.query(AgentToken)
+        .filter(
+            AgentToken.revoked == True,                       # noqa: E712
+            AgentToken.revoked_at < cutoff,
+        )
+        .delete(synchronize_session=False)
+    )
+
+    cutoff = now - timedelta(days=30)
+    counters["enrollment_tokens_removed"] = (
+        db.query(EnrollmentToken)
+        .filter(
+            ((EnrollmentToken.revoked == True) | (EnrollmentToken.expires_at < now)),  # noqa: E712
+            EnrollmentToken.created_at < cutoff,
+        )
+        .delete(synchronize_session=False)
+    )
+
+    db.commit()
+    return counters
+
+
 def _bump_force_sync(db: Session, user_id: Optional[int]) -> None:
     """
     Помечает все активные токены пользователя как «требуется sync».
@@ -394,6 +449,20 @@ def _sanitize_container_name(name: str) -> str:
             detail=f"Недопустимое имя контейнера: '{base}'. Разрешены буквы, цифры, _.-() и пробел.",
         )
     return base
+
+
+def _agent_rate_key(request: Request) -> str:
+    """
+    Ключ для per-token rate limiting агентских эндпоинтов.
+    В корпсетях с 300+ ПК через один NAT — per-IP лимит делится на всех,
+    и через 5 минут поллинга все получают 429. Здесь ключ — токен агента
+    (точнее, его prefix-hash), бюджет у каждого свой.
+    Fallback на IP для запросов без Authorization (т.е. /agent/enroll).
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return "tok:" + hashlib.sha256(auth[7:].encode("utf-8")).hexdigest()[:16]
+    return "ip:" + (request.client.host if request.client else "unknown")
 
 
 _MAC_NORMALIZE_RE = re.compile(r"[^0-9A-Fa-f]")
@@ -903,6 +972,71 @@ def admin_get_bootstrap_script(
             "Content-Disposition": _content_disposition(f"pods2-bootstrap-{enr.id}.ps1"),
         },
     )
+
+
+@admin_router.get(
+    "/admin/health",
+    summary="Статистика модуля crypto-keys: ключи, агенты, журналы, нагрузка",
+)
+def admin_health(db: Session = Depends(get_db)):
+    """
+    Возвращает счётчики по всем таблицам и распределение агентов по статусам.
+    Используется в админке для индикатора нагрузки/состояния системы.
+    """
+    now = _now()
+    # online — пингал < 2 мин назад
+    online_cutoff = now - timedelta(minutes=2)
+    # idle — пингал 2-10 мин назад
+    idle_cutoff = now - timedelta(minutes=10)
+    # active = не revoked и токен не истёк
+    active_filter = (AgentToken.revoked == False) & (AgentToken.expires_at > now)  # noqa: E712
+
+    keys_total      = db.query(CryptoKey).count()
+    keys_active     = db.query(CryptoKey).filter(CryptoKey.status == "active").count()
+    keys_expired    = db.query(CryptoKey).filter(CryptoKey.valid_to < now).count()
+
+    agents_total    = db.query(AgentToken).filter(active_filter).count()
+    agents_online   = db.query(AgentToken).filter(active_filter, AgentToken.last_seen_at >= online_cutoff).count()
+    agents_idle     = db.query(AgentToken).filter(
+        active_filter, AgentToken.last_seen_at < online_cutoff,
+        AgentToken.last_seen_at >= idle_cutoff,
+    ).count()
+    agents_offline  = agents_total - agents_online - agents_idle
+
+    usage_total     = db.query(CryptoKeyUsage).count()
+    usage_24h       = db.query(CryptoKeyUsage).filter(
+        CryptoKeyUsage.event_time >= now - timedelta(hours=24)
+    ).count()
+    commands_total  = db.query(AgentCommand).count()
+    commands_pending = db.query(AgentCommand).filter(AgentCommand.status == "pending").count()
+
+    return {
+        "keys": {
+            "total":   keys_total,
+            "active":  keys_active,
+            "expired": keys_expired,
+        },
+        "agents": {
+            "total":   agents_total,
+            "online":  agents_online,
+            "idle":    agents_idle,
+            "offline": agents_offline,
+        },
+        "usage": {
+            "total":  usage_total,
+            "last_24h": usage_24h,
+        },
+        "commands": {
+            "total":   commands_total,
+            "pending": commands_pending,
+        },
+        "retention": {
+            "usage_days":              settings.CRYPTO_USAGE_RETENTION_DAYS,
+            "commands_days":           settings.CRYPTO_COMMANDS_RETENTION_DAYS,
+            "revoked_tokens_days":     settings.CRYPTO_REVOKED_AGENT_TOKEN_TTL_DAYS,
+        },
+        "server_time": now.isoformat(),
+    }
 
 
 @admin_router.delete(
@@ -1436,7 +1570,7 @@ agent_router = APIRouter(tags=["Ключи и сертификаты (агент
     response_model=EnrollOut,
     summary="Первичная регистрация агента (без auth, по enrollment-токену)",
 )
-@limiter.limit(lambda: settings.CRYPTO_ADMIN_UPLOAD_RATE_LIMIT)
+@limiter.limit(lambda: settings.CRYPTO_AGENT_ENROLL_RATE_LIMIT, key_func=_agent_rate_key)
 def agent_enroll(
     payload: EnrollIn,
     request: Request,
@@ -1526,7 +1660,7 @@ def agent_enroll(
     response_model=PollOut,
     summary="Лёгкая проверка: нужен ли sync + список команд от админа",
 )
-@limiter.limit(lambda: settings.CRYPTO_AGENT_SYNC_RATE_LIMIT)
+@limiter.limit(lambda: settings.CRYPTO_AGENT_SYNC_RATE_LIMIT, key_func=_agent_rate_key)
 def agent_poll(
     request: Request,
     db:      Session = Depends(get_db),
@@ -1591,7 +1725,7 @@ def agent_command_result(
     response_model=AgentSyncOut,
     summary="Манифест синхронизации: какие ключи должны быть на этой машине",
 )
-@limiter.limit(lambda: settings.CRYPTO_AGENT_SYNC_RATE_LIMIT)
+@limiter.limit(lambda: settings.CRYPTO_AGENT_SYNC_RATE_LIMIT, key_func=_agent_rate_key)
 def agent_sync(
     request: Request,
     db:      Session = Depends(get_db),
@@ -2083,6 +2217,18 @@ Write-Host "Логи:                   $installDir\sync.log"
 #  • POST'ит /agent/heartbeat с результатом для аудита в админке.
 # Запускается из install.bat первый раз + каждые 5 минут через scheduled task.
 _SYNC_PS1_TEMPLATE = r"""# PODS2 Cert Sync — синхронизация контейнеров КриптоПро из PODS2 в реестр.
+# Запускается scheduled task'ом каждую минуту.
+
+# ─── Jitter против thundering herd ────────────────────────────────────────
+# Если 300 ПК установлены одновременно (например через массовую раскатку),
+# их scheduled task будут срабатывать в одну и ту же секунду — сервер
+# получит пик 300 запросов в момент :00 каждой минуты. Размазываем по
+# окну [0..30 сек] случайным sleep'ом ТОЛЬКО когда запущены не интерактивно
+# (под scheduled task). Ручной запуск (диагностика админом) — без задержки.
+if (-not [Environment]::UserInteractive -or $env:USERNAME -eq "SYSTEM") {
+    Start-Sleep -Seconds (Get-Random -Minimum 0 -Maximum 30)
+}
+
 #
 # Что делает:
 #  • при первом запуске шифрует токен в config.json через DPAPI (LocalMachine);
