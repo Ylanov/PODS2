@@ -674,8 +674,8 @@ def get_install_package(
         "token":           raw_token,
         "username":        current_user.username,
         "user_id":         current_user.id,
-        "sync_interval_s": 300,                                 # раз в 5 минут
-        "keys_dir":        "C:\\\\ProgramData\\\\PODS2Keys",   # двойные слеши для JSON
+        "sync_interval_s": 300,                       # раз в 5 минут
+        "keys_dir":        r"C:\ProgramData\PODS2Keys",
     }
 
     install_bat = _INSTALL_BAT_TEMPLATE.replace(
