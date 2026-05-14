@@ -44,8 +44,52 @@ export async function initCryptoCerts() {
     setupFilters();
     setupUsageFilter();
     setupEnrollButton();
+    setupCleanupButtons();
 
     await Promise.all([loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
+}
+
+
+function setupCleanupButtons() {
+    // Журнал использования
+    document.getElementById('usage-cleanup-btn')?.addEventListener('click', async () => {
+        if (!confirm('Очистить весь журнал использования ключей?\n\nЗаписи о подписях исчезнут. Сами ключи не пострадают.')) return;
+        await cleanupCall('/certs/admin/cleanup/usage', loadUsage, 'Журнал использования очищен');
+    });
+
+    // Журнал команд
+    document.getElementById('commands-cleanup-btn')?.addEventListener('click', async () => {
+        if (!confirm('Очистить весь журнал команд агентам?\n\nВключая pending — если есть невыполненные команды, они не дойдут до агентов.')) return;
+        await cleanupCall('/certs/admin/cleanup/commands', loadCommands, 'Журнал команд очищен');
+    });
+
+    // Установленные агенты (только revoked)
+    document.getElementById('agents-cleanup-btn')?.addEventListener('click', async () => {
+        const revokedCount = STATE.agents.filter(a => a.revoked).length;
+        if (revokedCount === 0) {
+            window.showSnackbar?.('Отозванных агентов нет', 'default');
+            return;
+        }
+        if (!confirm(`Удалить ${revokedCount} отозванных токенов агентов?\n\nАктивные не пострадают.`)) return;
+        await cleanupCall('/certs/admin/cleanup/agent-tokens-revoked', loadAgents, `Удалено: ${revokedCount}`);
+    });
+
+    // Установочные токены (revoked/expired)
+    document.getElementById('enroll-cleanup-btn')?.addEventListener('click', async () => {
+        if (!confirm('Удалить отозванные и истёкшие установочные токены?\n\nАктивные не пострадают.')) return;
+        await cleanupCall('/certs/admin/cleanup/enrollment-tokens-inactive', loadEnrollTokens, 'Неактивные токены удалены');
+    });
+}
+
+
+async function cleanupCall(url, reloader, successMsg) {
+    try {
+        await api.delete(url);
+        window.showSnackbar?.(successMsg, 'success');
+        await reloader();
+    } catch (err) {
+        window.showError?.('Не удалось: ' + err.message);
+    }
 }
 
 
