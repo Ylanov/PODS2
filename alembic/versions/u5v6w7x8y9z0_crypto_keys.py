@@ -31,29 +31,32 @@ depends_on:    Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ─── crypto_keys ────────────────────────────────────────────────────────
-    # Защита от orphan pg_type после прерванной миграции — тот же приём что
-    # в t4u5v6w7x8y9_sed_file_blobs.py.
+    # Защита от orphan pg_type, оставшегося после прерванной CREATE TABLE
+    # на предыдущем deploy'е (известная особенность PostgreSQL: при ROLLBACK
+    # запись в pg_class откатывается, а pg_type — нет).
+    #
+    # Стратегия:
+    #   1) Если таблица УЖЕ есть в pg_class — миграция уже накатывалась,
+    #      выходим, ничего не делаем.
+    #   2) Иначе безусловно DROP TYPE IF EXISTS (любая schema), потом CREATE.
+    #
+    # Проверку pg_type через current_schema() убрали — в zone-aware setup'ах
+    # search_path может не совпадать с фактической schema таблицы, и условие
+    # n.nspname = current_schema() даёт false-negative. Без проверки schema
+    # DROP TYPE IF EXISTS безопасен: типа без таблицы быть не должно (мы
+    # уже подтвердили, что таблицы нет), а IF EXISTS no-op'ит если типа нет.
     op.execute("""
         DO $$
         BEGIN
             IF EXISTS (
-                SELECT 1 FROM pg_class c
-                  JOIN pg_namespace n ON n.oid = c.relnamespace
-                 WHERE c.relname = 'crypto_keys'
-                   AND c.relkind = 'r'
-                   AND n.nspname = current_schema()
+                SELECT 1 FROM pg_class
+                 WHERE relname = 'crypto_keys'
+                   AND relkind = 'r'
             ) THEN
                 RETURN;
             END IF;
 
-            IF EXISTS (
-                SELECT 1 FROM pg_type t
-                  JOIN pg_namespace n ON n.oid = t.typnamespace
-                 WHERE t.typname  = 'crypto_keys'
-                   AND n.nspname  = current_schema()
-            ) THEN
-                EXECUTE 'DROP TYPE IF EXISTS crypto_keys CASCADE';
-            END IF;
+            EXECUTE 'DROP TYPE IF EXISTS public.crypto_keys CASCADE';
 
             CREATE TABLE crypto_keys (
                 id                BIGSERIAL PRIMARY KEY,
@@ -107,27 +110,19 @@ def upgrade() -> None:
     """)
 
     # ─── agent_tokens ───────────────────────────────────────────────────────
+    # См. комментарий к crypto_keys выше — тот же приём.
     op.execute("""
         DO $$
         BEGIN
             IF EXISTS (
-                SELECT 1 FROM pg_class c
-                  JOIN pg_namespace n ON n.oid = c.relnamespace
-                 WHERE c.relname = 'agent_tokens'
-                   AND c.relkind = 'r'
-                   AND n.nspname = current_schema()
+                SELECT 1 FROM pg_class
+                 WHERE relname = 'agent_tokens'
+                   AND relkind = 'r'
             ) THEN
                 RETURN;
             END IF;
 
-            IF EXISTS (
-                SELECT 1 FROM pg_type t
-                  JOIN pg_namespace n ON n.oid = t.typnamespace
-                 WHERE t.typname  = 'agent_tokens'
-                   AND n.nspname  = current_schema()
-            ) THEN
-                EXECUTE 'DROP TYPE IF EXISTS agent_tokens CASCADE';
-            END IF;
+            EXECUTE 'DROP TYPE IF EXISTS public.agent_tokens CASCADE';
 
             CREATE TABLE agent_tokens (
                 id              BIGSERIAL PRIMARY KEY,
