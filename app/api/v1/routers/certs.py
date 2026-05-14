@@ -573,6 +573,88 @@ def admin_list_all(
     return [_to_out(k) for k in q.all()]
 
 
+# ВАЖНО про порядок: маршруты со СТРОКОВЫМИ суффиксами (/agent-tokens,
+# /users/{id}/force-sync) ДОЛЖНЫ быть объявлены ПЕРЕД /admin/{key_id} —
+# иначе FastAPI сматчит строку "agent-tokens" как key_id:int и вернёт
+# 422 Unprocessable Content. Это и был баг при первой загрузке вкладки.
+@admin_router.get(
+    "/admin/agent-tokens",
+    response_model=List[AgentTokenOut],
+    summary="Список установленных агентов (для аудита)",
+)
+def admin_list_agent_tokens(db: Session = Depends(get_db)):
+    rows = (
+        db.query(AgentToken)
+        .order_by(AgentToken.issued_at.desc())
+        .limit(500)
+        .all()
+    )
+    return [
+        AgentTokenOut(
+            id             = t.id,
+            user_id        = t.user_id,
+            username       = t.user.username if t.user else "",
+            description    = t.description,
+            issued_at      = t.issued_at,
+            expires_at     = t.expires_at,
+            last_seen_at   = t.last_seen_at,
+            last_seen_ip   = t.last_seen_ip,
+            revoked        = t.revoked,
+            block_reason   = t.block_reason,
+            bound_mac      = t.bound_mac,
+            bound_hostname = t.bound_hostname,
+        )
+        for t in rows
+    ]
+
+
+@admin_router.post(
+    "/admin/agent-tokens/{token_id}/revoke",
+    status_code=204,
+    summary="Отозвать токен агента (агент сразу перестанет работать)",
+)
+def admin_revoke_agent_token(token_id: int, db: Session = Depends(get_db)):
+    t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Токен не найден.")
+    if not t.revoked:
+        t.revoked    = True
+        t.revoked_at = _now()
+        db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.post(
+    "/admin/agent-tokens/{token_id}/force-sync",
+    status_code=204,
+    summary="Команда агенту: обновить подпись (sync при следующем poll)",
+)
+def admin_force_sync_agent(token_id: int, db: Session = Depends(get_db)):
+    t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Токен не найден.")
+    if t.revoked:
+        raise HTTPException(status_code=400, detail="Токен отозван — sync невозможен.")
+    t.force_sync_at = _now()
+    db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.post(
+    "/admin/users/{user_id}/force-sync",
+    status_code=204,
+    summary="Команда всем агентам пользователя: обновить подпись",
+)
+def admin_force_sync_user(user_id: int, db: Session = Depends(get_db)):
+    _bump_force_sync(db, user_id)
+    db.commit()
+    return Response(status_code=204)
+
+
+# ─── Эндпоинты с {key_id}:int ────────────────────────────────────────────
+# Должны идти ПОСЛЕ всех маршрутов /admin/<строка>... — см. комментарий
+# про порядок выше.
+
 @admin_router.get(
     "/admin/{key_id}",
     response_model=CryptoKeyOut,
@@ -652,80 +734,6 @@ def admin_delete(key_id: int, db: Session = Depends(get_db)):
     db.delete(key)
     # Сигналим агенту бывшего владельца — пусть удалит у себя из реестра.
     _bump_force_sync(db, owner_id)
-    db.commit()
-    return Response(status_code=204)
-
-
-@admin_router.get(
-    "/admin/agent-tokens",
-    response_model=List[AgentTokenOut],
-    summary="Список установленных агентов (для аудита)",
-)
-def admin_list_agent_tokens(db: Session = Depends(get_db)):
-    rows = (
-        db.query(AgentToken)
-        .order_by(AgentToken.issued_at.desc())
-        .limit(500)
-        .all()
-    )
-    return [
-        AgentTokenOut(
-            id             = t.id,
-            user_id        = t.user_id,
-            username       = t.user.username if t.user else "",
-            description    = t.description,
-            issued_at      = t.issued_at,
-            expires_at     = t.expires_at,
-            last_seen_at   = t.last_seen_at,
-            last_seen_ip   = t.last_seen_ip,
-            revoked        = t.revoked,
-            block_reason   = t.block_reason,
-            bound_mac      = t.bound_mac,
-            bound_hostname = t.bound_hostname,
-        )
-        for t in rows
-    ]
-
-
-@admin_router.post(
-    "/admin/agent-tokens/{token_id}/revoke",
-    status_code=204,
-    summary="Отозвать токен агента (агент сразу перестанет работать)",
-)
-def admin_revoke_agent_token(token_id: int, db: Session = Depends(get_db)):
-    t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Токен не найден.")
-    if not t.revoked:
-        t.revoked    = True
-        t.revoked_at = _now()
-        db.commit()
-    return Response(status_code=204)
-
-
-@admin_router.post(
-    "/admin/agent-tokens/{token_id}/force-sync",
-    status_code=204,
-    summary="Команда агенту: обновить подпись (sync при следующем poll)",
-)
-def admin_force_sync_agent(token_id: int, db: Session = Depends(get_db)):
-    t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Токен не найден.")
-    if t.revoked:
-        raise HTTPException(status_code=400, detail="Токен отозван — sync невозможен.")
-    t.force_sync_at = _now()
-    db.commit()
-    return Response(status_code=204)
-
-
-@admin_router.post(
-    "/admin/users/{user_id}/force-sync",
-    status_code=204,
-    summary="Команда всем агентам пользователя: обновить подпись",
-)
-def admin_force_sync_user(user_id: int, db: Session = Depends(get_db)):
-    _bump_force_sync(db, user_id)
     db.commit()
     return Response(status_code=204)
 
