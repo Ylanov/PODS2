@@ -174,6 +174,14 @@ class AgentToken(Base):
     # ключа этого юзера. NULL = пока ничего не требует обновления.
     force_sync_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Каким enrollment-токеном был выпущен этот agent_token (NULL если
+    # legacy-режим через /me/install-package, без enrollment).
+    enrolled_via_token_id = Column(
+        BigInteger,
+        ForeignKey("enrollment_tokens.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     user = relationship("User")
 
     __table_args__ = (
@@ -271,3 +279,36 @@ class AgentCommand(Base):
 
     agent_token = relationship("AgentToken")
     created_by  = relationship("User")
+
+
+class EnrollmentToken(Base):
+    """
+    Общий установочный токен для массовой раскатки агентов админом.
+    Один enrollment-токен может зарегистрировать любое количество ПК —
+    при каждом enroll создаётся новый персональный AgentToken.
+
+    Не привязан к конкретному PODS2-юзеру; mapping (Windows-username
+    → PODS2-username) делается на стороне /agent/enroll по совпадению
+    username, либо вручную админом в админке после enrollment.
+    """
+    __tablename__ = "enrollment_tokens"
+
+    id              = Column(BigInteger, primary_key=True, index=True)
+    token_hash      = Column(String(64), nullable=False, unique=True)
+    description     = Column(String(255), nullable=True)
+    created_at      = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    expires_at      = Column(DateTime(timezone=True), nullable=False)
+    revoked         = Column(Boolean, nullable=False, default=False)
+    revoked_at      = Column(DateTime(timezone=True), nullable=True)
+    created_by_id   = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    enrolled_count  = Column(Integer, nullable=False, default=0)
+
+    created_by = relationship("User")
