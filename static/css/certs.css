@@ -1,0 +1,418 @@
+/* static/css/certs.css
+ *
+ * Стили раздела «Ключи и сертификаты КриптоПро» (админка и кабинет юзера).
+ * Опирается на --md-* токены из tokens.css и общие классы (.btn, .field-label,
+ * .data-table-wrap, .hidden) из components.css.
+ */
+
+
+/* ─── Главная панель и тулбар ─────────────────────────────────────────────── */
+
+.certs-panel {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    padding: 0;
+    overflow: hidden;
+}
+
+.certs-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-variant);
+}
+
+.certs-toolbar__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.certs-toolbar__title svg {
+    width: 22px;
+    height: 22px;
+    color: var(--md-primary);
+}
+
+.certs-toolbar__title h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+
+.certs-count-badge {
+    display: inline-block;
+    min-width: 24px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: var(--md-primary);
+    color: var(--md-on-primary, white);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+
+/* ─── Форма создания ─────────────────────────────────────────────────────── */
+
+.certs-create {
+    padding: 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+}
+
+.certs-create__title {
+    margin: 0 0 16px 0;
+    font-size: 0.96rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+}
+
+.certs-field {
+    margin-bottom: 14px;
+}
+
+.certs-field input[type="text"],
+.certs-field input[type="file"],
+.certs-field select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.certs-field-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.certs-field-row .certs-field {
+    flex: 1;
+    min-width: 180px;
+}
+
+.certs-field--grow {
+    flex: 2 !important;
+}
+
+.certs-hint {
+    margin: 6px 0 0 0;
+    font-size: 0.78rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.4;
+}
+
+.certs-hint code {
+    padding: 1px 4px;
+    background: var(--md-surface-variant);
+    border-radius: 3px;
+    font-size: 0.74rem;
+}
+
+
+/* ─── Список загруженных файлов контейнера ─────────────────────────────── */
+
+.certs-files-list {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface-variant);
+    font-size: 0.82rem;
+}
+
+.certs-files-ok {
+    color: var(--md-success, #1D9E75);
+    margin-bottom: 6px;
+}
+
+.certs-files-warn {
+    color: var(--md-warning, #BA7517);
+}
+
+.certs-files-ul {
+    margin: 0;
+    padding-left: 18px;
+    list-style: disc;
+    color: var(--md-on-surface);
+}
+
+.certs-files-ul li {
+    margin: 1px 0;
+    display: flex;
+    justify-content: space-between;
+    max-width: 360px;
+}
+
+.certs-files-ul code {
+    background: transparent;
+    color: var(--md-on-surface);
+}
+
+.certs-files-ul span {
+    color: var(--md-on-surface-hint);
+    font-size: 0.74rem;
+}
+
+
+/* ─── Превью сертификата ──────────────────────────────────────────────── */
+
+.certs-cer-preview {
+    margin-top: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-sm);
+    background: var(--md-surface-variant);
+}
+
+.certs-cer-loading {
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+}
+
+.certs-cer-error {
+    color: var(--md-error, #C03030);
+    font-size: 0.85rem;
+}
+
+.certs-cer-warn {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    border-radius: var(--md-radius-sm);
+    background: rgba(186, 117, 23, 0.12);
+    color: var(--md-warning, #BA7517);
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+.certs-cer-grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+}
+
+.certs-cer-grid td {
+    padding: 3px 8px;
+    vertical-align: top;
+    color: var(--md-on-surface);
+}
+
+.certs-cer-grid td:first-child {
+    color: var(--md-on-surface-variant);
+    font-weight: 500;
+    width: 110px;
+    text-align: right;
+}
+
+.certs-cer-grid code {
+    font-size: 0.78rem;
+    word-break: break-all;
+}
+
+
+/* ─── Действия формы ───────────────────────────────────────────────────── */
+
+.certs-create__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--md-outline-variant);
+}
+
+
+/* ─── Фильтры ──────────────────────────────────────────────────────────── */
+
+.certs-filters {
+    display: flex;
+    gap: 10px;
+    padding: 12px 20px;
+    align-items: center;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface);
+}
+
+.certs-filters select {
+    min-width: 140px;
+}
+
+.certs-filters input[type="text"] {
+    flex: 1;
+    min-width: 200px;
+}
+
+
+/* ─── Таблица ──────────────────────────────────────────────────────────── */
+
+.certs-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.certs-table thead th {
+    padding: 10px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--md-on-surface-variant);
+    background: var(--md-surface-variant);
+    border-bottom: 1px solid var(--md-outline-variant);
+    text-align: left;
+}
+
+.certs-table tbody td {
+    padding: 10px 12px;
+    font-size: 0.86rem;
+    color: var(--md-on-surface);
+    border-bottom: 1px solid var(--md-outline-variant);
+    vertical-align: middle;
+}
+
+.certs-container-cell {
+    font-family: var(--md-font-mono, monospace);
+    font-size: 0.82rem;
+}
+
+.certs-inn {
+    margin-top: 2px;
+    font-size: 0.74rem;
+    color: var(--md-on-surface-hint);
+}
+
+.certs-free {
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+}
+
+.certs-empty {
+    padding: 36px 24px;
+    text-align: center;
+    color: var(--md-on-surface-hint);
+    font-style: italic;
+}
+
+
+/* ─── Бейджи статуса ───────────────────────────────────────────────────── */
+
+.certs-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 12px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.certs-badge--active  { background: rgba(29, 158, 117, 0.15); color: var(--md-success, #1D9E75); }
+.certs-badge--revoked { background: rgba(192, 48, 48, 0.15);  color: var(--md-error,  #C03030); }
+.certs-badge--expired { background: rgba(186, 117, 23, 0.15); color: var(--md-warning,#BA7517); }
+
+
+.certs-expired-hint {
+    margin-left: 4px;
+    color: var(--md-warning, #BA7517);
+    font-weight: 600;
+    cursor: help;
+}
+
+
+/* ─── Действия в строке ────────────────────────────────────────────────── */
+
+.certs-actions {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.certs-actions .btn {
+    padding: 4px 8px;
+    font-size: 0.92rem;
+}
+
+
+/* ─── Раздел в кабинете юзера ──────────────────────────────────────────── */
+
+.my-certs-panel {
+    background: var(--md-surface);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-md);
+    overflow: hidden;
+}
+
+.my-certs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+    background: var(--md-surface-variant);
+}
+
+.my-certs-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.my-certs-empty {
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--md-on-surface-hint);
+}
+
+.my-certs-card {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--md-outline-variant);
+}
+
+.my-certs-card:last-child {
+    border-bottom: none;
+}
+
+.my-certs-card__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.my-certs-card__name {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--md-on-surface);
+}
+
+.my-certs-card__details {
+    font-size: 0.82rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.5;
+}
+
+.my-certs-card__details code {
+    background: var(--md-surface-variant);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.76rem;
+}
+
+.my-certs-help {
+    padding: 16px 20px;
+    background: rgba(74, 124, 111, 0.06);
+    border-top: 1px solid var(--md-outline-variant);
+    font-size: 0.84rem;
+    color: var(--md-on-surface-variant);
+    line-height: 1.5;
+}
+
+.my-certs-help b {
+    color: var(--md-on-surface);
+}

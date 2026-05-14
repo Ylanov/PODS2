@@ -77,6 +77,37 @@ class Settings(BaseSettings):
     SED_FILE_UPLOAD_RATE_LIMIT: str = "600/hour"
     SED_FILE_DOWNLOAD_RATE_LIMIT: str = "1200/hour"
 
+    # ─── Ключи и сертификаты КриптоПро (модуль crypto-keys) ──────────────────
+    # Хранилище секретов. Vault — основной путь (PODS2 кладёт зашифрованные
+    # контейнеры в Vault, а Vault на своей стороне делает sealed-шифрование).
+    # Для dev/PoC можно указать пустой VAULT_URL — тогда контейнеры будут
+    # храниться на диске в CRYPTO_KEYS_FALLBACK_DIR (с шифрованием Fernet
+    # на ключе SECRET_KEY). В проде VAULT_URL должен быть задан.
+    VAULT_URL:               str = "http://vault:8200"
+    VAULT_TOKEN:             str = ""      # root-токен или AppRole-токен
+    VAULT_MOUNT:             str = "secret"  # имя KV-engine v2 в Vault
+    VAULT_KV_PATH_PREFIX:    str = "crypto-keys"  # path: <mount>/data/<prefix>/<thumbprint>
+    # Локальный fallback (на случай если Vault недоступен / в dev).
+    # В проде оставить пустым — отключает fallback и форсит работу через Vault.
+    CRYPTO_KEYS_FALLBACK_DIR: str = ""
+    # Лимиты на загрузку контейнеров (multipart с 6 файлами *.key).
+    # Один контейнер ~3 КБ, .cer ~2 КБ — но защищаемся от ошибочной отправки
+    # больших файлов. 1 МБ с запасом.
+    CRYPTO_CONTAINER_MAX_SIZE: int = 1 * 1024 * 1024   # 1 МБ
+    CRYPTO_CERT_MAX_SIZE:      int = 64 * 1024          # 64 КБ
+    # Rate-limits.
+    # Админ загружает редко (несколько ключей в день), но возможен пакетный
+    # импорт — 60/час с запасом. Парсинг превью .cer чаще (юзер пробует разные
+    # файлы) — 120/час.
+    CRYPTO_ADMIN_UPLOAD_RATE_LIMIT: str = "60/hour"
+    CRYPTO_CERT_PARSE_RATE_LIMIT:   str = "120/hour"
+    # Агент пингует часто — раз в N минут. Лимит щедрый, но защищает от
+    # сошедшего с ума агента который стучит каждую секунду.
+    CRYPTO_AGENT_SYNC_RATE_LIMIT:   str = "120/hour"
+    # Сколько живёт токен агента после генерации install-пакета.
+    # 365 дней = годовой цикл переустановки. Можно отзывать раньше из админки.
+    CRYPTO_AGENT_TOKEN_TTL_DAYS:    int = 365
+
     # ─── Доступ к модулям отделов ─────────────────────────────────────────────
     # Каждый модуль (форма 3-СВЯЗЬ, гос. закупки, учёт МНИ, проф. подготовка)
     # привязывается к конкретным username'ам через .env. Через запятую:

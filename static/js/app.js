@@ -76,6 +76,7 @@ const PERM_TAB_MAP = {
     'persons':     'dept-persons-tab-btn',
     'oper_map':    'dept-oper-map-tab-btn',
     'alert_lists': 'dept-alert-lists-tab-btn',
+    'crypto_keys': 'dept-mycerts-tab-btn',
 };
 
 export function applyPermissionsToTabs(permissions) {
@@ -141,6 +142,7 @@ function switchDeptTab(tab) {
     document.getElementById('dept-ops-panel')?.classList.add('hidden');
     document.getElementById('dept-oper-map-panel')?.classList.add('hidden');
     document.getElementById('dept-alert-lists-panel')?.classList.add('hidden');
+    document.getElementById('dept-mycerts-panel')?.classList.add('hidden');
 
     // Сбрасываем активный стиль у всех кнопок управления
     const resetBtn = (id) => {
@@ -151,7 +153,8 @@ function switchDeptTab(tab) {
     };
     ['dept-main-tab-btn', 'cc-dept-tab-btn', 'dept-duty-tab-btn',
      'dept-tasks-tab-btn', 'dept-persons-tab-btn', 'dept-ops-tab-btn',
-     'dept-oper-map-tab-btn', 'dept-alert-lists-tab-btn'].forEach(resetBtn);
+     'dept-oper-map-tab-btn', 'dept-alert-lists-tab-btn',
+     'dept-mycerts-tab-btn'].forEach(resetBtn);
 
     const activateBtn = (id) => {
         const b = document.getElementById(id);
@@ -221,6 +224,17 @@ function switchDeptTab(tab) {
                 m.reloadAlertLists?.();
             }
         });
+    } else if (tab === 'mycerts') {
+        document.getElementById('dept-mycerts-panel')?.classList.remove('hidden');
+        activateBtn('dept-mycerts-tab-btn');
+        // initMyCerts внутри сам идемпотентен: первый вызов — bind событий,
+        // повторные — просто рефреш списка через GET /certs/me.
+        import('./certs_user.js')
+            .then(m => m.initMyCerts())
+            .catch(err => {
+                console.error('[mycerts] init failed', err);
+                window.showError?.('Не удалось загрузить раздел сертификатов');
+            });
     }
 }
 
@@ -379,6 +393,7 @@ function bindEvents() {
     document.getElementById('dept-ops-tab-btn')?.addEventListener('click',     () => switchDeptTab('ops'));
     document.getElementById('dept-oper-map-tab-btn')?.addEventListener('click',() => switchDeptTab('oper_map'));
     document.getElementById('dept-alert-lists-tab-btn')?.addEventListener('click',() => switchDeptTab('alert_lists'));
+    document.getElementById('dept-mycerts-tab-btn')?.addEventListener('click',    () => switchDeptTab('mycerts'));
 
     // ── Инициализация UI-компонентов (без API-вызовов) ────────────────────────
     ui.initPersonsTab();
@@ -455,6 +470,16 @@ const OPS_SECTIONS = [
             } else {
                 m.reloadTasks();
             }
+        }),
+    },
+    {
+        target: 'tab-certs',
+        title:  'Ключи и сертификаты',
+        desc:   'Централизованное хранилище ключей КриптоПро (Vault + агент на клиентах).',
+        icon:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+        onOpen: () => import('./certs_admin.js').then(m => m.initCryptoCerts()).catch(err => {
+            console.error('[certs] init failed', err);
+            window.showError && window.showError('Не удалось загрузить модуль сертификатов');
         }),
     },
 ];

@@ -53,6 +53,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      vault:
+        condition: service_healthy
 
     # Количество воркеров: ~(2 × CPU + 1), но ограничено пулом БД.
     # При 4 воркерах и pool_size=10+max_overflow=15 пик = 100 соединений
@@ -83,6 +85,7 @@ services:
     volumes:
       - .:/code   # ← оставь для dev, убери для production
       - seddata:/data/sed_files   # кеш файлов СЭД (BLOB'ы по 20МБ макс)
+      - cryptokeys:/data/crypto_keys   # fallback-хранилище для dev (если VAULT_URL пуст)
 
     expose:
       - "8000"
@@ -90,6 +93,44 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 15s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - backend
+
+  # ─── HashiCorp Vault: хранилище ключей и сертификатов КриптоПро ──────────
+  # Используется модулем crypto-keys (app/services/vault_client.py). Контейнеры
+  # КриптоПро (папки xxx.000) и .cer сертификаты складываются сюда в KV-engine v2
+  # с шифрованием на стороне Vault. В БД pods2 лежат только метаданные.
+  #
+  # ВАЖНО для прода: запуск с -dev НЕБЕЗОПАСЕН — данные в памяти, root-token
+  # фиксированный, нет sealed-режима. Для production нужно:
+  #   1) убрать секцию command (или сделать `vault server -config=/vault/config/...`),
+  #   2) смонтировать конфиг file/raft storage backend,
+  #   3) при первом запуске сделать `vault operator init` и сохранить unseal keys.
+  # До перехода в прод dev-режим достаточен и удобен (без ручного unseal).
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: staff_vault
+    restart: always
+
+    cap_add:
+      # mlock не даёт ОС свопнуть память с секретами на диск.
+      - IPC_LOCK
+
+    environment:
+      # Dev-режим: единый root-token, эталонный для PODS2 в .env.
+      VAULT_DEV_ROOT_TOKEN_ID: "${VAULT_TOKEN:-pods2-dev-root-token}"
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+
+    volumes:
+      - vaultdata:/vault/file
+
+    healthcheck:
+      # /v1/sys/health возвращает 200 если Vault initialized + unsealed + active.
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8200/v1/sys/health"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
@@ -124,3 +165,5 @@ networks:
 volumes:
   pgdata:
   seddata:
+  cryptokeys:   # fallback-хранилище для dev (если Vault недоступен)
+  vaultdata:    # данные Vault (KV v2, метаданные, аудит-логи)
