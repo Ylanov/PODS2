@@ -46,16 +46,25 @@ function timeAgo(iso) {
     return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
 
-// ─── Кеш стейта (чтобы не дёргать API чаще раза в 3 сек) ──────────────────
+// ─── Кеш стейта ───────────────────────────────────────────────────────────
 let _items        = [];
 let _unread       = 0;
 let _lastLoadedAt = 0;
 let _refreshPromise = null;
 
-const REFRESH_THROTTLE_MS = 3000;
+// Сколько считать данные «свежими» (даже при force=true). При клике по
+// колокольчику если последний fetch был < 5 сек назад — просто открываем
+// dropdown с тем что в кэше, без сетевого запроса. Это убирает 90%
+// «лагает при клике».
+const STALE_AFTER_MS = 5_000;
 
 async function _fetchNotifications(force = false) {
-    if (!force && Date.now() - _lastLoadedAt < REFRESH_THROTTLE_MS) return;
+    // При force всё равно уважаем мини-кэш (5 сек) — иначе клик-клик-клик
+    // по колокольчику = три HTTP-запроса подряд.
+    if (Date.now() - _lastLoadedAt < STALE_AFTER_MS) {
+        if (force) _renderAll();   // данные есть, просто перерисуем
+        return;
+    }
     if (_refreshPromise) return _refreshPromise;
 
     _refreshPromise = (async () => {
@@ -66,7 +75,6 @@ async function _fetchNotifications(force = false) {
             _lastLoadedAt = Date.now();
             _renderAll();
         } catch (e) {
-            // Тихий фейл — уведомления не критичны. Логируем.
             console.warn('notifications fetch:', e);
         } finally {
             _refreshPromise = null;
@@ -115,29 +123,34 @@ function _renderList(listEl) {
     }
     listEl.innerHTML = _items.map(_renderItem).join('');
 
-    // Делегирование: закрытие + переход по ссылке + отметка прочитанным
-    listEl.querySelectorAll('.notif-item').forEach(row => {
-        const id = parseInt(row.dataset.id, 10);
+    // Event delegation: один listener на весь список вместо двух на каждую
+    // запись (с 50 уведомлениями было 100 регистраций listener'ов на каждый
+    // рендер — главная причина «лагает» при открытии колокольчика).
+    if (!listEl._delegated) {
+        listEl._delegated = true;
+        listEl.addEventListener('click', async (e) => {
+            const row = e.target.closest('.notif-item');
+            if (!row) return;
+            const id = parseInt(row.dataset.id, 10);
 
-        row.addEventListener('click', async (e) => {
-            if (e.target.closest('[data-close]')) return;   // закрытие — отдельная логика
+            // Клик на ✕ — удаление
+            const closeBtn = e.target.closest('[data-close]');
+            if (closeBtn) {
+                e.stopPropagation();
+                await _delete(id);
+                return;
+            }
+
+            // Клик по строке — пометить прочитанным + перейти по ссылке если есть
             if (!row.classList.contains('read')) {
                 await _markRead(id);
             }
             const link = row.dataset.link;
             if (link && link !== 'null') {
-                // Если ссылка внутренняя (начинается с /static/) — не перезагружаем,
-                // просто переключаем вкладку по hash.
                 window.location.href = link;
             }
         });
-
-        const closeBtn = row.querySelector('[data-close]');
-        closeBtn?.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            await _delete(id);
-        });
-    });
+    }
 }
 
 function _renderBadges() {

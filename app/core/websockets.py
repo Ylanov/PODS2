@@ -24,9 +24,16 @@ event_id. Сообщения типа "update" рассылаются тольк
 
 import json
 import asyncio
+import logging
 from typing import Dict, Optional, Set
 
 from fastapi import WebSocket, WebSocketDisconnect
+from jose import jwt, JWTError
+
+from app.core.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 # Маппинг action → room. Если в broadcast message нет event_id, но есть
@@ -257,21 +264,55 @@ manager = ConnectionManager()
 
 # ─── WebSocket endpoint handler ───────────────────────────────────────────────
 
+def _user_id_from_token(token: Optional[str]) -> Optional[int]:
+    """
+    Декодирует JWT из query-параметра ?token=... и возвращает user_id.
+    Возвращает None при любой ошибке (просрочен, подделан, нет sub).
+    Это единственный источник истины кто к нам подключился — клиенту
+    верить нельзя.
+    """
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        raw = payload.get("sub")
+        return int(raw) if raw is not None else None
+    except (JWTError, ValueError, TypeError):
+        return None
+
+
 async def handle_websocket_connection(websocket: WebSocket) -> None:
     """
     Основной обработчик WebSocket-соединения.
-    Вызывается из main.py.
 
-    Обрабатывает входящие сообщения:
+    БЕЗОПАСНОСТЬ: user_id определяется ИСКЛЮЧИТЕЛЬНО из JWT-токена,
+    переданного клиентом как query-параметр `?token=...`. Раньше клиент
+    мог послать произвольный `{"type":"identify","user_id":N}` и сервер
+    верил — это была cross-user leak уязвимость (любой подключившийся
+    мог получать чужие персональные уведомления).
+
+    Анонимное подключение (без токена) — разрешено, но без привязки
+    к юзеру: получает только глобальные broadcast'ы и room-обновления
+    тех комнат, на которые подпишется. Персональные push_to_user не
+    приходят (правильно — мы не знаем кто это).
+
+    Сообщения клиента:
       ping        → pong (heartbeat)
-      subscribe   → подписка на event_id
+      subscribe   → подписка на room/event_id
       unsubscribe → отписка
-
-    При подключении соединение не подписано ни на что.
-    Клиент должен послать subscribe сразу после открытия списка.
+      identify    → ИГНОРИРУЕТСЯ (по той же причине безопасности)
     """
+    # Token берём из ?token=... query параметра
+    token = websocket.query_params.get("token")
+    user_id = _user_id_from_token(token)
+
     await manager.connect(websocket)
-    print(f"🔌 WebSocket connected (total: {manager.connection_count})")
+    if user_id is not None:
+        await manager.identify(websocket, user_id)
+    logger.info(
+        "WS connected (total=%d, authenticated=%s)",
+        manager.connection_count, user_id is not None,
+    )
 
     try:
         while True:
@@ -283,8 +324,11 @@ async def handle_websocket_connection(websocket: WebSocket) -> None:
             try:
                 payload = json.loads(data)
             except (json.JSONDecodeError, AttributeError):
-                print(f"⚠️  WS invalid JSON: {data!r}")
-                continue
+                # Невалидный JSON от клиента — закрываем соединение, клиент
+                # переподключится с чистого листа. Раньше continue оставлял
+                # connection "живым но мёртвым" — silent failure.
+                logger.warning("WS invalid JSON from client, closing: %r", data[:200])
+                break
 
             msg_type = payload.get("type")
 
@@ -313,17 +357,16 @@ async def handle_websocket_connection(websocket: WebSocket) -> None:
                 else:
                     await manager.unsubscribe(websocket)
 
-            # ── Идентификация для персональных уведомлений ────────────────────
-            elif msg_type == "identify":
-                uid = payload.get("user_id")
-                if isinstance(uid, int):
-                    await manager.identify(websocket, uid)
+            # ── identify ИГНОРИРУЕТСЯ ──
+            # Был способ для cross-user leak: клиент мог сказать "я user 42"
+            # и получать его уведомления. Теперь user_id берётся только из
+            # JWT в query-параметре при connect (см. начало функции).
 
     except WebSocketDisconnect:
-        print(f"❌ WebSocket disconnected (total: {manager.connection_count - 1})")
+        logger.info("WS disconnected (total=%d)", manager.connection_count - 1)
 
-    except Exception as error:
-        print(f"🔥 WebSocket error: {error}")
+    except Exception:
+        logger.exception("WS unhandled error")
 
     finally:
         await manager.disconnect(websocket)
