@@ -23,6 +23,7 @@ const STATE = {
     agents:         [],
     usage:          [],
     commands:       [],
+    enrollTokens:   [],
     usageDays:      7,
     filterStatus:   '',
     searchQuery:    '',
@@ -34,8 +35,7 @@ const STATE = {
 
 export async function initCryptoCerts() {
     if (STATE.initialized) {
-        // Повторное открытие — просто рефрешим таблицы.
-        await Promise.all([loadKeys(), loadAgents(), loadUsage(), loadCommands()]);
+        await Promise.all([loadKeys(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
         return;
     }
     STATE.initialized = true;
@@ -43,8 +43,94 @@ export async function initCryptoCerts() {
     setupCreateForm();
     setupFilters();
     setupUsageFilter();
+    setupEnrollButton();
 
-    await Promise.all([loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadCommands()]);
+    await Promise.all([loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
+}
+
+
+function setupEnrollButton() {
+    document.getElementById('enroll-create-btn')?.addEventListener('click', async () => {
+        const desc = prompt('Описание установочного токена (например, "Раскатка 2026"):', 'Раскатка ' + new Date().toLocaleDateString('ru-RU'));
+        if (desc === null) return;
+        try {
+            const r = await api.post('/certs/admin/enrollment-tokens', { description: desc, ttl_days: 365 });
+            // raw_token показывается ОДИН раз — копируем сразу в clipboard и показываем.
+            await navigator.clipboard.writeText(r.raw_token).catch(() => {});
+            alert(
+                'Установочный токен создан и скопирован в буфер обмена.\n\n' +
+                'СОХРАНИ его прямо сейчас — повторно показать нельзя!\n\n' +
+                r.raw_token + '\n\n' +
+                'Дальше: скачай bootstrap.ps1 (кнопка ↓ в списке), открой его в редакторе,\n' +
+                'вставь токен вместо PASTE_ENROLLMENT_TOKEN_HERE и раскатай на ПК.'
+            );
+            await loadEnrollTokens();
+        } catch (err) {
+            window.showError?.('Не удалось создать: ' + err.message);
+        }
+    });
+}
+
+
+async function loadEnrollTokens() {
+    try {
+        const rows = await api.get('/certs/admin/enrollment-tokens');
+        STATE.enrollTokens = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+        console.error('[certs] loadEnrollTokens', err);
+        STATE.enrollTokens = [];
+    }
+    renderEnrollTokens();
+}
+
+
+function renderEnrollTokens() {
+    const el = document.getElementById('enroll-tokens-list');
+    if (!el) return;
+    if (STATE.enrollTokens.length === 0) {
+        el.innerHTML = '<div class="certs-empty">Ещё не выпущено ни одного установочного токена.</div>';
+        return;
+    }
+    el.innerHTML = `
+        <table class="certs-table" style="margin:0;">
+            <thead><tr>
+                <th>Описание</th>
+                <th>Создан</th>
+                <th>Истекает</th>
+                <th>Регистраций</th>
+                <th>Статус</th>
+                <th></th>
+            </tr></thead>
+            <tbody>
+                ${STATE.enrollTokens.map(t => `
+                    <tr>
+                        <td>${escapeHtml(t.description || '—')}</td>
+                        <td>${formatDateTime(t.created_at)}</td>
+                        <td>${formatDate(t.expires_at)}</td>
+                        <td><b>${t.enrolled_count}</b></td>
+                        <td>${t.revoked ? '<span class="certs-badge certs-badge--revoked">отозван</span>' : '<span class="certs-badge certs-badge--active">активен</span>'}</td>
+                        <td class="certs-actions">
+                            ${t.revoked ? '' : `
+                                <a class="btn btn-text btn-xs" href="/api/v1/certs/admin/enrollment-tokens/${t.id}/bootstrap.ps1" download="pods2-bootstrap-${t.id}.ps1" title="Скачать bootstrap.ps1">↓</a>
+                                <button class="btn btn-text btn-xs" data-enroll-revoke="${t.id}" title="Отозвать токен (уже зарегистрированные агенты продолжают работать)">⊘</button>
+                            `}
+                        </td>
+                    </tr>`).join('')}
+            </tbody>
+        </table>`;
+
+    document.querySelectorAll('[data-enroll-revoke]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('Отозвать установочный токен?\n\nУже зарегистрированные агенты продолжат работать, но новых через этот токен зарегистрировать будет нельзя.')) return;
+            try {
+                await api.delete(`/certs/admin/enrollment-tokens/${btn.dataset.enrollRevoke}`);
+                window.showSnackbar?.('Установочный токен отозван', 'success');
+                await loadEnrollTokens();
+            } catch (err) {
+                window.showError?.('Не удалось: ' + err.message);
+            }
+        });
+    });
 }
 
 
@@ -224,6 +310,11 @@ function renderAgentsTable() {
             ? `<code class="certs-container-cell">${escapeHtml(a.bound_hostname)}</code>` +
               (a.description ? `<div class="certs-inn">${escapeHtml(a.description)}</div>` : '')
             : `<span class="certs-free">${escapeHtml(a.description || '—')}</span>`;
+        const userCell = a.username
+            ? escapeHtml(a.username)
+            : `<button class="btn btn-text btn-xs" data-agent-assign="${a.id}" title="Привязать этого агента к PODS2-юзеру">
+                   <span class="certs-free">— не назначен —</span>
+               </button>`;
         const mac = a.bound_mac
             ? `<code>${escapeHtml(formatMac(a.bound_mac))}</code>`
             : '<span class="certs-free">не привязан</span>';
@@ -244,7 +335,7 @@ function renderAgentsTable() {
                <button class="btn btn-text btn-xs" data-agent-revoke="${a.id}"     title="Отозвать токен (агент перестанет работать сразу)">⊘</button>`;
         return `
             <tr data-agent-id="${a.id}">
-                <td>${escapeHtml(a.username)}</td>
+                <td>${userCell}</td>
                 <td>${machine}</td>
                 <td>${mac}</td>
                 <td>${lastSeen}</td>
@@ -253,6 +344,9 @@ function renderAgentsTable() {
             </tr>`;
     }).join('');
 
+    document.querySelectorAll('[data-agent-assign]').forEach(btn => {
+        btn.addEventListener('click', () => handleAgentAssign(parseInt(btn.dataset.agentAssign, 10)));
+    });
     document.querySelectorAll('[data-agent-revoke]').forEach(btn => {
         btn.addEventListener('click', () => handleAgentRevoke(parseInt(btn.dataset.agentRevoke, 10)));
     });
@@ -282,6 +376,34 @@ async function sendAgentCommand(tokenId, command, label) {
         await api.post(`/certs/admin/agent-tokens/${tokenId}/command`, { command });
         window.showSnackbar?.(`Команда «${label}» поставлена в очередь. Агент выполнит в течение минуты.`, 'success', 6000);
         await loadCommands();
+    } catch (err) {
+        window.showError?.('Не удалось: ' + err.message);
+    }
+}
+
+
+async function handleAgentAssign(tokenId) {
+    const a = STATE.agents.find(x => x.id === tokenId);
+    if (!a) return;
+    const list = STATE.users
+        .filter(u => u.role !== 'admin')
+        .map(u => `${u.id} = ${u.username}`)
+        .join('\n');
+    const input = prompt(
+        `Привязать агента ${a.bound_hostname || ''} (Windows: ${a.description || '?'}) к PODS2-юзеру.\n\n` +
+        `Введи ID юзера из списка:\n\n${list}`,
+        '',
+    );
+    if (input === null) return;
+    const userId = parseInt(input, 10);
+    if (isNaN(userId) || userId <= 0) {
+        window.showError?.('Неверный ID');
+        return;
+    }
+    try {
+        await api.post(`/certs/admin/agent-tokens/${tokenId}/assign-user?user_id=${userId}`, {});
+        window.showSnackbar?.('Агент привязан. Ключи подтянутся в течение минуты.', 'success');
+        await loadAgents();
     } catch (err) {
         window.showError?.('Не удалось: ' + err.message);
     }

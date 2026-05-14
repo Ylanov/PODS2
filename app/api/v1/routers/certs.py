@@ -46,7 +46,9 @@ from app.api.dependencies import (
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.database import get_db
-from app.models.crypto_key import AgentCommand, AgentToken, CryptoKey, CryptoKeyUsage
+from app.models.crypto_key import (
+    AgentCommand, AgentToken, CryptoKey, CryptoKeyUsage, EnrollmentToken,
+)
 from app.models.user import User
 from app.services.cert_parser import parse_certificate
 from app.services.vault_client import storage
@@ -193,6 +195,43 @@ class CommandLogOut(BaseModel):
     created_at:    datetime
     completed_at:  Optional[datetime]
     created_by:    Optional[str]
+
+
+class EnrollmentTokenCreateIn(BaseModel):
+    description: Optional[str] = Field(None, max_length=255)
+    ttl_days:    int = Field(365, ge=1, le=3650)
+
+
+class EnrollmentTokenOut(BaseModel):
+    """Запись enrollment-токена для админки (без самого токена)."""
+    id:             int
+    description:    Optional[str]
+    created_at:     datetime
+    expires_at:     datetime
+    revoked:        bool
+    enrolled_count: int
+    created_by:     Optional[str]
+
+
+class EnrollmentTokenCreatedOut(EnrollmentTokenOut):
+    """То же + raw token (показывается ОДИН раз при создании)."""
+    raw_token: str
+
+
+class EnrollIn(BaseModel):
+    """Что шлёт агент при первом запуске."""
+    enrollment_token: str
+    hostname:         str = Field(..., max_length=255)
+    windows_username: str = Field(..., max_length=255)
+    mac:              Optional[str] = Field(None, max_length=64)
+
+
+class EnrollOut(BaseModel):
+    """Ответ агенту — его персональный токен + результат matching'а."""
+    agent_token:  str
+    user_id:      Optional[int]
+    username:     Optional[str]
+    matched_user: bool
 
 
 class UsageEventIn(BaseModel):
@@ -718,6 +757,178 @@ def admin_force_sync_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @admin_router.post(
+    "/admin/enrollment-tokens",
+    response_model=EnrollmentTokenCreatedOut,
+    status_code=201,
+    summary="Создать общий установочный токен (для массовой раскатки)",
+)
+def admin_create_enrollment_token(
+    payload: EnrollmentTokenCreateIn,
+    db:      Session = Depends(get_db),
+    current: User    = Depends(get_current_active_admin),
+):
+    """
+    Возвращает RAW токен — показать админу ОДИН раз и забыть. В БД хранится
+    только SHA256-хеш. После этого админ копирует токен в bootstrap.ps1 и
+    раскатывает на ПК.
+    """
+    raw_token  = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+    expires_at = _now() + timedelta(days=payload.ttl_days)
+    enr = EnrollmentToken(
+        token_hash    = token_hash,
+        description   = payload.description or "Общий установочный токен",
+        expires_at    = expires_at,
+        created_by_id = current.id,
+    )
+    db.add(enr)
+    db.commit()
+    db.refresh(enr)
+
+    return EnrollmentTokenCreatedOut(
+        id             = enr.id,
+        description    = enr.description,
+        created_at     = enr.created_at,
+        expires_at     = enr.expires_at,
+        revoked        = enr.revoked,
+        enrolled_count = enr.enrolled_count,
+        created_by     = current.username,
+        raw_token      = raw_token,
+    )
+
+
+@admin_router.get(
+    "/admin/enrollment-tokens",
+    response_model=List[EnrollmentTokenOut],
+    summary="Список выпущенных установочных токенов",
+)
+def admin_list_enrollment_tokens(db: Session = Depends(get_db)):
+    rows = (
+        db.query(EnrollmentToken)
+        .order_by(EnrollmentToken.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        EnrollmentTokenOut(
+            id             = r.id,
+            description    = r.description,
+            created_at     = r.created_at,
+            expires_at     = r.expires_at,
+            revoked        = r.revoked,
+            enrolled_count = r.enrolled_count,
+            created_by     = r.created_by.username if r.created_by else None,
+        )
+        for r in rows
+    ]
+
+
+@admin_router.delete(
+    "/admin/enrollment-tokens/{token_id}",
+    status_code=204,
+    summary="Отозвать установочный токен (агенты УЖЕ зарегистрированные продолжают работать)",
+)
+def admin_revoke_enrollment_token(token_id: int, db: Session = Depends(get_db)):
+    enr = db.query(EnrollmentToken).filter(EnrollmentToken.id == token_id).first()
+    if not enr:
+        raise HTTPException(status_code=404, detail="Токен не найден.")
+    if not enr.revoked:
+        enr.revoked    = True
+        enr.revoked_at = _now()
+        db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.get(
+    "/admin/enrollment-tokens/{token_id}/bootstrap.ps1",
+    summary="Скачать готовый PowerShell-скрипт раскатки агента",
+)
+def admin_get_bootstrap_script(
+    token_id: int,
+    request:  Request,
+    db:       Session = Depends(get_db),
+):
+    """
+    Возвращает .ps1 со встроенными:
+      • URL сервера (из request.base_url),
+      • RAW enrollment-токеном для этой записи (НО его нет в БД — только хеш!),
+    ...а значит — отдать RAW токен мы не можем (он только при create).
+
+    Вместо raw-токена в скрипт вшит token_id; админ скопирует RAW токен из
+    UI один раз и вставит в plain-text слот в скрипте. Это безопаснее чем
+    хранить raw на сервере: даже бекап БД не содержит работающие токены.
+    """
+    enr = db.query(EnrollmentToken).filter(EnrollmentToken.id == token_id).first()
+    if not enr:
+        raise HTTPException(status_code=404, detail="Токен не найден.")
+    if enr.revoked or enr.expires_at < _now():
+        raise HTTPException(status_code=400, detail="Токен отозван или истёк.")
+
+    base = str(request.base_url).rstrip("/")
+    # sync.ps1 встраиваем как here-string в bootstrap. Чтобы PowerShell
+    # `'@` закрывающий ограничитель не сматчился внутри — превентивно
+    # ломаем последовательности `'@` на `'@_`. У нас в sync.ps1 такого
+    # нет (проверено), но защита на будущее.
+    sync_safe = _SYNC_PS1_TEMPLATE.replace("'@\n", "'@__\n")
+    script = (
+        _BOOTSTRAP_PS1_TEMPLATE
+        .replace("{{SERVER_URL}}", base)
+        .replace("{{ENROLLMENT_TOKEN_PLACEHOLDER}}", "PASTE_ENROLLMENT_TOKEN_HERE")
+        .replace("{{SYNC_PS1_CONTENT}}", sync_safe)
+    )
+    return Response(
+        content    = script,
+        media_type = "text/plain; charset=utf-8",
+        headers    = {
+            "Content-Disposition": _content_disposition(f"pods2-bootstrap-{enr.id}.ps1"),
+        },
+    )
+
+
+@admin_router.post(
+    "/admin/agent-tokens/{token_id}/assign-user",
+    response_model=AgentTokenOut,
+    summary="Привязать неназначенного агента к PODS2-юзеру (после enroll)",
+)
+def admin_assign_agent_user(
+    token_id: int,
+    user_id:  int,
+    db:       Session = Depends(get_db),
+):
+    """
+    Когда агент зарегистрировался через enroll, но Windows-username не
+    совпал ни с одним PODS2-логином, owner_user_id остаётся NULL. Админ
+    видит такого «бесхозного» агента в админке и через эту кнопку
+    привязывает к нужному юзеру (после чего агент подтянет его ключи).
+    """
+    t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Токен агента не найден.")
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()  # noqa: E712
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден или неактивен.")
+    t.user_id       = user_id
+    t.force_sync_at = _now()  # сразу сигналим: дёрни новые ключи
+    db.commit()
+    db.refresh(t)
+    return AgentTokenOut(
+        id             = t.id,
+        user_id        = t.user_id,
+        username       = t.user.username if t.user else "",
+        description    = t.description,
+        issued_at      = t.issued_at,
+        expires_at     = t.expires_at,
+        last_seen_at   = t.last_seen_at,
+        last_seen_ip   = t.last_seen_ip,
+        revoked        = t.revoked,
+        block_reason   = t.block_reason,
+        bound_mac      = t.bound_mac,
+        bound_hostname = t.bound_hostname,
+    )
+
+
+@admin_router.post(
     "/admin/agent-tokens/{token_id}/command",
     status_code=201,
     summary="Поставить команду агенту в очередь (активация Windows/Office)",
@@ -1041,6 +1252,96 @@ def get_install_package(
 agent_router = APIRouter(tags=["Ключи и сертификаты (агент)"])
 
 
+@agent_router.post(
+    "/agent/enroll",
+    response_model=EnrollOut,
+    summary="Первичная регистрация агента (без auth, по enrollment-токену)",
+)
+@limiter.limit(lambda: settings.CRYPTO_ADMIN_UPLOAD_RATE_LIMIT)
+def agent_enroll(
+    payload: EnrollIn,
+    request: Request,
+    db:      Session = Depends(get_db),
+):
+    """
+    Bootstrap-скрипт у админа при первом запуске на каждом ПК шлёт сюда:
+      • enrollment_token (общий, из админки),
+      • hostname текущей машины,
+      • windows_username активного юзера,
+      • mac primary-карты.
+
+    Сервер:
+      1. Валидирует enrollment_token по хешу.
+      2. Ищет PODS2-юзера по username == windows_username.
+      3. Создаёт новый AgentToken (raw), с привязкой к hostname+mac.
+      4. Возвращает raw_token и факт «matched ли юзер».
+
+    Если юзер не сматчился — токен создаётся БЕЗ owner_user_id; админ
+    видит «бесхозного» агента в админке и привязывает вручную через
+    кнопку assign-user.
+    """
+    enr_hash = hashlib.sha256(payload.enrollment_token.encode("utf-8")).hexdigest()
+    enr = (
+        db.query(EnrollmentToken)
+        .filter(
+            EnrollmentToken.token_hash == enr_hash,
+            EnrollmentToken.revoked == False,                  # noqa: E712
+            EnrollmentToken.expires_at > _now(),
+        )
+        .first()
+    )
+    if not enr:
+        raise HTTPException(
+            status_code=401,
+            detail="Установочный токен невалиден / отозван / истёк.",
+        )
+
+    # Поиск юзера: case-insensitive по username (т.к. Windows-логины
+    # часто в верхнем регистре, а PODS2-логины — в нижнем).
+    candidate_username = (payload.windows_username or "").strip()
+    user = (
+        db.query(User)
+        .filter(
+            User.username.ilike(candidate_username),
+            User.is_active == True,                            # noqa: E712
+        )
+        .first()
+    )
+
+    raw_token  = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    expires_at = _now() + timedelta(days=settings.CRYPTO_AGENT_TOKEN_TTL_DAYS)
+
+    agent_token = AgentToken(
+        user_id               = user.id if user else None,
+        token_hash            = token_hash,
+        description           = f"Enrolled from {payload.hostname} as {candidate_username}"[:255],
+        expires_at            = expires_at,
+        bound_hostname        = payload.hostname[:255],
+        bound_mac             = _normalize_mac(payload.mac),
+        enrolled_via_token_id = enr.id,
+        # Сразу пометим force_sync_at — пусть агент сразу подтянет ключи
+        # если они уже назначены этому юзеру.
+        force_sync_at         = _now() if user else None,
+    )
+    db.add(agent_token)
+    enr.enrolled_count = (enr.enrolled_count or 0) + 1
+    db.commit()
+
+    logger.info(
+        "Agent enrolled: hostname=%s win_user=%s matched=%s pods2_user=%s",
+        payload.hostname, candidate_username, bool(user),
+        user.username if user else None,
+    )
+
+    return EnrollOut(
+        agent_token  = raw_token,
+        user_id      = user.id if user else None,
+        username     = user.username if user else None,
+        matched_user = user is not None,
+    )
+
+
 @agent_router.get(
     "/agent/poll",
     response_model=PollOut,
@@ -1297,6 +1598,123 @@ def agent_heartbeat(
 # ═══════════════════════════════════════════════════════════════════════════
 # Шаблоны: install.bat и README.txt
 # ═══════════════════════════════════════════════════════════════════════════
+
+_BOOTSTRAP_PS1_TEMPLATE = r"""# PODS2 Agent — Bootstrap (массовая раскатка через PSExec / Invoke-Command)
+#
+# Что делает:
+#   1) Скачивает sync.ps1 с сервера PODS2.
+#   2) Вызывает /agent/enroll с общим enrollment-токеном и Windows-логином
+#      текущего юзера — получает персональный agent_token.
+#   3) Складывает config.json и sync.ps1 в C:\Program Files\PODS2Agent\
+#   4) Включает CAPI2 audit (для журнала использования).
+#   5) Регистрирует scheduled task раз в минуту (как обычный install.ps1).
+#
+# Как использовать админу:
+#   1. Вставь ниже свой enrollment-токен (выпускается в админке PODS2,
+#      Ключи и сертификаты → Установочные токены → Создать).
+#   2. Скопируй этот файл на каждый ПК (PSExec, Invoke-Command, GPO ScriptStartup).
+#   3. Запусти ОТ АДМИНА:
+#        powershell -ExecutionPolicy Bypass -File bootstrap.ps1
+#
+# Примеры раскатки на много ПК сразу из админ-PowerShell:
+#
+#   $cred = Get-Credential
+#   $computers = 'PC-1','PC-2','PC-3'
+#   Invoke-Command -ComputerName $computers -Credential $cred -FilePath .\bootstrap.ps1
+#
+# Юзер на этих ПК НИЧЕГО не делает — после раскатки агент работает сам.
+
+$ErrorActionPreference = 'Stop'
+
+$ServerUrl       = '{{SERVER_URL}}'
+$EnrollmentToken = '{{ENROLLMENT_TOKEN_PLACEHOLDER}}'   # <-- ПОДСТАВЬ raw-токен из админки
+$InstallDir      = "C:\Program Files\PODS2Agent"
+
+# Проверка admin прав (нужны для HKLM и schtasks)
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    throw "bootstrap.ps1 должен запускаться от имени Администратора."
+}
+
+if ($EnrollmentToken -eq 'PASTE_ENROLLMENT_TOKEN_HERE') {
+    throw "Не задан EnrollmentToken — вставь raw-токен из админки PODS2."
+}
+
+Write-Host "═══ PODS2 Agent bootstrap ═══"
+Write-Host "Server: $ServerUrl"
+Write-Host "Host:   $env:COMPUTERNAME / $env:USERNAME`n"
+
+# 1. Папка установки
+if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
+
+# 2. sync.ps1 встроен в этот же файл (сервер подставил при генерации).
+#    Так bootstrap не зависит от сетевого доступа к /static/ и работает
+#    даже если HTTP-сервер PODS2 в момент раскатки занят.
+$syncDst = Join-Path $InstallDir "sync.ps1"
+Write-Host "[1/5] Записываю sync.ps1..."
+$syncContent = @'
+{{SYNC_PS1_CONTENT}}
+'@
+Set-Content -Path $syncDst -Value $syncContent -Encoding UTF8 -Force
+
+# 3. Enroll — получаем персональный токен
+Write-Host "[2/5] Регистрирую агента на сервере..."
+$adapter  = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Sort-Object ifIndex | Select-Object -First 1
+$mac      = if ($adapter) { $adapter.MacAddress } else { '' }
+$enrollBody = @{
+    enrollment_token = $EnrollmentToken
+    hostname         = $env:COMPUTERNAME
+    windows_username = $env:USERNAME
+    mac              = $mac
+} | ConvertTo-Json
+$enrollRes = Invoke-RestMethod -Uri "$ServerUrl/api/v1/certs/agent/enroll" -Method Post -Body $enrollBody -ContentType 'application/json'
+
+# 4. Конфиг — токен сразу шифруем через DPAPI (LocalMachine), как делает обычный install.bat
+$tokenBytes  = [System.Text.Encoding]::UTF8.GetBytes($enrollRes.agent_token)
+$sealed      = [System.Security.Cryptography.ProtectedData]::Protect($tokenBytes, $null, 'LocalMachine')
+$tokenSealed = [Convert]::ToBase64String($sealed)
+
+$config = [PSCustomObject]@{
+    server_url       = $ServerUrl
+    token            = $tokenSealed
+    token_encrypted  = $true
+    username         = if ($enrollRes.username) { $enrollRes.username } else { $env:USERNAME }
+    user_id          = $enrollRes.user_id
+    sync_interval_s  = 60
+    keys_dir         = "C:\ProgramData\PODS2Keys"
+}
+$config | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $InstallDir "config.json") -Encoding UTF8 -Force
+
+# 5. Чистим артефакты от старых установок (если был old PODS2Folder reader)
+Remove-Item "HKLM:\SOFTWARE\Crypto Pro\Settings\Readers\PODS2Folder" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "C:\ProgramData\PODS2Keys" -Recurse -Force -ErrorAction SilentlyContinue
+
+# 6. CAPI2 audit (для журнала использования)
+Write-Host "[3/5] Включаю CAPI2 audit log..."
+wevtutil sl Microsoft-Windows-CAPI2/Operational /e:true /rt:false /q:true | Out-Null
+
+# 7. Первый sync (если уже привязан к юзеру, ключи сразу подтянутся)
+Write-Host "[4/5] Первая синхронизация..."
+& powershell -ExecutionPolicy Bypass -File $syncDst
+
+# 8. Scheduled task — раз в минуту под текущим юзером с admin-привилегиями
+Write-Host "[5/5] Регистрирую scheduled task..."
+$taskUser = "$env:USERDOMAIN\$env:USERNAME"
+$taskCmd  = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$InstallDir\sync.ps1`""
+schtasks /create /tn "PODS2 Cert Sync" /tr $taskCmd `
+    /sc minute /mo 1 /ru $taskUser /it /rl HIGHEST /f | Out-Null
+
+Write-Host "`n═══ DONE ═══"
+if ($enrollRes.matched_user) {
+    Write-Host "✓ Агент привязан к PODS2-юзеру: $($enrollRes.username)"
+    Write-Host "Ключи подтянутся в течение минуты."
+} else {
+    Write-Host "⚠ Windows-логин '$env:USERNAME' не нашёлся в PODS2."
+    Write-Host "  Зайди в админку → 'Установленные агенты' → найди $env:COMPUTERNAME"
+    Write-Host "  → нажми 'Привязать к юзеру' и выбери нужного."
+}
+"""
+
 
 _INSTALL_BAT_LAUNCHER = r"""@echo off
 REM Тонкий лаунчер: поднимает UAC и зовёт install.ps1 (основной установщик).
