@@ -71,41 +71,44 @@ COL_EXAMPLE = [c[3] for c in TEMPLATE_COLS]
 # ─── Схемы ────────────────────────────────────────────────────────────────────
 
 class PersonCreate(BaseModel):
-    full_name:       str            = Field(...,  min_length=2, max_length=300, strip_whitespace=True)
-    rank:            Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    doc_number:      Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    passport_number: Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    department:      Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    position_title:  Optional[str]  = Field(None, max_length=200, strip_whitespace=True)
-    birth_date:      Optional[date] = None
-    phone:           Optional[str]  = Field(None, max_length=50,  strip_whitespace=True)
-    notes:           Optional[str]  = Field(None, max_length=2000, strip_whitespace=True)
+    full_name:          str            = Field(...,  min_length=2, max_length=300, strip_whitespace=True)
+    rank:               Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    doc_number:         Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    passport_number:    Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    passport_issued_by: Optional[str]  = Field(None, max_length=300, strip_whitespace=True)
+    department:         Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    position_title:     Optional[str]  = Field(None, max_length=200, strip_whitespace=True)
+    birth_date:         Optional[date] = None
+    phone:              Optional[str]  = Field(None, max_length=50,  strip_whitespace=True)
+    notes:              Optional[str]  = Field(None, max_length=2000, strip_whitespace=True)
 
 
 class PersonUpdate(BaseModel):
-    full_name:       Optional[str]  = Field(None, min_length=2, max_length=300, strip_whitespace=True)
-    rank:            Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    doc_number:      Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    passport_number: Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    department:      Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
-    position_title:  Optional[str]  = Field(None, max_length=200, strip_whitespace=True)
-    birth_date:      Optional[date] = None
-    phone:           Optional[str]  = Field(None, max_length=50,  strip_whitespace=True)
-    notes:           Optional[str]  = Field(None, max_length=2000, strip_whitespace=True)
+    full_name:          Optional[str]  = Field(None, min_length=2, max_length=300, strip_whitespace=True)
+    rank:               Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    doc_number:         Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    passport_number:    Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    passport_issued_by: Optional[str]  = Field(None, max_length=300, strip_whitespace=True)
+    department:         Optional[str]  = Field(None, max_length=100, strip_whitespace=True)
+    position_title:     Optional[str]  = Field(None, max_length=200, strip_whitespace=True)
+    birth_date:         Optional[date] = None
+    phone:              Optional[str]  = Field(None, max_length=50,  strip_whitespace=True)
+    notes:              Optional[str]  = Field(None, max_length=2000, strip_whitespace=True)
 
 
 class PersonResponse(BaseModel):
-    id:              int
-    full_name:       str
-    rank:            Optional[str]  = None
-    doc_number:      Optional[str]  = None
-    passport_number: Optional[str]  = None
-    department:      Optional[str]  = None
-    position_title:  Optional[str]  = None
-    birth_date:      Optional[date] = None
-    phone:           Optional[str]  = None
-    notes:           Optional[str]  = None
-    fired_at:        Optional[datetime] = None   # NULL → активный
+    id:                 int
+    full_name:          str
+    rank:               Optional[str]  = None
+    doc_number:         Optional[str]  = None
+    passport_number:    Optional[str]  = None
+    passport_issued_by: Optional[str]  = None
+    department:         Optional[str]  = None
+    position_title:     Optional[str]  = None
+    birth_date:         Optional[date] = None
+    phone:              Optional[str]  = None
+    notes:              Optional[str]  = None
+    fired_at:           Optional[datetime] = None   # NULL → активный
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -128,17 +131,21 @@ class PersonSuggestion(BaseModel):
     при выборе подставить сразу все поля (форма добавления в dept_persons,
     редактор слотов и т.д.), а не делать второй запрос за деталями.
     """
-    id:             int
-    full_name:      str
-    rank:           Optional[str]  = None
-    doc_number:     Optional[str]  = None
-    department:     Optional[str]  = None
-    position_title: Optional[str]  = None
-    birth_date:     Optional[date] = None
-    phone:          Optional[str]  = None
-    notes:          Optional[str]  = None
-    match_score:    int
-    is_exact:       bool
+    id:                 int
+    full_name:          str
+    rank:               Optional[str]  = None
+    doc_number:         Optional[str]  = None
+    # Загранпаспорт тоже отдаём в подсказке — чтобы при выборе персоны
+    # из автокомплита в слоте/форме сразу подставлялся, без второго запроса.
+    passport_number:    Optional[str]  = None
+    passport_issued_by: Optional[str]  = None
+    department:         Optional[str]  = None
+    position_title:     Optional[str]  = None
+    birth_date:         Optional[date] = None
+    phone:              Optional[str]  = None
+    notes:              Optional[str]  = None
+    match_score:        int
+    is_exact:           bool
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -302,7 +309,9 @@ def suggest_persons(
     # Итоговый score = MAX(trigram×100 + бонусы, substring-score + бонусы).
     sql = """
         SELECT
-            id, full_name, rank, doc_number, department, position_title,
+            id, full_name, rank, doc_number,
+            passport_number, passport_issued_by,
+            department, position_title,
             birth_date, phone, notes,
             GREATEST(
                 LEAST(
@@ -373,17 +382,19 @@ def suggest_persons(
         if r["score"] < 40 and not r["is_exact"]:
             continue
         result.append(PersonSuggestion(
-            id=             r["id"],
-            full_name=      r["full_name"],
-            rank=           r["rank"],
-            doc_number=     r["doc_number"],
-            department=     r["department"],
-            position_title= r["position_title"],
-            birth_date=     r["birth_date"],
-            phone=          r["phone"],
-            notes=          r["notes"],
-            match_score=    int(r["score"]),
-            is_exact=       bool(r["is_exact"]),
+            id=                 r["id"],
+            full_name=          r["full_name"],
+            rank=               r["rank"],
+            doc_number=         r["doc_number"],
+            passport_number=    r["passport_number"],
+            passport_issued_by= r["passport_issued_by"],
+            department=         r["department"],
+            position_title=     r["position_title"],
+            birth_date=         r["birth_date"],
+            phone=              r["phone"],
+            notes=              r["notes"],
+            match_score=        int(r["score"]),
+            is_exact=           bool(r["is_exact"]),
         ))
 
     return result
@@ -759,15 +770,16 @@ async def create_person(
         )
 
     person = Person(
-        full_name=       person_in.full_name,
-        rank=            person_in.rank            or None,
-        doc_number=      person_in.doc_number      or None,
-        passport_number= person_in.passport_number or None,
-        department=      department,
-        position_title=  person_in.position_title  or None,
-        birth_date=      person_in.birth_date,
-        phone=           person_in.phone           or None,
-        notes=           person_in.notes           or None,
+        full_name=          person_in.full_name,
+        rank=               person_in.rank               or None,
+        doc_number=         person_in.doc_number         or None,
+        passport_number=    person_in.passport_number    or None,
+        passport_issued_by= person_in.passport_issued_by or None,
+        department=         department,
+        position_title=     person_in.position_title     or None,
+        birth_date=         person_in.birth_date,
+        phone=              person_in.phone              or None,
+        notes=              person_in.notes              or None,
     )
     db.add(person)
     try:
@@ -815,7 +827,8 @@ async def update_person(
         raise HTTPException(status_code=403, detail="Нет доступа")
 
     for field in ("full_name", "rank", "doc_number", "passport_number",
-                  "position_title", "birth_date", "phone", "notes"):
+                  "passport_issued_by", "position_title", "birth_date",
+                  "phone", "notes"):
         val = getattr(person_in, field, None)
         if val is not None:
             setattr(person, field, val or None)
