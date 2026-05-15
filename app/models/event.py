@@ -22,13 +22,16 @@ from app.db.database import Base
 
 # ─── Дефолтная конфигурация столбцов ─────────────────────────────────────────
 DEFAULT_COLUMNS = [
-    {"key": "full_name",   "label": "ФИО",         "type": "text",            "order": 0, "width": 200, "visible": True, "custom": False},
-    {"key": "rank",        "label": "Звание",       "type": "text",            "order": 1, "width": 110, "visible": True, "custom": False},
-    {"key": "doc_number",  "label": "№ Документа",  "type": "text",            "order": 2, "width": 130, "visible": True, "custom": False},
-    {"key": "position_id", "label": "Должность",    "type": "select_position", "order": 3, "width": 160, "visible": True, "custom": False},
-    {"key": "callsign",    "label": "Позывной",     "type": "text",            "order": 4, "width": 100, "visible": True, "custom": False},
-    {"key": "department",  "label": "Квота",        "type": "select_dept",     "order": 5, "width": 140, "visible": True, "custom": False},
-    {"key": "note",        "label": "Примечание",   "type": "text",            "order": 6, "width": 160, "visible": True, "custom": False},
+    {"key": "full_name",       "label": "ФИО",              "type": "text",            "order": 0, "width": 200, "visible": True, "custom": False},
+    {"key": "rank",            "label": "Звание",           "type": "text",            "order": 1, "width": 110, "visible": True, "custom": False},
+    {"key": "doc_number",      "label": "№ Документа",      "type": "text",            "order": 2, "width": 130, "visible": True, "custom": False},
+    # Загранпаспорт — необязателен (visible=False по умолчанию, админ
+    # включает через «Столбцы» если в этом списке нужен выезд за границу).
+    {"key": "passport_number", "label": "№ Загранпаспорта", "type": "text",            "order": 3, "width": 130, "visible": False, "custom": False},
+    {"key": "position_id",     "label": "Должность",        "type": "select_position", "order": 4, "width": 160, "visible": True, "custom": False},
+    {"key": "callsign",        "label": "Позывной",         "type": "text",            "order": 5, "width": 100, "visible": True, "custom": False},
+    {"key": "department",      "label": "Квота",            "type": "select_dept",     "order": 6, "width": 140, "visible": True, "custom": False},
+    {"key": "note",            "label": "Примечание",       "type": "text",            "order": 7, "width": 160, "visible": True, "custom": False},
 ]
 
 
@@ -128,15 +131,16 @@ class Position(Base):
 class Slot(Base):
     __tablename__ = "slots"
 
-    id          = Column(Integer, primary_key=True, index=True)
-    group_id    = Column(Integer, ForeignKey("groups.id"),    nullable=False, index=True)  # ← index=True
-    position_id = Column(Integer, ForeignKey("positions.id"), nullable=True,  index=True)  # ← index=True
-    department  = Column(String, nullable=False, index=True)   # ← index=True (фильтр по управлению)
-    rank        = Column(String, nullable=True)
-    full_name   = Column(String, nullable=True)
-    doc_number  = Column(String, nullable=True)
-    callsign    = Column(String, nullable=True)
-    note        = Column(String, nullable=True)
+    id              = Column(Integer, primary_key=True, index=True)
+    group_id        = Column(Integer, ForeignKey("groups.id"),    nullable=False, index=True)  # ← index=True
+    position_id     = Column(Integer, ForeignKey("positions.id"), nullable=True,  index=True)  # ← index=True
+    department      = Column(String, nullable=False, index=True)   # ← index=True (фильтр по управлению)
+    rank            = Column(String, nullable=True)
+    full_name       = Column(String, nullable=True)
+    doc_number      = Column(String, nullable=True)
+    passport_number = Column(String, nullable=True)               # № загранпаспорта (snapshot из persons)
+    callsign        = Column(String, nullable=True)
+    note            = Column(String, nullable=True)
     version     = Column(Integer, default=1, nullable=False)
     # JSONB. Slots — самая «горячая» таблица: каждый рендер сетки слотов
     # дёргает get_extra() для substitute_note и кастомных столбцов.

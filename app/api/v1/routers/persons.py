@@ -930,16 +930,17 @@ def unfire_person(
 # ─── Внутренняя функция: upsert при заполнении слота ─────────────────────────
 
 def upsert_person_from_slot(
-        db:         Session,
-        full_name:  str,
-        rank:       str | None,
-        doc_number: str | None,
-        department: str | None = None,
+        db:              Session,
+        full_name:       str,
+        rank:            str | None,
+        doc_number:      str | None,
+        department:      str | None = None,
+        passport_number: str | None = None,
 ) -> None:
     """
     Создаёт или обновляет запись в базе людей при сохранении слота.
-    ИСПРАВЛЕНО: использует pg_insert с on_conflict_do_update
-    вместо SELECT + условного INSERT (два круговых пути к БД → один).
+    Использует pg_insert с on_conflict_do_update — один запрос на upsert
+    (вместо SELECT + условного INSERT — два круговых пути к БД).
     """
     if not full_name or not full_name.strip():
         return
@@ -948,28 +949,29 @@ def upsert_person_from_slot(
     now = datetime.now(timezone.utc)
 
     stmt = pg_insert(Person).values(
-        full_name=  full_name,
-        rank=       rank.strip()       if rank       else None,
-        doc_number= doc_number.strip() if doc_number else None,
-        department= department.strip() if department else None,
-        created_at= now,
-        updated_at= now,
+        full_name=       full_name,
+        rank=            rank.strip()            if rank            else None,
+        doc_number=      doc_number.strip()      if doc_number      else None,
+        passport_number= passport_number.strip() if passport_number else None,
+        department=      department.strip()      if department      else None,
+        created_at=      now,
+        updated_at=      now,
     )
     # Правила обновления при конфликте по full_name:
-    #   rank / doc_number — НЕ затираем уже заполненные значения
-    #     (если в базе есть звание, а новый слот его не прислал — сохраняем).
-    #   department        — НАОБОРОТ: всегда обновляем на присланное, если
-    #     оно не null. То есть «человек сейчас принадлежит тому управлению,
-    #     кто его последним заполнил в слоте». Это требование бизнес-логики:
-    #     если upr_5 внёс ФИО — в базе он становится «upr_5», независимо
-    #     от того, что там было раньше.
+    #   rank / doc_number / passport_number — НЕ затираем уже заполненные
+    #     значения (если в базе есть звание, а новый слот его не прислал —
+    #     сохраняем существующее).
+    #   department — НАОБОРОТ: всегда обновляем на присланное (если оно
+    #     не null). «Человек сейчас принадлежит управлению, кто его
+    #     последним заполнил в слоте» — требование бизнес-логики.
     stmt = stmt.on_conflict_do_update(
         index_elements=["full_name"],
         set_={
-            "rank":       text("COALESCE(persons.rank,       EXCLUDED.rank)"),
-            "doc_number": text("COALESCE(persons.doc_number, EXCLUDED.doc_number)"),
-            "department": text("COALESCE(EXCLUDED.department, persons.department)"),
-            "updated_at": stmt.excluded.updated_at,
+            "rank":            text("COALESCE(persons.rank,            EXCLUDED.rank)"),
+            "doc_number":      text("COALESCE(persons.doc_number,      EXCLUDED.doc_number)"),
+            "passport_number": text("COALESCE(persons.passport_number, EXCLUDED.passport_number)"),
+            "department":      text("COALESCE(EXCLUDED.department,     persons.department)"),
+            "updated_at":      stmt.excluded.updated_at,
         },
     )
 
