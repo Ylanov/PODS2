@@ -358,6 +358,27 @@ def _content_disposition(fname: str) -> str:
     return f'attachment; filename="{ascii_safe}"; filename*=UTF-8\'\'{encoded}'
 
 
+# UTF-8 BOM: EF BB BF. Windows PowerShell 5.1 без BOM в .ps1 считает
+# файл ANSI (CP1251 на русской винде) и при парсинге выдаёт мусор:
+#   "РќР°Р¶РјРё Enter..."  ← это UTF-8 байты прочитанные как CP1251.
+# Возвращаем bytes с BOM в начале — тогда PS 5.1 однозначно распознаёт
+# UTF-8, и любая клиентская запись через Invoke-WebRequest -OutFile
+# сохраняется уже корректно (бинарный поток copy-paste, BOM сохраняется).
+_PS1_UTF8_BOM = b"\xef\xbb\xbf"
+
+
+def _ps1_response(script: str, fname: str) -> Response:
+    """
+    Единая точка возврата .ps1-скриптов: bytes с UTF-8 BOM + Content-Disposition.
+    Используется обоими endpoint'ами (admin bootstrap + user install-script).
+    """
+    return Response(
+        content    = _PS1_UTF8_BOM + script.encode("utf-8"),
+        media_type = "text/plain; charset=utf-8",
+        headers    = {"Content-Disposition": _content_disposition(fname)},
+    )
+
+
 def run_periodic_cleanup(db: Session) -> dict:
     """
     Чистит устаревшие журналы. Вызывается из app.main.lifespan при старте
@@ -965,13 +986,7 @@ def admin_get_bootstrap_script(
         .replace("{{ENROLLMENT_TOKEN_PLACEHOLDER}}", "PASTE_ENROLLMENT_TOKEN_HERE")
         .replace("{{SYNC_PS1_CONTENT}}", sync_safe)
     )
-    return Response(
-        content    = script,
-        media_type = "text/plain; charset=utf-8",
-        headers    = {
-            "Content-Disposition": _content_disposition(f"pods2-bootstrap-{enr.id}.ps1"),
-        },
-    )
+    return _ps1_response(script, f"pods2-bootstrap-{enr.id}.ps1")
 
 
 @admin_router.get(
@@ -1456,11 +1471,7 @@ def get_install_script(
     )
 
     fname = f"pods2-agent-install-{current_user.username}.ps1"
-    return Response(
-        content    = script,
-        media_type = "text/plain; charset=utf-8",
-        headers    = {"Content-Disposition": _content_disposition(fname)},
-    )
+    return _ps1_response(script, fname)
 
 
 @user_router.post(
