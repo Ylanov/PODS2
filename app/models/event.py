@@ -69,10 +69,34 @@ class Event(Base):
     )
 
     def get_columns(self) -> list:
+        """
+        Возвращает массив колонок шаблона.
+        Если у Event есть сохранённая columns_config — берём её и **доливаем
+        отсутствующие стандартные колонки** (custom=False) из DEFAULT_COLUMNS.
+        Это нужно когда мы добавляем новую дефолтную колонку (например
+        passport_number в мае 2026) — у существующих шаблонов в БД
+        columns_config зафиксирован со старым набором, и без auto-merge
+        админ её не увидит в «Настройке столбцов».
+        Custom-колонки (которые админ добавил руками) остаются как есть.
+        """
         cfg = self.columns_config
-        if isinstance(cfg, list) and cfg:
-            return cfg
-        return [col.copy() for col in DEFAULT_COLUMNS]
+        if not isinstance(cfg, list) or not cfg:
+            return [col.copy() for col in DEFAULT_COLUMNS]
+
+        # Что в БД сейчас — индексируем по key для быстрого поиска
+        present_keys = {c.get("key") for c in cfg if isinstance(c, dict)}
+        result = list(cfg)
+        added = False
+        for std in DEFAULT_COLUMNS:
+            if std.get("custom") is False and std["key"] not in present_keys:
+                result.append(std.copy())
+                added = True
+
+        # Если что-то добавили — пересортируем по order, чтобы новые
+        # колонки заняли своё логичное место (не в конце).
+        if added:
+            result.sort(key=lambda c: c.get("order", 999))
+        return result
 
     def set_columns(self, columns: list) -> None:
         self.columns_config = columns or None
