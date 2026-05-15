@@ -1,6 +1,7 @@
 # app/api/v1/routers/export.py
 
 import io
+import re
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -236,7 +237,9 @@ def export_event_word(
     section.right_margin = Cm(1.0)
 
     # ── Заголовок документа ───────────────────────────────────────────────────
-    def _title_para(text: str, bold=False, size_pt=12,
+    # Компактный вид (как на эталонном АМГ-документе слева): 11pt «Состав»,
+    # 11pt subtitle, 10pt «на дата». Шрифт Times New Roman.
+    def _title_para(text: str, bold=False, size_pt=11,
                     space_after_pt=0, align=WD_ALIGN_PARAGRAPH.CENTER):
         p = doc.add_paragraph()
         p.alignment = align
@@ -248,11 +251,26 @@ def export_event_word(
         r.font.size = Pt(size_pt)
         return p
 
-    _title_para("Состав", bold=True, size_pt=13)
-    _title_para(event.title, bold=True, size_pt=12)
+    _title_para("Состав", bold=True, size_pt=11)
+    # Подзаголовок: либо описательный из event.docx_subtitle (multiline,
+    # каждая строка — отдельный параграф), либо fallback на event.title
+    # с очисткой даты в скобках (избегаем дублирования с «на DD.MM.YYYY»
+    # ниже).
+    if event.docx_subtitle:
+        for line in event.docx_subtitle.splitlines():
+            line = line.strip()
+            if line:
+                _title_para(line, bold=True, size_pt=11)
+    else:
+        # re импортирован на верху файла — нельзя делать локальный import,
+        # иначе квalifier станет локальной переменной для всей функции
+        # (та же ловушка что была с quote).
+        title_for_doc = re.sub(r"\s*\(\d{2}\.\d{2}\.\d{4}[^)]*\)\s*$", "", event.title or "").strip()
+        _title_para(title_for_doc, bold=True, size_pt=11)
+
     date_str = event.date.strftime("%d.%m.%Y") if event.date else ""
     _title_para(f"на {date_str}" if date_str else "", bold=False,
-                size_pt=11, space_after_pt=4)
+                size_pt=10, space_after_pt=2)
 
     # ── Таблица ───────────────────────────────────────────────────────────────
     COL_WIDTHS = [1.0, 3.2, 4.8, 3.0, 3.2, 2.5, 2.8]
@@ -278,6 +296,7 @@ def export_event_word(
         _set_col_width(table, ci, w)
 
     # ── Строка заголовков ─────────────────────────────────────────────────────
+    # Компактный вид (как на эталоне): высота заголовка ~0.9см, шрифт 9pt.
     hdr_row = table.rows[0]
     for ci, htext in enumerate(HEADERS):
         cell = hdr_row.cells[ci]
@@ -289,14 +308,15 @@ def export_event_word(
                          top=_thin_border(), bottom=_thin_border(),
                          left=_thin_border(), right=_thin_border())
 
-    hdr_row.height = Cm(1.2)
+    hdr_row.height = Cm(0.9)
 
     # ── Строки данных ─────────────────────────────────────────────────────────
+    # Компактный вид: ~0.55см высота data-строк, 0.55см groups-строки.
     current_row = 1
 
     for group in prepared_groups:
         g_row = table.rows[current_row]
-        g_row.height = Cm(0.65)
+        g_row.height = Cm(0.55)
         _merge_row(table, current_row, group["name"],
                    bold=True, size_pt=10, shading="E2EFDA")
         _apply_row_borders(g_row)
@@ -304,7 +324,7 @@ def export_event_word(
 
         for slot in group["slots"]:
             row = table.rows[current_row]
-            row.height = Cm(0.7)
+            row.height = Cm(0.55)
 
             values = [
                 str(slot["index"]),
@@ -328,6 +348,8 @@ def export_event_word(
             for ci, (val, align) in enumerate(zip(values, aligns)):
                 cell = row.cells[ci]
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                # 10pt — стандарт для штатных списков; меньше получится
+                # неразборчиво в распечатке.
                 _cell_text(cell, val, bold=False, size_pt=10, align=align)
                 _set_cell_border(cell,
                                  top=_thin_border(), bottom=_thin_border(),

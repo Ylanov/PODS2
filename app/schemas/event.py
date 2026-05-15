@@ -68,6 +68,9 @@ class EventResponse(EventBase):
     """Схема для ответа API, включающая ID и статус."""
     id: int
     status: str
+    # Многострочный подзаголовок для шапки выгружаемого .docx.
+    # NULL — fallback на title. Заполняется админом в редакторе списка.
+    docx_subtitle: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

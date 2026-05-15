@@ -249,8 +249,11 @@ class UserResponse(BaseModel):
 
 
 class EventUpdatePayload(BaseModel):
-    title: Optional[str]       = Field(None, min_length=1, max_length=300, strip_whitespace=True)
-    date:  Optional[date_type] = None
+    title:         Optional[str]       = Field(None, min_length=1, max_length=300, strip_whitespace=True)
+    date:          Optional[date_type] = None
+    # Многострочный подзаголовок для .docx (между «Состав» и датой).
+    # Пустая строка → сохранить NULL (вернуть к fallback на event.title).
+    docx_subtitle: Optional[str]       = Field(None, max_length=2000)
 
 
 # ─── Вспомогательная функция: наряд для даты ─────────────────────────────────
@@ -669,6 +672,9 @@ async def update_event(
         event.title = payload.title
     if payload.date is not None:
         event.date = payload.date
+    if payload.docx_subtitle is not None:
+        # Пустая строка → NULL (вернуть к fallback на title).
+        event.docx_subtitle = payload.docx_subtitle.strip() or None
     db.commit()
     db.refresh(event)
     await manager.broadcast({"event_id": event_id, "action": "update"})
@@ -958,11 +964,14 @@ def get_full_event_table(
 
     return {
         "event": {
-            "id":          event.id,
-            "title":       event.title,
-            "date":        event.date,
-            "status":      event.status,
-            "is_template": event.is_template,
+            "id":            event.id,
+            "title":         event.title,
+            "date":          event.date,
+            "status":        event.status,
+            "is_template":   event.is_template,
+            # Многострочный подзаголовок для шапки .docx — заполняется
+            # админом в редакторе. NULL → fallback на title в экспорте.
+            "docx_subtitle": event.docx_subtitle,
         },
         "columns": event.get_columns(),
         "groups":  result,
