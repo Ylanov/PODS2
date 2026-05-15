@@ -1971,7 +1971,11 @@ try {
 '@
     Set-Content -Path $syncDst -Value $syncContent -Encoding UTF8 -Force
 
-    # 3. config.json (токен сразу шифруем через DPAPI LocalMachine)
+    # 3. config.json (токен сразу шифруем через DPAPI LocalMachine).
+    # ProtectedData живёт в сборке System.Security, которая НЕ загружена
+    # по умолчанию в Windows PowerShell 5.1 — без Add-Type получаем:
+    # «Не удалось найти тип [System.Security.Cryptography.ProtectedData]».
+    Add-Type -AssemblyName System.Security
     $tokenBytes  = [System.Text.Encoding]::UTF8.GetBytes($Token)
     $sealed      = [System.Security.Cryptography.ProtectedData]::Protect($tokenBytes, $null, 'LocalMachine')
     $tokenSealed = [Convert]::ToBase64String($sealed)
@@ -2100,7 +2104,9 @@ $enrollBody = @{
 } | ConvertTo-Json
 $enrollRes = Invoke-RestMethod -Uri "$ServerUrl/api/v1/certs/agent/enroll" -Method Post -Body $enrollBody -ContentType 'application/json'
 
-# 4. Конфиг — токен сразу шифруем через DPAPI (LocalMachine), как делает обычный install.bat
+# 4. Конфиг — токен сразу шифруем через DPAPI (LocalMachine), как делает обычный install.bat.
+# Add-Type обязателен: в PS 5.1 сборка System.Security НЕ автозагружена.
+Add-Type -AssemblyName System.Security
 $tokenBytes  = [System.Text.Encoding]::UTF8.GetBytes($enrollRes.agent_token)
 $sealed      = [System.Security.Cryptography.ProtectedData]::Protect($tokenBytes, $null, 'LocalMachine')
 $tokenSealed = [Convert]::ToBase64String($sealed)
@@ -2262,6 +2268,9 @@ function Log($msg) {
 }
 
 # ─── DPAPI helpers (LocalMachine scope: расшифровывается только на этой машине) ──
+# В PS 5.1 сборка System.Security НЕ автозагружена — без Add-Type на каждом
+# запуске sync.ps1 падает с «Не удалось найти тип ProtectedData».
+Add-Type -AssemblyName System.Security
 function Protect-Token($plain) {
     $bytes  = [System.Text.Encoding]::UTF8.GetBytes($plain)
     $sealed = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, 'LocalMachine')

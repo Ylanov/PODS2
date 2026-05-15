@@ -2059,6 +2059,49 @@
                     </div>
 
                     <!-- ────────────────────────────────────────────────── -->
+                    <!-- Standalone-активатор Windows/Office (без агента)   -->
+                    <!-- ────────────────────────────────────────────────── -->
+                    <div class="certs-toolbar" style="margin-top:24px;">
+                        <div class="certs-toolbar__title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                            <h2>Активация Windows / Office</h2>
+                        </div>
+                    </div>
+                    <div style="margin:0 20px 16px; padding:12px 14px; background:var(--md-surface-container); border:1px solid var(--md-outline-variant); border-radius:8px;">
+                        <p style="margin:0 0 8px; color:var(--md-on-surface); font-size:0.9rem;">
+                            Standalone-скрипт через MAS (Microsoft Activation Scripts). <b>Не требует
+                            установки агента и не привязан к юзерам PODS2</b> — можно запускать на любом ПК
+                            в сети, где нужна активация Windows и/или Office.
+                        </p>
+                        <p style="margin:0 0 10px; color:var(--md-on-surface-hint); font-size:0.82rem;">
+                            На целевом ПК → PowerShell <b>от имени Администратора</b> → вставь команду ниже
+                            → Enter. Скрипт скачает MAS с GitHub, активирует Windows (HWID) и Office (Ohook),
+                            покажет финальный статус. Если нужен интернет / KSC-исключения — см. README.
+                        </p>
+                        <div style="display:flex; gap:8px; align-items:stretch; flex-wrap:wrap;">
+                            <code id="activator-cmd"
+                                  style="flex:1; min-width:260px; padding:9px 12px; background:var(--md-surface);
+                                         border:1px solid var(--md-outline-variant); border-radius:6px;
+                                         font-family:var(--md-font-mono); font-size:0.85rem; color:var(--md-on-surface);
+                                         user-select:all; overflow-x:auto; white-space:nowrap;">
+                                irm https://example/api/v1/activator/run.ps1 | iex
+                            </code>
+                            <button id="activator-copy-btn" class="btn btn-success btn-sm" type="button"
+                                    title="Скопировать команду активации в буфер обмена">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                                Скопировать
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ────────────────────────────────────────────────── -->
                     <!-- Установочные токены для массовой раскатки агентов  -->
                     <!-- ────────────────────────────────────────────────── -->
                     <div class="certs-toolbar" style="margin-top:24px;">
