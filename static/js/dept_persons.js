@@ -198,6 +198,10 @@ function _renderShell() {
                     <label class="field-label" for="dp-doc">№ Документа</label>
                     <input type="text" id="dp-doc" placeholder="АБ123456">
                 </div>
+                <div class="field" style="flex:1; min-width:130px;">
+                    <label class="field-label" for="dp-passport">№ Загранпаспорта</label>
+                    <input type="text" id="dp-passport" placeholder="75 1234567">
+                </div>
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <div class="field" style="flex:1; min-width:140px;">
@@ -315,6 +319,7 @@ function _bindShellEvents() {
                 set('dp-fullname', person.full_name);
                 set('dp-rank',     person.rank);
                 set('dp-doc',      person.doc_number);
+                set('dp-passport', person.passport_number);
                 set('dp-pos',      person.position_title);
                 set('dp-birth',    person.birth_date);
                 set('dp-phone',    person.phone);
@@ -397,7 +402,10 @@ function _renderTable() {
                     <td style="color:var(--md-on-surface-hint); font-family:var(--md-font-mono); font-size:0.72rem;">${p.id}</td>
                     <td><input id="dp-edit-name-${p.id}"  value="${_esc(p.full_name)}"      class="person-inline-input"></td>
                     <td><input id="dp-edit-rank-${p.id}"  value="${_esc(p.rank||'')}"       class="person-inline-input"></td>
-                    <td><input id="dp-edit-doc-${p.id}"   value="${_esc(p.doc_number||'')}" class="person-inline-input"></td>
+                    <td>
+                        <input id="dp-edit-doc-${p.id}"      value="${_esc(p.doc_number||'')}"     class="person-inline-input" placeholder="документ">
+                        <input id="dp-edit-passport-${p.id}" value="${_esc(p.passport_number||'')}" class="person-inline-input" placeholder="загран" style="margin-top:4px;">
+                    </td>
                     <td><input id="dp-edit-pos-${p.id}"   value="${_esc(p.position_title||'')}" class="person-inline-input"></td>
                     <td><input id="dp-edit-phone-${p.id}" value="${_esc(p.phone||'')}"      class="person-inline-input"></td>
                     <td>
@@ -423,7 +431,10 @@ function _renderTable() {
                 <td style="color:var(--md-on-surface-hint); font-family:var(--md-font-mono); font-size:0.72rem;">${p.id}</td>
                 <td style="font-weight:500;">${_esc(p.full_name)}</td>
                 <td>${_esc(p.rank || '—')}</td>
-                <td>${_esc(p.doc_number || '—')}</td>
+                <td>
+                    ${_esc(p.doc_number || '—')}
+                    ${p.passport_number ? `<div style="font-size:0.72rem; color:var(--md-on-surface-hint);">загран: ${_esc(p.passport_number)}</div>` : ''}
+                </td>
                 <td><span style="font-size:0.8rem; color:var(--md-on-surface-variant);">${_esc(p.position_title || '—')}</span></td>
                 <td style="font-size:0.8rem; white-space:nowrap;">${_esc(p.phone || '—')}</td>
                 <td>${actions}</td>
@@ -448,34 +459,36 @@ function _hideAddForm() {
     if (!f) return;
     f.classList.add('hidden');
     f.style.display = 'none';
-    ['dp-fullname','dp-rank','dp-doc','dp-pos','dp-birth','dp-phone','dp-notes'].forEach(id => {
+    ['dp-fullname','dp-rank','dp-doc','dp-passport','dp-pos','dp-birth','dp-phone','dp-notes'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
 }
 
 async function _saveNewPerson() {
-    const name  = document.getElementById('dp-fullname')?.value.trim();
-    const rank  = document.getElementById('dp-rank')?.value.trim();
-    const doc   = document.getElementById('dp-doc')?.value.trim();
-    const pos   = document.getElementById('dp-pos')?.value.trim();
-    const birth = document.getElementById('dp-birth')?.value;
-    const phone = document.getElementById('dp-phone')?.value.trim();
-    const notes = document.getElementById('dp-notes')?.value.trim();
+    const name     = document.getElementById('dp-fullname')?.value.trim();
+    const rank     = document.getElementById('dp-rank')?.value.trim();
+    const doc      = document.getElementById('dp-doc')?.value.trim();
+    const passport = document.getElementById('dp-passport')?.value.trim();
+    const pos      = document.getElementById('dp-pos')?.value.trim();
+    const birth    = document.getElementById('dp-birth')?.value;
+    const phone    = document.getElementById('dp-phone')?.value.trim();
+    const notes    = document.getElementById('dp-notes')?.value.trim();
 
     if (!name) { window.showSnackbar?.('Введите ФИО', 'error'); return; }
 
     try {
         // department автоматически подставит бэк — текущее управление
         await api.post('/persons', {
-            full_name:      name,
-            rank:           rank  || null,
-            doc_number:     doc   || null,
-            position_title: pos   || null,
-            birth_date:     birth || null,
-            phone:          phone || null,
-            notes:          notes || null,
-            department:     null,   // бэк сам подставит username для department-роли
+            full_name:       name,
+            rank:            rank     || null,
+            doc_number:      doc      || null,
+            passport_number: passport || null,
+            position_title:  pos      || null,
+            birth_date:      birth    || null,
+            phone:           phone    || null,
+            notes:           notes    || null,
+            department:      null,   // бэк сам подставит username для department-роли
         });
         window.showSnackbar?.('Добавлено в базу', 'success');
         _hideAddForm();
@@ -502,11 +515,12 @@ function _cancelEditRow() {
 
 async function _saveEditRow(pid) {
     const payload = {
-        full_name:      document.getElementById(`dp-edit-name-${pid}`)?.value.trim(),
-        rank:           document.getElementById(`dp-edit-rank-${pid}`)?.value.trim() || null,
-        doc_number:     document.getElementById(`dp-edit-doc-${pid}`)?.value.trim()  || null,
-        position_title: document.getElementById(`dp-edit-pos-${pid}`)?.value.trim()  || null,
-        phone:          document.getElementById(`dp-edit-phone-${pid}`)?.value.trim()|| null,
+        full_name:       document.getElementById(`dp-edit-name-${pid}`)?.value.trim(),
+        rank:            document.getElementById(`dp-edit-rank-${pid}`)?.value.trim()     || null,
+        doc_number:      document.getElementById(`dp-edit-doc-${pid}`)?.value.trim()      || null,
+        passport_number: document.getElementById(`dp-edit-passport-${pid}`)?.value.trim() || null,
+        position_title:  document.getElementById(`dp-edit-pos-${pid}`)?.value.trim()      || null,
+        phone:           document.getElementById(`dp-edit-phone-${pid}`)?.value.trim()    || null,
     };
     if (!payload.full_name) { window.showSnackbar?.('ФИО не может быть пустым', 'error'); return; }
 

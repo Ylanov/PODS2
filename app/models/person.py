@@ -22,9 +22,10 @@ class Person(Base):
     id             = Column(Integer, primary_key=True, index=True)
 
     # ── Обязательные ─────────────────────────────────────────────────────────
-    full_name      = Column(String(300), nullable=False, index=True, unique=True)
-    rank           = Column(String(100), nullable=True)   # воинское звание
-    doc_number     = Column(String(100), nullable=True)   # номер документа (уд. личности / паспорт)
+    full_name       = Column(String(300), nullable=False, index=True, unique=True)
+    rank            = Column(String(100), nullable=True)   # воинское звание
+    doc_number      = Column(String(100), nullable=True)   # номер документа (уд. личности / внутр. паспорт)
+    passport_number = Column(String(100), nullable=True)   # номер ЗАГРАНПАСПОРТА (отдельно от doc_number)
 
     # ── Организационные ──────────────────────────────────────────────────────
     department     = Column(String(100), nullable=True)   # username управления-владельца
