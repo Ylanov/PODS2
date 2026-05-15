@@ -117,6 +117,11 @@ async function _doInitSession() {
     if (user.role === 'admin') {
         showView('admin-view');
 
+        // Кнопка «🔍 Глобальная замена» в шапке — только админу.
+        // Сам модуль уже инициализирован в app.js (initGlobalReplace),
+        // здесь только переключаем видимость.
+        import('./global_replace.js').then(m => m.showGlobalReplaceButtonForAdmin('admin')).catch(() => {});
+
         // 1. Динамический импорт: загружаем модули "на лету"
         const admin      = await import('./admin.js');
         const department = await import('./department.js');
@@ -194,6 +199,9 @@ export function logout() {
     // Скрываем колокольчик и dropdown уведомлений
     document.getElementById('notif-header-btn')?.classList.add('hidden');
     document.getElementById('notif-header-dropdown')?.classList.add('hidden');
+
+    // Скрываем кнопку «🔍 Глобальная замена» (только для admin)
+    document.getElementById('global-search-btn')?.classList.add('hidden');
 
     // Останавливаем автообновление дашборда если оно было запущено
     import('./dashboard.js')

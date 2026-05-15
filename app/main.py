@@ -27,6 +27,7 @@ from app.api.v1.routers import duty_window
 from app.api.v1.routers import dashboard
 from app.api.v1.routers import sed
 from app.api.v1.routers import certs
+from app.api.v1.routers import global_search
 from app.api.v1.routers import oper_map
 from app.api.v1.routers import alert_lists as alert_lists_router
 from app.api.v1.routers import tasks
@@ -174,6 +175,10 @@ app.include_router(sed.router,             prefix="/api/v1/sed",     tags=["СЭ
 app.include_router(certs.admin_router,     prefix="/api/v1/certs",   tags=["Ключи и сертификаты (admin)"])
 app.include_router(certs.user_router,      prefix="/api/v1/certs",   tags=["Ключи и сертификаты"])
 app.include_router(certs.agent_router,     prefix="/api/v1/certs",   tags=["Ключи и сертификаты (агент)"])
+
+# Глобальный поиск + массовая замена человека в слотах (admin-only).
+# Префикс /api/v1 — внутри уже /admin/global-search/*.
+app.include_router(global_search.router,   prefix="/api/v1",         tags=["Глобальный поиск (admin)"])
 app.include_router(oper_map.router,        prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного"])
 app.include_router(oper_map.public_router, prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного (публичные прокси)"])
 app.include_router(alert_lists_router.router, prefix="/api/v1/alert-lists",tags=["Списки оповещения"])
