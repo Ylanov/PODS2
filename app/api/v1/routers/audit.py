@@ -206,7 +206,7 @@ def _ae(e: AuditLog) -> AuditLogEntry:
 # Поля слота которые реально интересны пользователю в истории.
 # Внутренние (id, group_id) не показываем.
 _SLOT_AUDIT_FIELDS = (
-    "full_name", "rank", "doc_number", "position_id",
+    "full_name", "rank", "doc_number", "passport_number", "position_id",
     "department", "callsign", "note",
 )
 

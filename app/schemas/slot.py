@@ -4,12 +4,13 @@ from typing import Optional
 
 
 class SlotUpdate(BaseModel):
-    version: int # <-- УБЕДИТЕСЬ, ЧТО ЭТА СТРОКА ЕСТЬ
-    rank: Optional[str] = None
-    full_name: Optional[str] = None
-    doc_number: Optional[str] = None
-    callsign: Optional[str] = None
-    note: Optional[str] = None
+    version: int
+    rank:            Optional[str] = None
+    full_name:       Optional[str] = None
+    doc_number:      Optional[str] = None
+    passport_number: Optional[str] = None
+    callsign:        Optional[str] = None
+    note:            Optional[str] = None
 
 
 class GroupInfo(BaseModel):
@@ -33,11 +34,12 @@ class SlotResponse(BaseModel):
     position_id: Optional[int] = None
     position: Optional[PositionInfo] = None
 
-    rank: Optional[str] = None
-    full_name: Optional[str] = None
-    doc_number: Optional[str] = None
-    callsign: Optional[str] = None
-    note: Optional[str] = None
+    rank:            Optional[str] = None
+    full_name:       Optional[str] = None
+    doc_number:      Optional[str] = None
+    passport_number: Optional[str] = None
+    callsign:        Optional[str] = None
+    note:            Optional[str] = None
 
     group: GroupInfo
 

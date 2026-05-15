@@ -68,7 +68,7 @@ export async function loadDeptPersons(opts = {}) {
     _state.loading = true;
 
     const tbody = document.getElementById('dept-persons-tbody');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:28px; color:var(--md-on-surface-hint);">Загрузка…</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:28px; color:var(--md-on-surface-hint);">Загрузка…</td></tr>`;
 
     try {
         const params = new URLSearchParams();
@@ -98,7 +98,7 @@ export async function loadDeptPersons(opts = {}) {
         _renderPagination();
     } catch (err) {
         console.error('[dept_persons] load:', err);
-        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:28px; color:var(--md-error, #E24B4A);">Ошибка загрузки</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:28px; color:var(--md-error, #E24B4A);">Ошибка загрузки</td></tr>`;
         window.showSnackbar?.('Не удалось загрузить базу людей', 'error');
     } finally {
         _state.loading = false;
@@ -240,6 +240,7 @@ function _renderShell() {
                             Звание <span class="dp-sort-ind" data-for="rank"></span>
                         </th>
                         <th style="min-width:120px;">№ Документа</th>
+                        <th style="min-width:130px;">№ Загранпаспорта</th>
                         <th style="min-width:140px;">Должность</th>
                         <th style="min-width:110px;">Телефон</th>
                         <th style="min-width:100px;">Действия</th>
@@ -388,7 +389,7 @@ function _renderTable() {
         const msg = _state.mode === 'unassigned'
             ? 'Свободных людей (без управления) нет'
             : 'В вашем управлении пока нет сотрудников. Добавьте через кнопку «+ Добавить».';
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:32px; color:var(--md-on-surface-hint); font-size:0.85rem;">${msg}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:var(--md-on-surface-hint); font-size:0.85rem;">${msg}</td></tr>`;
         return;
     }
 
@@ -402,10 +403,8 @@ function _renderTable() {
                     <td style="color:var(--md-on-surface-hint); font-family:var(--md-font-mono); font-size:0.72rem;">${p.id}</td>
                     <td><input id="dp-edit-name-${p.id}"  value="${_esc(p.full_name)}"      class="person-inline-input"></td>
                     <td><input id="dp-edit-rank-${p.id}"  value="${_esc(p.rank||'')}"       class="person-inline-input"></td>
-                    <td>
-                        <input id="dp-edit-doc-${p.id}"      value="${_esc(p.doc_number||'')}"     class="person-inline-input" placeholder="документ">
-                        <input id="dp-edit-passport-${p.id}" value="${_esc(p.passport_number||'')}" class="person-inline-input" placeholder="загран" style="margin-top:4px;">
-                    </td>
+                    <td><input id="dp-edit-doc-${p.id}"      value="${_esc(p.doc_number||'')}"      class="person-inline-input" placeholder="АБ123456"></td>
+                    <td><input id="dp-edit-passport-${p.id}" value="${_esc(p.passport_number||'')}" class="person-inline-input" placeholder="75 1234567"></td>
                     <td><input id="dp-edit-pos-${p.id}"   value="${_esc(p.position_title||'')}" class="person-inline-input"></td>
                     <td><input id="dp-edit-phone-${p.id}" value="${_esc(p.phone||'')}"      class="person-inline-input"></td>
                     <td>
@@ -431,10 +430,8 @@ function _renderTable() {
                 <td style="color:var(--md-on-surface-hint); font-family:var(--md-font-mono); font-size:0.72rem;">${p.id}</td>
                 <td style="font-weight:500;">${_esc(p.full_name)}</td>
                 <td>${_esc(p.rank || '—')}</td>
-                <td>
-                    ${_esc(p.doc_number || '—')}
-                    ${p.passport_number ? `<div style="font-size:0.72rem; color:var(--md-on-surface-hint);">загран: ${_esc(p.passport_number)}</div>` : ''}
-                </td>
+                <td>${_esc(p.doc_number || '—')}</td>
+                <td>${_esc(p.passport_number || '—')}</td>
                 <td><span style="font-size:0.8rem; color:var(--md-on-surface-variant);">${_esc(p.position_title || '—')}</span></td>
                 <td style="font-size:0.8rem; white-space:nowrap;">${_esc(p.phone || '—')}</td>
                 <td>${actions}</td>

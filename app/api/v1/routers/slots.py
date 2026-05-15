@@ -25,7 +25,7 @@ from app.api.v1.routers.persons import upsert_person_from_slot
 # Список строго согласован с app/api/v1/routers/audit.py:_SLOT_AUDIT_FIELDS,
 # потому что endpoint revert применяет только эти же поля.
 SLOT_AUDIT_FIELDS = (
-    "full_name", "rank", "doc_number", "position_id",
+    "full_name", "rank", "doc_number", "passport_number", "position_id",
     "department", "callsign", "note",
 )
 
@@ -211,6 +211,7 @@ async def fill_slot(
             full_name=slot.full_name,
             rank=slot.rank,
             doc_number=slot.doc_number,
+            passport_number=slot.passport_number,
             department=slot.department,
         )
 
