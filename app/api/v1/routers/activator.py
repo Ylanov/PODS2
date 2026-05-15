@@ -31,13 +31,6 @@ from fastapi import APIRouter, Request, Response
 router = APIRouter(tags=["Активация Windows/Office"])
 
 
-# UTF-8 BOM: PS 5.1 без BOM считает .ps1 как ANSI/CP1251.
-# Через `irm | iex` BOM не нужен (текст в памяти, парсится корректно),
-# но если кто-то решит сохранить через -OutFile или из браузера —
-# тогда BOM спасает от мусора кодировок.
-_PS1_UTF8_BOM = b"\xef\xbb\xbf"
-
-
 @router.get(
     "/activator/run.ps1",
     summary="Standalone-скрипт активации Windows + Office (без auth, без агента)",
@@ -50,12 +43,23 @@ def activator_script(request: Request) -> Response:
       • активирует Windows (HWID) и Office (Ohook) подряд,
       • показывает финальный статус slmgr/ospp.
 
+    БЕЗ BOM в начале — намеренно. Скрипт рассчитан на запуск через
+    `irm <url> | iex`, и `Invoke-RestMethod` сам декодирует UTF-8
+    по Content-Type. BOM в строке `irm`-результата для PowerShell
+    превращается в литеральный символ \\uFEFF, после которого `#` ПЕРЕСТАЁТ
+    быть комментарием — парсер падает с MissingArgument.
+
+    Если кто-то всё-таки решит сохранить файл на диск — нужно использовать
+    `Out-File -Encoding UTF8`, который сам добавит BOM при записи.
+    Для install/bootstrap endpoints BOM нужен (там основной use-case —
+    сохранение на диск), для активатора — нет.
+
     Endpoint открыт (внутри корп. сети). Если когда-то понадобится
     ограничить — повесить nginx allow/deny на этот путь, или добавить
     Depends(get_current_user) — но это противоречит цели «без логинов».
     """
     return Response(
-        content    = _PS1_UTF8_BOM + _ACTIVATOR_PS1.encode("utf-8"),
+        content    = _ACTIVATOR_PS1.encode("utf-8"),
         media_type = "text/plain; charset=utf-8",
     )
 
