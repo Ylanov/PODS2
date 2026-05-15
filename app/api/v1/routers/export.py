@@ -160,9 +160,14 @@ def export_event_word(
     DUTY_NAME  = get_setting(db, "duty_name")
 
     # ── Диспетчер по типу пресета ──────────────────────────────────────────
+    # quote() уже импортирован на верху файла. ВАЖНО: НЕ делать здесь
+    # повторный `from urllib.parse import quote` — это превратит `quote`
+    # в локальную переменную для ВСЕЙ функции (правило Python: если имя
+    # присваивается где-то в функции, оно локальное; импорт = присвоение).
+    # Тогда default-ветка ниже (где тоже используется quote) падает с
+    # UnboundLocalError, потому что if не выполнился и присвоения не было.
     kind = _detect_export_kind(event)
     if kind in ("groza", "pyro5", "team333"):
-        from urllib.parse import quote
         if kind == "team333":
             from app.api.v1.routers.team333_export import build_team333_docx
             buf = build_team333_docx(db, event, DUTY_RANK, DUTY_NAME, event.date)
