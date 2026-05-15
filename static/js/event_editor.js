@@ -151,6 +151,25 @@ function _openShellModal() {
                     Применяется при выгрузке .docx для всех списков.
                 </span>
             </div>
+
+            <!-- Подзаголовок .docx (только этот список). Многострочное поле:
+                 «1 эшелона аэромобильной группировки ФГКУ «ЦСООР «Лидер»».
+                 Если пусто — fallback на event.title. -->
+            <div class="evt-edit__duty" id="evt-edit-subtitle-block" style="border-top:1px dashed var(--md-outline-variant);">
+                <span class="evt-edit__duty-label">Шапка для .docx (этот список)</span>
+                <textarea id="evt-edit-docx-subtitle" rows="2"
+                          placeholder="Например: 1 эшелона аэромобильной группировки ФГКУ «ЦСООР «Лидер»  (можно несколько строк — Enter)"
+                          style="flex:1; min-width:280px; padding:6px 8px; resize:vertical;
+                                 border:1px solid var(--md-outline-variant); border-radius:6px;
+                                 font-family:var(--md-font-body); font-size:0.86rem;
+                                 background:var(--md-surface); color:var(--md-on-surface);"></textarea>
+                <button id="evt-edit-subtitle-save" class="btn btn-outlined btn-sm evt-edit__duty-save" type="button">
+                    Сохранить
+                </button>
+                <span class="evt-edit__duty-note">
+                    Пусто = использовать название списка из заголовка.
+                </span>
+            </div>
             <div class="evt-edit__body" id="evt-edit-body">
                 <div class="evt-edit__loading">Загрузка списка…</div>
             </div>
@@ -169,7 +188,34 @@ function _openShellModal() {
     document.getElementById('evt-edit-close')?.addEventListener('click', _closeModal);
     document.getElementById('evt-edit-export')?.addEventListener('click', _exportEvent);
     document.getElementById('evt-edit-duty-save')?.addEventListener('click', _saveDutyOfficer);
+    document.getElementById('evt-edit-subtitle-save')?.addEventListener('click', _saveDocxSubtitle);
     _loadDutyOfficer();
+}
+
+
+// Подзаголовок .docx — заполняется из _state.event.docx_subtitle, сохраняется
+// через PATCH /admin/events/{id}. Чтение происходит после загрузки события
+// в _renderContent.
+async function _saveDocxSubtitle() {
+    const btn = document.getElementById('evt-edit-subtitle-save');
+    const ta  = document.getElementById('evt-edit-docx-subtitle');
+    if (!btn || !ta || !_state.eventId) return;
+    const value = ta.value;   // не trim — оставить пользовательские переносы
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Сохраняем…';
+    try {
+        const updated = await api.patch(`/admin/events/${_state.eventId}`, {
+            docx_subtitle: value,
+        });
+        if (_state.event) _state.event.docx_subtitle = updated.docx_subtitle ?? null;
+        window.showSnackbar?.('Шапка .docx сохранена', 'success');
+    } catch (err) {
+        window.showSnackbar?.(`Не удалось сохранить: ${err.message || err}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+    }
 }
 
 function _closeModal() {
@@ -219,6 +265,10 @@ function _renderContent() {
             ev.status === 'active' ? 'Активен' : ev.status,
         ].filter(Boolean).join(' · ');
     }
+    // Заполняем textarea для подзаголовка .docx (если есть) — пустая
+    // строка означает «вернуться к fallback на title».
+    const docxSubTa = document.getElementById('evt-edit-docx-subtitle');
+    if (docxSubTa) docxSubTa.value = ev.docx_subtitle || '';
 
     const body = document.getElementById('evt-edit-body');
     if (!body) return;
