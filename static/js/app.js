@@ -48,6 +48,10 @@ import './event_editor.js';
 // Глобальный поиск Ctrl+K — слушатель ставится при импорте через initGlobalSearch().
 import { initGlobalSearch } from './global_search.js';
 initGlobalSearch();
+// Глобальная замена человека в слотах (admin only). Кнопка 🔍 в шапке,
+// видимость управляется showGlobalReplaceButtonForAdmin из auth.js.
+import { initGlobalReplace } from './global_replace.js';
+initGlobalReplace();
 // Тема (светлая/тёмная) — модуль сам применяет сохранённую при загрузке;
 // отдельно вешаем кнопку-переключатель когда DOM шапки готов.
 import { initThemeToggleButton } from './theme_toggle.js';
