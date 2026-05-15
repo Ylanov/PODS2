@@ -4,17 +4,25 @@
 
 Открыто/закрыто, ближайшие границы — для виджета на дашборде и баннера на
 странице графиков управлений. Доступно любому аутентифицированному.
+
+Время окна берётся из таблицы settings (ключи duty_window_start /
+duty_window_end), редактируется через стандартный /api/v1/settings админом.
 """
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.duty_window import get_window_status
+from app.db.database import get_db
 from app.models.user import User
 
 router = APIRouter()
 
 
 @router.get("/window-status", summary="Текущий статус окна подачи графиков нарядов")
-def read_window_status(_user: User = Depends(get_current_user)):
-    return get_window_status()
+def read_window_status(
+    _user: User    = Depends(get_current_user),
+    db:    Session = Depends(get_db),
+):
+    return get_window_status(db)

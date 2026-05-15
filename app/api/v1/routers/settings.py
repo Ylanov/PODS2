@@ -19,6 +19,8 @@ ALLOWED_KEYS = {
     "duty_rank", "duty_name", "duty_title", "org_name",
     "print_approve_position", "print_approve_rank", "print_approve_name",
     "print_footer_position",  "print_footer_rank",  "print_footer_name",
+    # Окно подачи: время в формате "HH:MM" по МСК. Редактируется в админке.
+    "duty_window_start", "duty_window_end",
 }
 
 # Значения по умолчанию — используются если ключ ещё не сохранён в БД
@@ -33,6 +35,8 @@ DEFAULTS = {
     "print_footer_position":  "Начальник отдела (связи, автоматизированных систем управления и телекоммуникаций)",
     "print_footer_rank":      "подполковник",
     "print_footer_name":      "С.А. Цауменко",
+    "duty_window_start":      "09:00",
+    "duty_window_end":        "16:00",
 }
 
 
@@ -47,6 +51,9 @@ class SettingUpdate(BaseModel):
     print_footer_position:  Optional[str] = None
     print_footer_rank:      Optional[str] = None
     print_footer_name:      Optional[str] = None
+    # Окно подачи — формат "HH:MM" 24-часовой
+    duty_window_start:      Optional[str] = None
+    duty_window_end:        Optional[str] = None
 
 
 def get_setting(db: Session, key: str) -> str:

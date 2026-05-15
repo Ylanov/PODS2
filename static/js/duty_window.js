@@ -58,6 +58,12 @@ export function mountDutyWindow(container, { variant = 'card' } = {}) {
         const cdLabel    = isOpen ? 'до закрытия' : 'до открытия';
         const win        = `${status.window.start}–${status.window.end} (МСК)`;
 
+        const isAdmin   = window.currentUser?.role === 'admin';
+        const editBtn = isAdmin
+            ? `<button class="duty-window__edit" data-edit-window
+                      title="Изменить время окна подачи">✎</button>`
+            : '';
+
         if (variant === 'banner') {
             container.innerHTML = `
                 <div class="duty-window duty-window--banner ${stateMod}">
@@ -66,6 +72,7 @@ export function mountDutyWindow(container, { variant = 'card' } = {}) {
                     <span class="duty-window__sep">·</span>
                     <span class="duty-window__win">Окно подачи: ${win}</span>
                     <span class="duty-window__cd">${cdLabel} ${cd}</span>
+                    ${editBtn}
                 </div>`;
         } else {
             container.innerHTML = `
@@ -74,6 +81,7 @@ export function mountDutyWindow(container, { variant = 'card' } = {}) {
                         <span class="duty-window__dot"></span>
                         <span class="duty-window__title">Окно подачи</span>
                         <span class="duty-window__state">${stateLabel}</span>
+                        ${editBtn}
                     </div>
                     <div class="duty-window__win">${win}</div>
                     <div class="duty-window__cd">
@@ -83,9 +91,47 @@ export function mountDutyWindow(container, { variant = 'card' } = {}) {
                 </div>`;
         }
 
+        // Привязываем edit-кнопку (если есть)
+        container.querySelector('[data-edit-window]')?.addEventListener('click', () => _editWindow(refresh));
+
         // Если граница пересечена локально — освежим состояние с сервера,
         // не дожидаясь следующего REFRESH_MS-тика.
         if (isOpen !== status.is_open) refresh();
+    }
+
+
+    async function _editWindow(onSaved) {
+        const cur = status?.window;
+        const startInput = prompt(
+            'Время открытия окна подачи (МСК), формат HH:MM:',
+            cur?.start || '09:00',
+        );
+        if (startInput === null) return;
+        const endInput = prompt(
+            'Время закрытия окна подачи (МСК), формат HH:MM:',
+            cur?.end || '16:00',
+        );
+        if (endInput === null) return;
+
+        const rx = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+        if (!rx.test(startInput) || !rx.test(endInput)) {
+            window.showError?.('Неверный формат времени. Пример: 09:00');
+            return;
+        }
+        if (startInput >= endInput) {
+            window.showError?.('Время закрытия должно быть позже времени открытия');
+            return;
+        }
+        try {
+            await api.patch('/settings', {
+                duty_window_start: startInput,
+                duty_window_end:   endInput,
+            });
+            window.showSnackbar?.(`Окно подачи: ${startInput}–${endInput}`, 'success');
+            onSaved?.();
+        } catch (err) {
+            window.showError?.('Не удалось сохранить: ' + err.message);
+        }
     }
 
     function _countdown(ms) {

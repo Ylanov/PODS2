@@ -36,7 +36,7 @@ from app.core.duty_approvals import (
     unapprove_month as _unapprove_month,
     get_approval    as _get_approval,
 )
-from app.core.duty_window import is_window_open, WINDOW_START, WINDOW_END
+from app.core.duty_window import is_window_open, _read_window_bounds
 
 # Весь роутер графиков наряда управлений требует permission "duty".
 # Admin пропускается автоматически (см. require_permission).
@@ -53,22 +53,24 @@ def get_current_department_user(current_user: User = Depends(get_current_user)) 
 
 
 def get_current_department_user_in_window(
-    user: User = Depends(get_current_department_user),
+    user: User    = Depends(get_current_department_user),
+    db:   Session = Depends(get_db),
 ) -> User:
     """
     Как get_current_department_user, но дополнительно проверяет окно подачи
-    09:00–16:00 МСК. Админ — без ограничений (звонки после 16:00 «замените ФИО»).
+    (границы берутся из таблицы settings, дефолт 09:00–16:00 МСК).
+    Админ — без ограничений (звонки после 16:00 «замените ФИО»).
     """
     if user.role == "admin":
         return user
-    if is_window_open():
+    if is_window_open(db):
         return user
+    start, end = _read_window_bounds(db)
     raise HTTPException(
         status_code=403,
         detail=(
             f"Окно подачи закрыто. Редактирование доступно с "
-            f"{WINDOW_START.strftime('%H:%M')} до "
-            f"{WINDOW_END.strftime('%H:%M')} (МСК)."
+            f"{start.strftime('%H:%M')} до {end.strftime('%H:%M')} (МСК)."
         ),
     )
 
