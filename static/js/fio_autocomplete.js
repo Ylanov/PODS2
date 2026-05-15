@@ -73,13 +73,153 @@ function _renderItems(box, items) {
     box.classList.remove('hidden');
 }
 
-function _renderEmpty(box, hint) {
+function _renderEmpty(box, hint, opts) {
+    // Если включён inline-create (allowCreate) — добавляем зелёную кнопку
+    // «+ Добавить в базу». Юзер видит её ровно тогда когда совпадений нет,
+    // и одним кликом открывает мини-модалку. Создалось → автоматически
+    // выбираем (как будто было предложение).
+    const allowCreate = opts && opts.allowCreate;
+    const createBtn   = allowCreate
+        ? `<button type="button" class="fio-create-btn"
+                   style="margin:6px 12px 8px; padding:8px 12px; background:var(--md-primary);
+                          color:var(--md-on-primary); border:none; border-radius:6px;
+                          cursor:pointer; font-size:0.85rem; width:calc(100% - 24px);">
+               + Добавить в базу «${_esc(opts.currentQuery || '')}»
+           </button>`
+        : '';
     box.innerHTML = `
         <div class="fio-suggest-extra" style="padding:8px 12px; color:var(--md-on-surface-hint);">
             ${_esc(hint)}
         </div>
+        ${createBtn}
     `;
     box.classList.remove('hidden');
+}
+
+
+/**
+ * Открывает мини-модалку «Добавить нового человека в базу».
+ * Поля: ФИО (предзаполнено), Звание, № документа, № загранпаспорта,
+ * Кем выдан загран, Должность, Телефон.
+ *
+ * При успехе вызывает onCreated(person) — потребитель решает что с этим
+ * делать (обычно: выбрать как будто из подсказок).
+ */
+function _openCreatePersonModal(prefilledName, onCreated) {
+    if (document.getElementById('fio-create-overlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'fio-create-overlay';
+    overlay.style.cssText = `
+        position:fixed; inset:0; background:rgba(0,0,0,0.45);
+        display:flex; align-items:flex-start; justify-content:center;
+        z-index:9999; padding:6vh 16px 16px; overflow-y:auto;
+    `;
+    overlay.innerHTML = `
+        <div style="width:100%; max-width:560px; background:var(--md-surface);
+                    border-radius:10px; box-shadow:0 20px 50px rgba(0,0,0,0.25);
+                    overflow:hidden;">
+            <div style="padding:14px 18px; border-bottom:1px solid var(--md-outline-variant);
+                        display:flex; justify-content:space-between; align-items:center;
+                        background:var(--md-surface-container);">
+                <div style="font-weight:600; color:var(--md-on-surface);">
+                    Новый человек в базу
+                </div>
+                <button id="fio-create-close" type="button" aria-label="Закрыть"
+                        style="background:transparent; border:none; cursor:pointer;
+                               font-size:1.1rem; color:var(--md-on-surface-hint);
+                               width:28px; height:28px; border-radius:50%;">✕</button>
+            </div>
+            <div style="padding:14px 18px; display:flex; flex-direction:column; gap:10px;">
+                <div style="font-size:0.82rem; color:var(--md-on-surface-hint);">
+                    Этого человека нет в базе. Заполни данные — сохранится в общую
+                    базу людей и подставится в текущую форму.
+                </div>
+                ${_createField('fc-name',     'ФИО',                prefilledName || '', 'Иванов Иван Иванович', true)}
+                ${_createField('fc-rank',     'Звание',             '', 'подполковник',                          false)}
+                ${_createField('fc-doc',      '№ документа',        '', 'АБ 123456',                             false)}
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1;">
+                        ${_createField('fc-passport',    '№ загранпаспорта', '', '75 1234567',     false)}
+                    </div>
+                    <div style="flex:2;">
+                        ${_createField('fc-passport-by', 'Кем выдан загран', '', 'МВД 77001',      false)}
+                    </div>
+                </div>
+                <div style="font-size:0.7rem; color:var(--md-on-surface-hint); margin-top:-4px;">
+                    Если загранника нет — оставь оба поля пустыми.
+                </div>
+                ${_createField('fc-pos',      'Должность',          '', 'Начальник отдела',                      false)}
+                ${_createField('fc-phone',    'Телефон',            '', '+7 999 1234567',                        false)}
+            </div>
+            <div style="padding:12px 18px; border-top:1px solid var(--md-outline-variant);
+                        display:flex; justify-content:flex-end; gap:10px;
+                        background:var(--md-surface-container);">
+                <button id="fio-create-cancel" type="button"
+                        style="padding:8px 16px; background:var(--md-surface);
+                               border:1px solid var(--md-outline-variant); border-radius:6px;
+                               cursor:pointer; color:var(--md-on-surface);">Отмена</button>
+                <button id="fio-create-save" type="button"
+                        style="padding:8px 16px; background:var(--md-primary);
+                               color:var(--md-on-primary); border:none; border-radius:6px;
+                               cursor:pointer; font-weight:500;">Сохранить и подставить</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#fio-create-close').addEventListener('click', close);
+    overlay.querySelector('#fio-create-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    setTimeout(() => document.getElementById('fc-name')?.focus(), 50);
+
+    overlay.querySelector('#fio-create-save').addEventListener('click', async () => {
+        const val = (id) => document.getElementById(id)?.value?.trim() || '';
+        const name = val('fc-name');
+        if (name.length < 2) {
+            window.showSnackbar?.('ФИО обязательно (минимум 2 символа)', 'error');
+            return;
+        }
+        const payload = {
+            full_name:          name,
+            rank:               val('fc-rank')        || null,
+            doc_number:         val('fc-doc')         || null,
+            passport_number:    val('fc-passport')    || null,
+            passport_issued_by: val('fc-passport-by') || null,
+            position_title:     val('fc-pos')         || null,
+            phone:              val('fc-phone')      || null,
+        };
+        try {
+            const created = await api.post('/persons', payload);
+            window.showSnackbar?.(`Добавлен в базу: ${created.full_name}`, 'success');
+            close();
+            if (typeof onCreated === 'function') onCreated(created);
+        } catch (err) {
+            const msg = err?.message || String(err);
+            if (msg.includes('403') || msg.toLowerCase().includes('доступ')) {
+                window.showSnackbar?.('Нет прав на добавление в базу — обратитесь к админу.', 'error');
+            } else {
+                window.showSnackbar?.(`Не удалось добавить: ${msg}`, 'error');
+            }
+        }
+    });
+}
+
+
+function _createField(id, label, value, placeholder, required) {
+    return `
+        <div style="display:flex; flex-direction:column; gap:3px;">
+            <label for="${id}" style="font-size:0.78rem; color:var(--md-on-surface-hint);">
+                ${_esc(label)}${required ? ' <span style="color:var(--md-error,#d33);">*</span>' : ''}
+            </label>
+            <input type="text" id="${id}" value="${_esc(value)}" placeholder="${_esc(placeholder)}"
+                   style="padding:8px 10px; border:1px solid var(--md-outline-variant);
+                          border-radius:6px; background:var(--md-surface); color:var(--md-on-surface);
+                          font-size:0.9rem; outline:none;">
+        </div>
+    `;
 }
 
 export function attach(input, options) {
@@ -98,6 +238,13 @@ export function attach(input, options) {
         // закрывается, инпут очищается, фокус остаётся. Для multi-add:
         // выбрал → выбрал → выбрал, без переоткрытия формы.
         keepOpenOnSelect: false,
+        // allowCreate:true — в выдаче «не найдено» показывается кнопка
+        // «+ Добавить в базу», открывающая мини-модалку POST /persons.
+        // По умолчанию true — везде где FIO-автокомплит используется,
+        // юзеру удобно сразу создать персону если её ещё нет.
+        // Можно отключить точечно (например, в модалке global_replace
+        // где смысл только «выбрать существующего»).
+        allowCreate:      true,
     }, options || {});
 
     const container = opts.container || input.parentElement;
@@ -166,8 +313,16 @@ export function attach(input, options) {
             if (mySeq !== reqSeq) return; // устарел
             items = Array.isArray(data) ? data : [];
             if (items.length === 0) {
-                if (opts.emptyHint) _renderEmpty(box, opts.emptyHint);
-                else close();
+                // Эмпти-стейт. Если allowCreate — показываем кнопку
+                // «+ Добавить в базу», иначе либо подсказку, либо закрываем.
+                if (opts.allowCreate || opts.emptyHint) {
+                    _renderEmpty(box, opts.emptyHint || 'Не найдено в базе', {
+                        allowCreate:  opts.allowCreate,
+                        currentQuery: q,
+                    });
+                } else {
+                    close();
+                }
                 return;
             }
             _renderItems(box, items);
@@ -225,6 +380,26 @@ export function attach(input, options) {
     }
 
     function onBoxClick(e) {
+        // 1. Клик по кнопке «+ Добавить в базу» — открываем модалку.
+        const createBtn = e.target.closest('.fio-create-btn');
+        if (createBtn) {
+            e.preventDefault();
+            const prefilled = input.value.trim();
+            _openCreatePersonModal(prefilled, (created) => {
+                // После создания эмулируем выбор созданной персоны как
+                // обычный suggestion — потребитель получит свой onSelect
+                // и подставит все поля в форму.
+                close();
+                input.value = created.full_name;
+                try {
+                    opts.onSelect(created);
+                } catch (err) {
+                    console.error('[fio_autocomplete] onSelect threw on inline-create:', err);
+                }
+            });
+            return;
+        }
+        // 2. Обычный клик по suggestion'у.
         const it = e.target.closest('.' + CLS_ITEM);
         if (!it) return;
         const idx = parseInt(it.dataset.idx, 10);

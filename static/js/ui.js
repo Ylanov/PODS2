@@ -647,7 +647,11 @@ function renderPersonsTable(persons) {
                     <td><input id="edit-name-${p.id}"  value="${esc(p.full_name)}" class="person-inline-input"></td>
                     <td><input id="edit-rank-${p.id}"  value="${esc(p.rank||'')}" class="person-inline-input"></td>
                     <td><input id="edit-doc-${p.id}"      value="${esc(p.doc_number||'')}"      class="person-inline-input"></td>
-                    <td><input id="edit-passport-${p.id}" value="${esc(p.passport_number||'')}" class="person-inline-input"></td>
+                    <td>
+                        <input id="edit-passport-${p.id}"    value="${esc(p.passport_number||'')}"    class="person-inline-input" placeholder="№ загран.">
+                        <input id="edit-passport-by-${p.id}" value="${esc(p.passport_issued_by||'')}" class="person-inline-input" placeholder="Кем выдан"
+                               style="margin-top:3px; font-size:0.78rem;">
+                    </td>
                     ${deptEditCell}
                     <td><input id="edit-pos-${p.id}"   value="${esc(p.position_title||'')}" class="person-inline-input"></td>
                     <td><input id="edit-birth-${p.id}" value="${esc(p.birth_date||'')}" type="date" class="person-inline-input" style="padding:0 4px !important;"></td>
@@ -716,7 +720,12 @@ function renderPersonsTable(persons) {
                 <td class="person-cell-name">${nameCell}</td>
                 <td class="person-cell-rank">${esc(p.rank || '—')}</td>
                 <td class="person-cell-doc">${esc(p.doc_number || '—')}</td>
-                <td class="person-cell-passport">${esc(p.passport_number || '—')}</td>
+                <td class="person-cell-passport">
+                    ${esc(p.passport_number || '—')}
+                    ${p.passport_issued_by
+                        ? `<div style="font-size:0.72rem; color:var(--md-on-surface-hint); margin-top:1px;">${esc(p.passport_issued_by)}</div>`
+                        : ''}
+                </td>
                 ${deptBadge}
                 <td><span style="font-size:0.8rem;color:var(--md-on-surface-variant);">${esc(p.position_title || '—')}</span></td>
                 <td style="font-size:0.8rem;white-space:nowrap;">${formatDate(p.birth_date)}</td>
@@ -744,28 +753,30 @@ function cancelEditRow() {
 }
 
 async function saveEditRow(personId) {
-    const name     = document.getElementById(`edit-name-${personId}`)?.value?.trim();
-    const rank     = document.getElementById(`edit-rank-${personId}`)?.value?.trim();
-    const doc      = document.getElementById(`edit-doc-${personId}`)?.value?.trim();
-    const passport = document.getElementById(`edit-passport-${personId}`)?.value?.trim();
-    const pos      = document.getElementById(`edit-pos-${personId}`)?.value?.trim();
-    const birth    = document.getElementById(`edit-birth-${personId}`)?.value?.trim();
-    const phone    = document.getElementById(`edit-phone-${personId}`)?.value?.trim();
-    const notes    = document.getElementById(`edit-notes-${personId}`)?.value?.trim();
-    const dept     = document.getElementById(`edit-dept-${personId}`)?.value ?? undefined;
+    const name       = document.getElementById(`edit-name-${personId}`)?.value?.trim();
+    const rank       = document.getElementById(`edit-rank-${personId}`)?.value?.trim();
+    const doc        = document.getElementById(`edit-doc-${personId}`)?.value?.trim();
+    const passport   = document.getElementById(`edit-passport-${personId}`)?.value?.trim();
+    const passportBy = document.getElementById(`edit-passport-by-${personId}`)?.value?.trim();
+    const pos        = document.getElementById(`edit-pos-${personId}`)?.value?.trim();
+    const birth      = document.getElementById(`edit-birth-${personId}`)?.value?.trim();
+    const phone      = document.getElementById(`edit-phone-${personId}`)?.value?.trim();
+    const notes      = document.getElementById(`edit-notes-${personId}`)?.value?.trim();
+    const dept       = document.getElementById(`edit-dept-${personId}`)?.value ?? undefined;
 
     if (!name) { window.showSnackbar?.('ФИО не может быть пустым', 'error'); return; }
 
     try {
         const payload = {
-            full_name:       name,
-            rank:            rank     || null,
-            doc_number:      doc      || null,
-            passport_number: passport || null,
-            position_title:  pos      || null,
-            birth_date:      birth    || null,
-            phone:           phone    || null,
-            notes:           notes    || null
+            full_name:          name,
+            rank:               rank       || null,
+            doc_number:         doc        || null,
+            passport_number:    passport   || null,
+            passport_issued_by: passportBy || null,
+            position_title:     pos        || null,
+            birth_date:         birth      || null,
+            phone:              phone      || null,
+            notes:              notes      || null
         };
         if (dept !== undefined) payload.department = dept || null;
 

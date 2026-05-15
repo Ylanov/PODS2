@@ -22,10 +22,14 @@ class Person(Base):
     id             = Column(Integer, primary_key=True, index=True)
 
     # ── Обязательные ─────────────────────────────────────────────────────────
-    full_name       = Column(String(300), nullable=False, index=True, unique=True)
-    rank            = Column(String(100), nullable=True)   # воинское звание
-    doc_number      = Column(String(100), nullable=True)   # номер документа (уд. личности / внутр. паспорт)
-    passport_number = Column(String(100), nullable=True)   # номер ЗАГРАНПАСПОРТА (отдельно от doc_number)
+    full_name          = Column(String(300), nullable=False, index=True, unique=True)
+    rank               = Column(String(100), nullable=True)   # воинское звание
+    doc_number         = Column(String(100), nullable=True)   # номер документа (уд. личности / внутр. паспорт)
+    # Загранпаспорт: номер + кем выдан (свободная строка, как пишут в самом
+    # паспорте — «МВД 77001», «ФМС 5005» и т.п.). Оба поля nullable —
+    # у большинства не заполнены, пустота допустима.
+    passport_number    = Column(String(100), nullable=True)
+    passport_issued_by = Column(String(300), nullable=True)
 
     # ── Организационные ──────────────────────────────────────────────────────
     department     = Column(String(100), nullable=True)   # username управления-владельца
