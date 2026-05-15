@@ -135,6 +135,9 @@ function renderGroupTable(groupName) {
             </td>
             <td><input id="doc-${slot.id}"  value="${esc(slot.doc_number)}" placeholder="Номер документа"></td>
             <td>${esc(slot.callsign || '-')}</td>
+            <td style="font-size:0.85rem; color:var(--md-on-surface-hint); max-width:240px; white-space:pre-wrap; word-break:break-word;">
+                ${slot.note ? esc(slot.note) : '<span style="opacity:0.5;">-</span>'}
+            </td>
             <td>
                 <div style="display:flex; gap:6px; align-items:center;">
                     <button class="btn btn-success btn-sm" data-slot-id="${slot.id}">
