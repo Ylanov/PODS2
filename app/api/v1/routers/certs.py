@@ -95,10 +95,14 @@ class CertParseOut(BaseModel):
 
 
 class CryptoKeyOut(BaseModel):
-    """Запись из crypto_keys для UI (без бинарей)."""
+    """Запись из crypto_keys для UI (без бинарей).
+
+    user_ids/usernames — список выданных пользователей (M:N).
+    Пустой список = «свободный» ключ, ещё никому не выдан.
+    """
     id:               int
-    owner_user_id:    Optional[int]
-    owner_username:   Optional[str]
+    user_ids:         List[int]              = Field(default_factory=list)
+    usernames:        List[str]              = Field(default_factory=list)
     container_name:   str
     thumbprint:       str
     subject_cn:       Optional[str]
@@ -120,8 +124,12 @@ class CryptoKeyOut(BaseModel):
 
 
 class CryptoKeyPatchIn(BaseModel):
-    """Что разрешено менять админу через PATCH."""
-    owner_user_id: Optional[int] = None
+    """Что разрешено менять админу через PATCH.
+
+    user_ids — если задан, полностью заменяет список юзеров ключа.
+    Передать [] чтобы «отвязать всех» (сделать свободным).
+    """
+    user_ids:      Optional[List[int]] = None
     purpose:       Optional[str] = None
     note:          Optional[str] = None
     status:        Optional[str] = None   # active | revoked
@@ -301,11 +309,13 @@ def _now() -> datetime:
 
 
 def _to_out(key: CryptoKey) -> CryptoKeyOut:
-    """SQLAlchemy → Pydantic с подгрузкой username'ов из relationships."""
+    """SQLAlchemy → Pydantic. Подтягивает users через relationship lazy='selectin'."""
+    # key.users — selectin loaded, без N+1
+    users_sorted = sorted(key.users, key=lambda u: u.username.lower())
     return CryptoKeyOut(
         id                   = key.id,
-        owner_user_id        = key.owner_user_id,
-        owner_username       = key.owner.username if key.owner else None,
+        user_ids             = [u.id for u in users_sorted],
+        usernames            = [u.username for u in users_sorted],
         container_name       = key.container_name,
         thumbprint           = key.thumbprint,
         subject_cn           = key.subject_cn,
@@ -627,10 +637,17 @@ async def parse_cer_endpoint(
         .first()
     )
 
+    # existing_owner — для UI «уже загружен у Иванова». Берём первого
+    # получателя если есть (теперь у ключа может быть несколько юзеров).
+    existing_owner = None
+    if existing and existing.users:
+        names = sorted(u.username for u in existing.users)
+        existing_owner = ", ".join(names[:3]) + (" …" if len(names) > 3 else "")
+
     return CertParseOut(
         **parsed.to_dict(),
         already_exists = existing is not None,
-        existing_owner = existing.owner.username if (existing and existing.owner) else None,
+        existing_owner = existing_owner,
     )
 
 
@@ -646,7 +663,10 @@ async def upload_key(
     cert:           UploadFile       = File(..., description=".cer-файл"),
     container:      List[UploadFile] = File(..., description="Файлы папки xxx.000 (header.key и др.)"),
     container_name: str              = Form(..., description="Имя контейнера, напр. 'buh_2026'"),
-    owner_user_id:  Optional[int]    = Form(None, description="ID пользователя-владельца (None = свободный)"),
+    # Many-to-many: список юзеров, которым выдать ключ. Передаётся как
+    # multipart form-field user_ids повторно (user_ids=1&user_ids=2&user_ids=3).
+    # Пустой список или отсутствие = «свободный ключ» (никому не выдан).
+    user_ids:       List[int]        = Form(default_factory=list, description="ID юзеров (можно несколько)"),
     purpose:        Optional[str]    = Form(None),
     note:           Optional[str]    = Form(None),
     db:             Session          = Depends(get_db),
@@ -660,7 +680,8 @@ async def upload_key(
       • container       — несколько файлов: header.key, masks.key, ...
                           (имена файлов должны быть из whitelist)
       • container_name  — желаемое имя контейнера (без .000)
-      • owner_user_id   — кому назначить (опционально)
+      • user_ids        — список юзеров кому выдать ключ (можно несколько,
+                          или пусто = свободный)
       • purpose, note   — справочные поля
     """
     # 1. Имя контейнера — нормализуем и валидируем (защита от path traversal).
@@ -714,11 +735,23 @@ async def upload_key(
             detail=f"В контейнере не хватает обязательных файлов: {sorted(missing)}.",
         )
 
-    # 4. Проверяем что owner_user_id, если задан, существует и активен.
-    if owner_user_id is not None:
-        owner = db.query(User).filter(User.id == owner_user_id, User.is_active == True).first()  # noqa: E712
-        if not owner:
-            raise HTTPException(status_code=404, detail=f"Пользователь {owner_user_id} не найден или деактивирован.")
+    # 4. Проверяем что все user_ids — существующие активные юзеры. Дубли
+    # игнорируем (set), пустой список = свободный ключ.
+    unique_ids = list(dict.fromkeys(user_ids))   # preserve order, dedupe
+    target_users: List[User] = []
+    if unique_ids:
+        target_users = (
+            db.query(User)
+              .filter(User.id.in_(unique_ids), User.is_active == True)  # noqa: E712
+              .all()
+        )
+        found_ids = {u.id for u in target_users}
+        missing = [uid for uid in unique_ids if uid not in found_ids]
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Пользователи не найдены или деактивированы: {missing}",
+            )
 
     # 5. Складываем в Vault и пишем в БД одной транзакцией.
     try:
@@ -733,7 +766,6 @@ async def upload_key(
         raise HTTPException(status_code=503, detail=f"Хранилище недоступно: {exc}")
 
     key = CryptoKey(
-        owner_user_id  = owner_user_id,
         container_name = container_name,
         thumbprint     = parsed.thumbprint,
         subject_cn     = parsed.subject_cn,
@@ -750,9 +782,15 @@ async def upload_key(
         note           = note,
         uploaded_by_id = current_user.id,
     )
+    # Привязываем юзеров через relationship — SQLAlchemy сам вставит строки
+    # в crypto_key_user_assignments. assigned_at/assigned_by_id заполнятся
+    # дефолтами (NOW() и NULL — поля справочные, не критичные).
+    if target_users:
+        key.users = target_users
     db.add(key)
-    # Сигналим всем агентам владельца, что нужно подтянуть новый ключ.
-    _bump_force_sync(db, owner_user_id)
+    # Сигналим агентам всех получателей, что нужно подтянуть новый ключ.
+    for u in target_users:
+        _bump_force_sync(db, u.id)
     try:
         db.commit()
     except Exception:
@@ -782,7 +820,8 @@ def admin_list_all(
     if status_filter:
         q = q.filter(CryptoKey.status == status_filter)
     if owner_id is not None:
-        q = q.filter(CryptoKey.owner_user_id == owner_id)
+        # Фильтр по «выдан этому юзеру» — JOIN через association table.
+        q = q.filter(CryptoKey.users.any(User.id == owner_id))
     q = q.order_by(CryptoKey.uploaded_at.desc())
     return [_to_out(k) for k in q.all()]
 
@@ -1118,8 +1157,8 @@ def admin_assign_agent_user(
 ):
     """
     Когда агент зарегистрировался через enroll, но Windows-username не
-    совпал ни с одним PODS2-логином, owner_user_id остаётся NULL. Админ
-    видит такого «бесхозного» агента в админке и через эту кнопку
+    совпал ни с одним PODS2-логином, AgentToken.user_id остаётся NULL.
+    Админ видит такого «бесхозного» агента в админке и через эту кнопку
     привязывает к нужному юзеру (после чего агент подтянет его ключи).
     """
     t = db.query(AgentToken).filter(AgentToken.id == token_id).first()
@@ -1285,19 +1324,33 @@ def admin_patch(
     if not key:
         raise HTTPException(status_code=404, detail="Ключ не найден.")
 
-    # Запоминаем кто был владельцем до изменений — чтобы дёрнуть его агента
-    # тоже, даже если меняем owner на другого юзера (старый должен удалить ключ).
-    prev_owner_id = key.owner_user_id
+    # Запоминаем кто был получателем ДО изменений — чтобы дёрнуть всех
+    # затронутых (и старых, чтобы они удалили ключ у себя если их убрали;
+    # и новых, чтобы подтянули). key.users — selectin-loaded.
+    prev_user_ids = {u.id for u in key.users}
 
-    if payload.owner_user_id is not None:
-        # owner_user_id=0 → разрешено как «снять владельца». Иначе проверяем.
-        if payload.owner_user_id == 0:
-            key.owner_user_id = None
+    new_user_ids: Optional[set[int]] = None
+    if payload.user_ids is not None:
+        # Полная замена списка. [] = «отвязать всех» (свободный ключ).
+        unique = list(dict.fromkeys(payload.user_ids))
+        if unique:
+            users = (
+                db.query(User)
+                  .filter(User.id.in_(unique), User.is_active == True)  # noqa: E712
+                  .all()
+            )
+            found = {u.id for u in users}
+            missing = [uid for uid in unique if uid not in found]
+            if missing:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Пользователи не найдены или деактивированы: {missing}",
+                )
+            key.users = users
+            new_user_ids = found
         else:
-            owner = db.query(User).filter(User.id == payload.owner_user_id).first()
-            if not owner:
-                raise HTTPException(status_code=404, detail="Пользователь не найден.")
-            key.owner_user_id = owner.id
+            key.users = []
+            new_user_ids = set()
 
     if payload.purpose is not None:
         key.purpose = payload.purpose
@@ -1308,10 +1361,13 @@ def admin_patch(
             raise HTTPException(status_code=400, detail="Недопустимый статус.")
         key.status = payload.status
 
-    # Сигналим обоим — и старому, и новому владельцу (если меняли).
-    _bump_force_sync(db, prev_owner_id)
-    if key.owner_user_id != prev_owner_id:
-        _bump_force_sync(db, key.owner_user_id)
+    # Сигналим всем затронутым: symmetric difference (кого добавили + кого
+    # убрали). Для убранных — sync почистит у них ключ из реестра. Для
+    # добавленных — наоборот, импортирует.
+    if new_user_ids is not None:
+        affected = prev_user_ids ^ new_user_ids
+        for uid in affected:
+            _bump_force_sync(db, uid)
 
     db.commit()
     db.refresh(key)
@@ -1334,10 +1390,13 @@ def admin_delete(key_id: int, db: Session = Depends(get_db)):
     except Exception as exc:
         logger.exception("Vault delete failed for key_id=%s", key_id)
         raise HTTPException(status_code=503, detail=f"Не удалось удалить из хранилища: {exc}")
-    owner_id = key.owner_user_id
+    # Запоминаем всех получателей ДО удаления — после db.delete relationship
+    # станет пуст.
+    affected_user_ids = [u.id for u in key.users]
     db.delete(key)
-    # Сигналим агенту бывшего владельца — пусть удалит у себя из реестра.
-    _bump_force_sync(db, owner_id)
+    # Сигналим агентам всех бывших получателей — пусть удалят у себя.
+    for uid in affected_user_ids:
+        _bump_force_sync(db, uid)
     db.commit()
     return Response(status_code=204)
 
@@ -1361,9 +1420,11 @@ def list_my_keys(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(get_current_user),
 ):
+    # JOIN через crypto_key_user_assignments (selectin загружает users
+    # отдельным SELECT, поэтому фильтруем по relationship.any).
     rows = (
         db.query(CryptoKey)
-        .filter(CryptoKey.owner_user_id == current_user.id)
+        .filter(CryptoKey.users.any(User.id == current_user.id))
         .order_by(CryptoKey.valid_to.asc())
         .all()
     )
@@ -1600,9 +1661,9 @@ def agent_enroll(
       3. Создаёт новый AgentToken (raw), с привязкой к hostname+mac.
       4. Возвращает raw_token и факт «matched ли юзер».
 
-    Если юзер не сматчился — токен создаётся БЕЗ owner_user_id; админ
-    видит «бесхозного» агента в админке и привязывает вручную через
-    кнопку assign-user.
+    Если юзер не сматчился — токен создаётся БЕЗ user_id (AgentToken.user_id
+    остаётся NULL); админ видит «бесхозного» агента в админке и привязывает
+    вручную через кнопку assign-user.
     """
     enr_hash = hashlib.sha256(payload.enrollment_token.encode("utf-8")).hexdigest()
     enr = (
@@ -1746,7 +1807,7 @@ def agent_sync(
     rows = (
         db.query(CryptoKey)
         .filter(
-            CryptoKey.owner_user_id == user.id,
+            CryptoKey.users.any(User.id == user.id),
             CryptoKey.status == "active",
         )
         .all()
@@ -1783,7 +1844,7 @@ def agent_download_container(
         db.query(CryptoKey)
         .filter(
             CryptoKey.id == key_id,
-            CryptoKey.owner_user_id == user.id,
+            CryptoKey.users.any(User.id == user.id),
             CryptoKey.status == "active",
         )
         .first()
@@ -1830,7 +1891,7 @@ def agent_download_cert(
         db.query(CryptoKey)
         .filter(
             CryptoKey.id == key_id,
-            CryptoKey.owner_user_id == user.id,
+            CryptoKey.users.any(User.id == user.id),
             CryptoKey.status == "active",
         )
         .first()
@@ -1877,7 +1938,7 @@ def agent_report_usage(
     # Pre-load all this user's keys for fast container_name lookup.
     keys = (
         db.query(CryptoKey)
-        .filter(CryptoKey.owner_user_id == user.id)
+        .filter(CryptoKey.users.any(User.id == user.id))
         .all()
     )
     by_name = {k.container_name: k.id for k in keys}

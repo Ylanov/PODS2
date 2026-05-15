@@ -1957,10 +1957,13 @@
                         </div>
 
                         <div class="certs-field">
-                            <label class="field-label" for="certs-owner">③ Кому назначить</label>
-                            <select id="certs-owner">
-                                <option value="">— оставить свободным (назначу позже) —</option>
-                            </select>
+                            <label class="field-label" for="certs-owner">
+                                ③ Кому выдать
+                                <span style="font-weight:400; color:var(--md-on-surface-hint); font-size:0.78rem;">
+                                    — можно нескольким (Ctrl+клик), или ничего = «свободный»
+                                </span>
+                            </label>
+                            <select id="certs-owner" multiple size="6"></select>
                         </div>
 
                         <div class="certs-field">
@@ -1999,7 +2002,7 @@
                             <thead>
                                 <tr>
                                     <th>Контейнер</th>
-                                    <th>Владелец</th>
+                                    <th>Выдан кому</th>
                                     <th>CN / ИНН</th>
                                     <th>Действ. до</th>
                                     <th>Статус</th>

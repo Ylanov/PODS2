@@ -613,8 +613,12 @@ function renderTable() {
 
 
 function rowHtml(k) {
-    const owner = k.owner_username
-        ? escapeHtml(k.owner_username)
+    // Список юзеров (M:N). Чипы — компактнее списка с запятыми.
+    const usernames = Array.isArray(k.usernames) ? k.usernames : [];
+    const owner = usernames.length
+        ? usernames.map(name =>
+              `<span class="certs-user-chip">${escapeHtml(name)}</span>`
+          ).join(' ')
         : '<span class="certs-free">— свободный —</span>';
     const cn    = escapeHtml(k.subject_cn || '—');
     const inn   = k.subject_inn
@@ -698,9 +702,12 @@ function updateCountBadge() {
 function fillOwnerSelect() {
     const sel = document.getElementById('certs-owner');
     if (!sel) return;
-    const opts = ['<option value="">— оставить свободным (назначу позже) —</option>'];
+    // Multi-select: показываем чек-боксы как <option> с multiple. Юзер
+    // выбирает Ctrl+click / Shift+click, или просто кликает по нескольким.
+    sel.multiple = true;
+    sel.size = Math.min(8, Math.max(3, STATE.users.filter(u => u.role !== 'admin').length));
+    const opts = [];
     for (const u of STATE.users) {
-        // role!=admin — админам не назначаем (они и так всё видят).
         if (u.role === 'admin') continue;
         opts.push(`<option value="${u.id}">${escapeHtml(u.username)}</option>`);
     }
@@ -731,7 +738,8 @@ function applyFilters(keys) {
     if (!q) return keys;
     return keys.filter(k => {
         const hay = [
-            k.container_name, k.owner_username,
+            k.container_name,
+            ...(Array.isArray(k.usernames) ? k.usernames : []),
             k.subject_cn, k.subject_o, k.subject_inn, k.subject_snils,
             k.thumbprint, k.issuer_cn,
         ].filter(Boolean).join(' ').toLowerCase();
@@ -905,7 +913,11 @@ function updateSubmitState() {
 async function submitNewKey() {
     const submitBtn   = document.getElementById('certs-submit-btn');
     const containerNm = document.getElementById('certs-container-name')?.value || '';
-    const ownerId     = document.getElementById('certs-owner')?.value || '';
+    const ownerSel    = document.getElementById('certs-owner');
+    // Multi-select: собираем все выбранные option'ы.
+    const userIds = ownerSel
+        ? Array.from(ownerSel.selectedOptions).map(o => o.value).filter(Boolean)
+        : [];
     const note        = document.getElementById('certs-note')?.value || '';
 
     if (!STATE.selectedCerData || STATE.selectedContainerFiles.length === 0) {
@@ -920,8 +932,10 @@ async function submitNewKey() {
         fd.append('container', f, f.name.toLowerCase());
     }
     fd.append('container_name', containerNm);
-    if (ownerId) fd.append('owner_user_id', ownerId);
-    if (note)    fd.append('note',          note);
+    // user_ids передаём как многократное поле — FastAPI Form(List[int])
+    // собирает их в список.
+    for (const uid of userIds) fd.append('user_ids', uid);
+    if (note) fd.append('note', note);
 
     submitBtn.disabled = true;
     try {
@@ -955,27 +969,50 @@ function bindRowActions() {
 
 
 async function handleReassign(key) {
-    const list = STATE.users
-        .filter(u => u.role !== 'admin')
-        .map(u => `${u.id} = ${u.username}`)
-        .join('\n');
-    const input = prompt(
-        `Переназначить ключ «${key.container_name}»\n\n` +
-        `Введите ID пользователя из списка (или 0 чтобы снять владельца):\n\n${list}`,
-        key.owner_user_id || '',
-    );
-    if (input === null) return;
-    const ownerId = parseInt(input, 10);
-    if (isNaN(ownerId)) {
-        window.showError?.('Неверный ID');
+    // Список юзеров с чек-боксами «выдан / не выдан». Текущие — отмечены.
+    const currentIds = new Set((Array.isArray(key.user_ids) ? key.user_ids : []));
+    const eligible = STATE.users.filter(u => u.role !== 'admin');
+
+    if (eligible.length === 0) {
+        window.showError?.('В системе нет юзеров, которым можно выдать ключ.');
         return;
     }
+
+    // Простой prompt-формат: список с галочками текстом, юзер копирует/правит
+    // строку с ID через запятую. Удобнее чем модалка для разового действия.
+    const list = eligible
+        .map(u => `  ${currentIds.has(u.id) ? '[x]' : '[ ]'} ${u.id} = ${u.username}`)
+        .join('\n');
+    const currentCsv = Array.from(currentIds).join(',');
+    const input = prompt(
+        `Кому выдан ключ «${key.container_name}»?\n\n` +
+        `Введи ID через запятую (можно несколько), или пусто = снять у всех:\n\n${list}`,
+        currentCsv,
+    );
+    if (input === null) return;
+    // Парсим CSV → массив int. Пустая строка = [].
+    const trimmed = input.trim();
+    let userIds;
+    if (trimmed === '') {
+        userIds = [];
+    } else {
+        userIds = trimmed.split(',').map(s => parseInt(s.trim(), 10));
+        if (userIds.some(n => isNaN(n) || n <= 0)) {
+            window.showError?.('Один из ID некорректен. Используй цифры через запятую.');
+            return;
+        }
+    }
     try {
-        await api.patch(`/certs/admin/${key.id}`, { owner_user_id: ownerId });
-        window.showSnackbar?.('Владелец обновлён', 'success');
+        await api.patch(`/certs/admin/${key.id}`, { user_ids: userIds });
+        window.showSnackbar?.(
+            userIds.length
+                ? `Выдан ${userIds.length} пользовател${userIds.length === 1 ? 'ю' : 'ям'}`
+                : 'Ключ освобождён',
+            'success',
+        );
         await loadKeys();
     } catch (err) {
-        window.showError?.('Не удалось переназначить: ' + err.message);
+        window.showError?.('Не удалось обновить: ' + err.message);
     }
 }
 
