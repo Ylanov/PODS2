@@ -120,7 +120,9 @@ class Settings(BaseSettings):
     # (INSERT — может быть 1000+/день); каждая команда = строка в agent_commands.
     # Эти лимиты задают сколько дней истории держать.
     CRYPTO_USAGE_RETENTION_DAYS:    int = 90
-    CRYPTO_COMMANDS_RETENTION_DAYS: int = 30
+    # CRYPTO_COMMANDS_RETENTION_DAYS удалена — таблица agent_commands больше
+    # не существует (миграция f6a7b8c9d0e1). Активация Win/Office —
+    # через /api/v1/activator/run.ps1.
     # Удалять revoked agent_tokens старше N дней (для аудита оставляем).
     CRYPTO_REVOKED_AGENT_TOKEN_TTL_DAYS: int = 180
 
