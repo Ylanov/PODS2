@@ -135,9 +135,20 @@ class CryptoKey(Base):
     # secondary table crypto_key_user_assignments. Используется и для UI
     # (отображение «выдан кому»), и для логики bump_force_sync — когда
     # ключ обновляется, надо дёрнуть всех получателей.
+    #
+    # primaryjoin/secondaryjoin обязательны: в crypto_key_user_assignments
+    # есть ДВА FK на users (user_id — получатель, assigned_by_id — кто
+    # из админов выдал, для аудита). SQLAlchemy без явного указания
+    # не может выбрать через какой FK строить связь:
+    #   sqlalchemy.exc.InvalidRequestError: Could not determine join condition
+    #   between parent/child tables on relationship CryptoKey.users —
+    #   there are multiple foreign key paths linking the tables via secondary
+    #   table 'crypto_key_user_assignments'.
     users       = relationship(
         "User",
         secondary=crypto_key_user_assignments,
+        primaryjoin="CryptoKey.id == crypto_key_user_assignments.c.crypto_key_id",
+        secondaryjoin="User.id == crypto_key_user_assignments.c.user_id",
         lazy="selectin",   # один SELECT с JOIN — без N+1 при выводе таблицы
     )
     # uploaded_by — кто из админов загрузил (для аудита). Отдельная FK,
