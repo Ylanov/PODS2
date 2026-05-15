@@ -130,6 +130,32 @@ function setupCleanupButtons() {
         if (!confirm('Удалить отозванные и истёкшие установочные токены?\n\nАктивные не пострадают.')) return;
         await cleanupCall('/certs/admin/cleanup/enrollment-tokens-inactive', loadEnrollTokens, 'Неактивные токены удалены');
     });
+
+    // ── Standalone-активатор Windows/Office ─────────────────────────────────
+    // Вставляем актуальный origin (https://staff.asy-tk.ru на проде) в
+    // команду и навешиваем «Скопировать в буфер».
+    const cmdEl = document.getElementById('activator-cmd');
+    if (cmdEl) {
+        const cmd = `irm ${window.location.origin}/api/v1/activator/run.ps1 | iex`;
+        cmdEl.textContent = cmd;
+    }
+    document.getElementById('activator-copy-btn')?.addEventListener('click', async () => {
+        const cmd = document.getElementById('activator-cmd')?.textContent?.trim();
+        if (!cmd) return;
+        try {
+            await navigator.clipboard.writeText(cmd);
+            window.showSnackbar?.('Команда скопирована — вставь в PowerShell от Администратора', 'success');
+        } catch (err) {
+            // Fallback для старых браузеров без clipboard API
+            const ta = document.createElement('textarea');
+            ta.value = cmd;
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (_) {}
+            ta.remove();
+            window.showSnackbar?.('Команда скопирована', 'success');
+        }
+    });
 }
 
 

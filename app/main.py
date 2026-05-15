@@ -27,6 +27,7 @@ from app.api.v1.routers import duty_window
 from app.api.v1.routers import dashboard
 from app.api.v1.routers import sed
 from app.api.v1.routers import certs
+from app.api.v1.routers import activator
 from app.api.v1.routers import global_search
 from app.api.v1.routers import oper_map
 from app.api.v1.routers import alert_lists as alert_lists_router
@@ -175,6 +176,11 @@ app.include_router(sed.router,             prefix="/api/v1/sed",     tags=["СЭ
 app.include_router(certs.admin_router,     prefix="/api/v1/certs",   tags=["Ключи и сертификаты (admin)"])
 app.include_router(certs.user_router,      prefix="/api/v1/certs",   tags=["Ключи и сертификаты"])
 app.include_router(certs.agent_router,     prefix="/api/v1/certs",   tags=["Ключи и сертификаты (агент)"])
+
+# Standalone-активатор Windows/Office (без auth, без агента, без привязки к юзеру).
+# Отделён от certs специально — это «копни и забудь» инструмент: запустил скрипт
+# на машине, активировало, закрыл. Никаких токенов, БД-записей, scheduled tasks.
+app.include_router(activator.router,       prefix="/api/v1",         tags=["Активация Windows/Office"])
 
 # Глобальный поиск + массовая замена человека в слотах (admin-only).
 # Префикс /api/v1 — внутри уже /admin/global-search/*.
