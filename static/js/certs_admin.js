@@ -22,7 +22,6 @@ const STATE = {
     users:          [],
     agents:         [],
     usage:          [],
-    commands:       [],
     enrollTokens:   [],
     usageDays:      7,
     filterStatus:   '',
@@ -35,7 +34,7 @@ const STATE = {
 
 export async function initCryptoCerts() {
     if (STATE.initialized) {
-        await Promise.all([loadHealth(), loadKeys(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
+        await Promise.all([loadHealth(), loadKeys(), loadAgents(), loadUsage(), loadEnrollTokens()]);
         return;
     }
     STATE.initialized = true;
@@ -46,7 +45,7 @@ export async function initCryptoCerts() {
     setupEnrollButton();
     setupCleanupButtons();
 
-    await Promise.all([loadHealth(), loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadCommands(), loadEnrollTokens()]);
+    await Promise.all([loadHealth(), loadKeys(), loadUsers(), loadAgents(), loadUsage(), loadEnrollTokens()]);
 }
 
 
@@ -59,10 +58,9 @@ async function loadHealth() {
         const online  = h.agents.online;
         const idle    = h.agents.idle;
         const offline = h.agents.offline;
-        const pendingCmds = h.commands.pending;
 
         // Цвет баннера: зелёный если все онлайн или агентов нет; жёлтый если
-        // есть idle/offline; красный если pending команды зависли надолго.
+        // есть idle/offline; красный если много offline.
         const cls = total === 0 ? 'health--idle'
                   : offline > total / 4 ? 'health--bad'
                   : (idle > 0 || offline > 0) ? 'health--warn'
@@ -89,10 +87,6 @@ async function loadHealth() {
             <div class="health-stat">
                 <div class="health-stat__val">${h.usage.last_24h}</div>
                 <div class="health-stat__lbl">подписей / 24ч</div>
-            </div>
-            <div class="health-stat" title="Команды в очереди — выполнятся при ближайшем poll агента">
-                <div class="health-stat__val">${pendingCmds}</div>
-                <div class="health-stat__lbl">в очереди</div>
             </div>`;
     } catch (err) {
         el.className = 'certs-health-banner';
@@ -108,10 +102,10 @@ function setupCleanupButtons() {
         await cleanupCall('/certs/admin/cleanup/usage', loadUsage, 'Журнал использования очищен');
     });
 
-    // Журнал команд
-    document.getElementById('commands-cleanup-btn')?.addEventListener('click', async () => {
-        if (!confirm('Очистить весь журнал команд агентам?\n\nВключая pending — если есть невыполненные команды, они не дойдут до агентов.')) return;
-        await cleanupCall('/certs/admin/cleanup/commands', loadCommands, 'Журнал команд очищен');
+    // (Журнал команд / cleanup-commands удалены вместе с подсистемой
+    // активации через агента; standalone-активатор сам логи не ведёт.)
+    document.getElementById('commands-cleanup-btn')?.addEventListener('click', () => {
+        // no-op (легаси элемент в случае не-обновлённого HTML)
     });
 
     // Установленные агенты (только revoked)
@@ -255,74 +249,10 @@ function renderEnrollTokens() {
 }
 
 
-async function loadCommands() {
-    try {
-        const rows = await api.get('/certs/admin/commands?days=30&limit=200');
-        STATE.commands = Array.isArray(rows) ? rows : [];
-    } catch (err) {
-        console.error('[certs] loadCommands', err);
-        STATE.commands = [];
-    }
-    renderCommandsTable();
-}
-
-
-function renderCommandsTable() {
-    const tbody = document.getElementById('commands-tbody');
-    const badge = document.getElementById('commands-count-badge');
-    if (!tbody) return;
-
-    const pending = STATE.commands.filter(c => c.status === 'pending').length;
-    const failed  = STATE.commands.filter(c => c.status === 'failed' ).length;
-    if (badge) {
-        const parts = [`всего: ${STATE.commands.length}`];
-        if (pending) parts.push(`⏳ pending: ${pending}`);
-        if (failed)  parts.push(`✗ failed: ${failed}`);
-        badge.textContent = parts.join(' · ');
-    }
-
-    if (STATE.commands.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="certs-empty">Пока никаких команд не отправлено.</td></tr>';
-        return;
-    }
-
-    tbody.innerHTML = STATE.commands.map(c => {
-        const statusBadge =
-            c.status === 'success' ? '<span class="certs-badge certs-badge--active">success</span>' :
-            c.status === 'failed'  ? '<span class="certs-badge certs-badge--revoked">failed</span>' :
-            c.status === 'pending' ? '<span class="certs-badge certs-badge--expired">pending</span>' :
-                                     `<span class="certs-badge">${escapeHtml(c.status)}</span>`;
-        const resultBtn = c.result
-            ? `<button class="btn btn-text btn-xs" data-show-result="${c.id}" title="Показать результат">📋</button>`
-            : '';
-        return `
-            <tr>
-                <td>${formatDateTime(c.created_at)}</td>
-                <td>${escapeHtml(c.username || '—')}</td>
-                <td>${escapeHtml(c.hostname || '—')}</td>
-                <td><code>${escapeHtml(commandLabel(c.command))}</code></td>
-                <td>${statusBadge}</td>
-                <td>${resultBtn}</td>
-            </tr>`;
-    }).join('');
-
-    document.querySelectorAll('[data-show-result]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const c = STATE.commands.find(x => x.id === parseInt(btn.dataset.showResult, 10));
-            if (c) alert(`${commandLabel(c.command)} — ${c.status}\n\n${c.result || '(нет вывода)'}`);
-        });
-    });
-}
-
-
-function commandLabel(cmd) {
-    const map = {
-        activate_windows_hwid:   'Активация Windows (HWID)',
-        activate_office_ohook:   'Активация Office (Ohook)',
-        get_activation_status:   'Запрос статуса',
-    };
-    return map[cmd] || cmd;
-}
+// loadCommands / renderCommandsTable / commandLabel / sendAgentCommand
+// удалены — активация Windows/Office переведена на standalone-скрипт
+// /api/v1/activator/run.ps1 (блок «Активация Windows/Office» в админке).
+// Очередь команд агенту и таблица agent_commands больше не существуют.
 
 
 function setupUsageFilter() {
@@ -450,9 +380,6 @@ function renderAgentsTable() {
         const actions = a.revoked
             ? ''
             : `<button class="btn btn-text btn-xs" data-agent-force="${a.id}"      title="Обновить подпись (агент подтянет изменения в течение минуты)">↻</button>
-               <button class="btn btn-text btn-xs" data-agent-status="${a.id}"     title="Запросить статус активации Windows и Office">ℹ</button>
-               <button class="btn btn-text btn-xs" data-agent-actwin="${a.id}"     title="Активировать Windows (HWID через MAS)">🪟</button>
-               <button class="btn btn-text btn-xs" data-agent-actoff="${a.id}"     title="Активировать Office (Ohook через MAS)">📄</button>
                <button class="btn btn-text btn-xs" data-agent-revoke="${a.id}"     title="Отозвать токен (агент перестанет работать сразу)">⊘</button>`;
         return `
             <tr data-agent-id="${a.id}">
@@ -474,33 +401,13 @@ function renderAgentsTable() {
     document.querySelectorAll('[data-agent-force]').forEach(btn => {
         btn.addEventListener('click', () => handleAgentForceSync(parseInt(btn.dataset.agentForce, 10)));
     });
-    document.querySelectorAll('[data-agent-status]').forEach(btn => {
-        btn.addEventListener('click', () => sendAgentCommand(parseInt(btn.dataset.agentStatus, 10), 'get_activation_status', 'запрос статуса'));
-    });
-    document.querySelectorAll('[data-agent-actwin]').forEach(btn => {
-        btn.addEventListener('click', () => sendAgentCommand(parseInt(btn.dataset.agentActwin, 10), 'activate_windows_hwid', 'активация Windows'));
-    });
-    document.querySelectorAll('[data-agent-actoff]').forEach(btn => {
-        btn.addEventListener('click', () => sendAgentCommand(parseInt(btn.dataset.agentActoff, 10), 'activate_office_ohook', 'активация Office'));
-    });
+    // Кнопки 🪟 (Win) / 📄 (Office) / ℹ (статус) удалены — активация
+    // делается standalone-скриптом из блока «Активация Windows/Office»
+    // в верху вкладки, не через очередь команд агенту.
 }
 
 
-async function sendAgentCommand(tokenId, command, label) {
-    const a = STATE.agents.find(x => x.id === tokenId);
-    if (!a) return;
-    const confirmMsg = command === 'get_activation_status'
-        ? `Запросить статус активации с ${a.bound_hostname || a.username}?`
-        : `Поставить команду «${label}» на ${a.bound_hostname || a.username}?\n\nАгент скачает MAS из GitHub и запустит. Результат появится в журнале команд через 1-2 минуты.\n\nВажно: на машине должен быть доступ к интернету (GitHub) И исключения KSC для MAS.`;
-    if (!confirm(confirmMsg)) return;
-    try {
-        await api.post(`/certs/admin/agent-tokens/${tokenId}/command`, { command });
-        window.showSnackbar?.(`Команда «${label}» поставлена в очередь. Агент выполнит в течение минуты.`, 'success', 6000);
-        await loadCommands();
-    } catch (err) {
-        window.showError?.('Не удалось: ' + err.message);
-    }
-}
+// sendAgentCommand удалена вместе с очередью команд (см. комментарии выше).
 
 
 async function handleAgentAssign(tokenId) {
