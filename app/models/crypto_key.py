@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, Integer, BigInteger, String, DateTime, ForeignKey, Boolean, Text,
-    UniqueConstraint, Index,
+    UniqueConstraint, Index, Table,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -33,20 +33,50 @@ from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 
+# Many-to-many между crypto_keys и users.
+#
+# Сделано как Table (а не как полноценная Model-класс) сознательно: записи
+# в этой таблице — чистая ассоциация, никакой бизнес-логики над ней не
+# навешано. assigned_at/assigned_by_id — справочные поля для аудита
+# («когда выдали», «кто из админов выдал»), но запросы к ним не идут.
+#
+# Если потом понадобятся события «выдал/отозвал доступ» в журнале —
+# можно превратить в обычный CryptoKeyUserAssignment(Base).
+crypto_key_user_assignments = Table(
+    "crypto_key_user_assignments",
+    Base.metadata,
+    Column(
+        "crypto_key_id",
+        BigInteger,
+        ForeignKey("crypto_keys.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "user_id",
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "assigned_at",
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    ),
+    Column(
+        "assigned_by_id",
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Index("ix_cka_user_id", "user_id"),
+)
+
+
 class CryptoKey(Base):
     __tablename__ = "crypto_keys"
 
     id              = Column(BigInteger, primary_key=True, index=True)
-
-    # NULL → «свободный» ключ (загружен, но не назначен пользователю).
-    # ON DELETE SET NULL: при удалении юзера ключ остаётся, но без владельца —
-    # админ должен переназначить (а не потерять загруженный ключ).
-    owner_user_id   = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
 
     # Имя папки контейнера в формате КриптоПро: xxx из xxx.000 (без .000).
     container_name  = Column(String(255), nullable=False)
@@ -100,10 +130,18 @@ class CryptoKey(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # Relationships — foreign_keys обязателен, так как у нас 2 FK на users:
-    # owner_user_id и uploaded_by_id. Без подсказки SQLAlchemy не знает
-    # по какому FK строить связь.
-    owner       = relationship("User", foreign_keys=[owner_user_id])
+    # Relationships.
+    # users — список юзеров, которым выдан этот ключ. Many-to-many через
+    # secondary table crypto_key_user_assignments. Используется и для UI
+    # (отображение «выдан кому»), и для логики bump_force_sync — когда
+    # ключ обновляется, надо дёрнуть всех получателей.
+    users       = relationship(
+        "User",
+        secondary=crypto_key_user_assignments,
+        lazy="selectin",   # один SELECT с JOIN — без N+1 при выводе таблицы
+    )
+    # uploaded_by — кто из админов загрузил (для аудита). Отдельная FK,
+    # не пересекается с users, поэтому foreign_keys-подсказка не нужна.
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_id])
 
     __table_args__ = (

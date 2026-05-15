@@ -333,6 +333,20 @@
     font-style: italic;
 }
 
+/* Чип юзера в колонке «Выдан кому». Один ключ может быть у нескольких
+   юзеров (many-to-many) — каждый чип отдельный. */
+.certs-user-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 1px 3px 1px 0;
+    background: var(--md-primary-light, #eef4f1);
+    color: var(--md-on-surface);
+    border-radius: 12px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
 .certs-empty {
     padding: 36px 24px;
     text-align: center;
