@@ -36,6 +36,9 @@ let _zonesLayer = null;
 let _zonesCache = [];
 let _draftMode = null;       // {points, polyline} при рисовании
 let _zoneEditing = null;     // {id} при перерисовке контура
+let _nudgeLat = 0;           // накопленный сдвиг подвижки (градусы)
+let _nudgeLng = 0;
+let _nudgeTimer = null;      // дебаунс сохранения подвижки
 
 function _esc(s) {
     return String(s ?? '')
@@ -96,7 +99,9 @@ function _renderShell(root) {
                     <label class="zone-map-field">Система координат
                         <select id="zm-cs">
                             <option value="wgs84" selected>WGS-84 (широта / долгота)</option>
-                            <option value="msk77">МСК-77, зона 1 (X / Y, м)</option>
+                            <option value="msk77">МСК-77, зона 1 (основной)</option>
+                            <option value="msk77_b">МСК-77, зона 1 (вариант ключей 2)</option>
+                            <option value="msk77_t">МСК-77, зона 1 (только сдвиг)</option>
                         </select>
                     </label>
                     <div class="zone-map-actions">
@@ -154,6 +159,30 @@ function _renderShell(root) {
                         <button id="zm-export-pdf" class="btn btn-success btn-sm" type="button">⬇ PDF</button>
                     </div>
                     <small id="zm-export-hint" class="zone-map-hint">Карта строится по центру текущего вида в выбранном масштабе.</small>
+                </div>
+
+                <div class="zone-map-side__sec">
+                    <h4>Подвижка контура</h4>
+                    <div class="zm-nudge">
+                        <label class="zone-map-field" style="margin:0;">Шаг, м
+                            <input id="zm-nudge-step" type="number" min="0.1" step="0.5" value="2" />
+                        </label>
+                        <div class="zm-nudge-pad">
+                            <button class="btn btn-outlined btn-sm" data-dir="n" type="button" title="на север">↑</button>
+                            <div class="zm-nudge-row">
+                                <button class="btn btn-outlined btn-sm" data-dir="w" type="button" title="на запад">←</button>
+                                <button id="zm-nudge-reset" class="btn btn-text btn-sm" type="button" title="вернуть к импортированным">⟲</button>
+                                <button class="btn btn-outlined btn-sm" data-dir="e" type="button" title="на восток">→</button>
+                            </div>
+                            <button class="btn btn-outlined btn-sm" data-dir="s" type="button" title="на юг">↓</button>
+                        </div>
+                    </div>
+                    <small id="zm-nudge-info" class="zone-map-hint">Двигает все зоны для точной привязки к карте.</small>
+                </div>
+
+                <div class="zone-map-side__sec">
+                    <h4>Таблица координат</h4>
+                    <div id="zm-coord-table" class="zm-coord-table"></div>
                 </div>
             </aside>
             <div class="zone-map-stage">
@@ -276,8 +305,123 @@ async function _loadZones() {
         window.showSnackbar?.(`Не удалось загрузить зоны: ${err?.message || err}`, 'error');
         _zonesCache = [];
     }
+    _nudgeLat = 0;
+    _nudgeLng = 0;
     _redrawZones();
     _renderZonesList();
+    _renderCoordTable();
+    _updateNudgeInfo();
+}
+
+
+// ─── Таблица координат (исходные → WGS-84) ─────────────────────────────────
+
+function _fmtNum(v) {
+    if (typeof v !== 'number') return String(v);
+    return Math.abs(v) >= 1000 ? v.toFixed(2) : v.toFixed(6);
+}
+
+function _renderCoordTable() {
+    const box = document.getElementById('zm-coord-table');
+    if (!box) return;
+    const zones = _zonesCache.filter(z => _zoneRing(z).length);
+    if (zones.length === 0) {
+        box.innerHTML = '<div class="zone-map-empty">Загрузите координаты — появится таблица.</div>';
+        return;
+    }
+    const isMsk = zones.some(z => (z.coord_system || '').startsWith('msk'));
+    const srcHdr = isMsk ? 'X / Y (исходн.)' : 'Ш / Д (исходн.)';
+    let rows = '';
+    for (const z of zones) {
+        const pts = Array.isArray(z.points) ? z.points : [];
+        const src = Array.isArray(z.src_points) ? z.src_points : [];
+        if (zones.length > 1) {
+            rows += `<tr class="zm-ct-zone"><td colspan="3">${_esc(z.name)}</td></tr>`;
+        }
+        pts.forEach((p, i) => {
+            const s = src[i];
+            const srcTxt = (Array.isArray(s) && s.length >= 2)
+                ? `${_fmtNum(s[0])} / ${_fmtNum(s[1])}` : '—';
+            rows += `<tr><td>${i + 1}</td><td>${srcTxt}</td>`
+                  + `<td>${(+p[0]).toFixed(6)} / ${(+p[1]).toFixed(6)}</td></tr>`;
+        });
+    }
+    box.innerHTML =
+        `<table class="zm-ct"><thead><tr><th>№</th><th>${srcHdr}</th>`
+      + `<th>WGS-84 (Ш / Д)</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+
+// ─── Подвижка контура (точная привязка к карте) ────────────────────────────
+
+function _nudge(dir) {
+    if (_zonesCache.length === 0) {
+        window.showSnackbar?.('Сначала загрузите координаты', 'info');
+        return;
+    }
+    const stepM = Math.max(0.1, parseFloat(document.getElementById('zm-nudge-step')?.value) || 2);
+    const b = _zonesBounds();
+    const lat0 = (b ? b.getCenter().lat : _map.getCenter().lat) || 55.75;
+    const dLat = stepM / 111320;
+    const dLng = stepM / (111320 * Math.cos(lat0 * Math.PI / 180));
+    let mLat = 0, mLng = 0;
+    if (dir === 'n') mLat = dLat;
+    else if (dir === 's') mLat = -dLat;
+    else if (dir === 'e') mLng = dLng;
+    else if (dir === 'w') mLng = -dLng;
+    _applyShift(mLat, mLng);
+    _nudgeLat += mLat;
+    _nudgeLng += mLng;
+    _updateNudgeInfo();
+}
+
+function _applyShift(dLat, dLng) {
+    for (const z of _zonesCache) {
+        if (!Array.isArray(z.points)) continue;
+        z.points = z.points.map(([la, ln]) =>
+            [+(la + dLat).toFixed(7), +(ln + dLng).toFixed(7)]);
+    }
+    _redrawZones();
+    _renderCoordTable();
+    _scheduleNudgePersist();
+}
+
+function _nudgeReset() {
+    if (Math.abs(_nudgeLat) < 1e-12 && Math.abs(_nudgeLng) < 1e-12) return;
+    _applyShift(-_nudgeLat, -_nudgeLng);
+    _nudgeLat = 0;
+    _nudgeLng = 0;
+    _updateNudgeInfo();
+}
+
+function _updateNudgeInfo() {
+    const el = document.getElementById('zm-nudge-info');
+    if (!el) return;
+    const b = _zonesBounds();
+    const lat0 = (b ? b.getCenter().lat : 55.75) || 55.75;
+    const mN = Math.round(_nudgeLat * 111320);
+    const mE = Math.round(_nudgeLng * 111320 * Math.cos(lat0 * Math.PI / 180));
+    if (!mN && !mE) {
+        el.textContent = 'Двигает все зоны для точной привязки к карте.';
+        return;
+    }
+    el.textContent = `Сдвиг от импорта: ${mN >= 0 ? '+' : ''}${mN} м к С, ${mE >= 0 ? '+' : ''}${mE} м к В`;
+}
+
+function _scheduleNudgePersist() {
+    clearTimeout(_nudgeTimer);
+    _nudgeTimer = setTimeout(_persistNudge, 600);
+}
+
+async function _persistNudge() {
+    for (const z of _zonesCache.slice()) {
+        try {
+            await api.patch(`/zone-map/zones/${z.id}`, { points: z.points });
+        } catch (err) {
+            window.showSnackbar?.(`Подвижка не сохранена: ${err?.message || err}`, 'error');
+            break;
+        }
+    }
 }
 
 async function _saveZoneField(id, field, value) {
@@ -749,6 +893,9 @@ export async function initZoneMap(rootId) {
     document.getElementById('zm-scale-apply').addEventListener('click', _applyScalePreset);
     document.getElementById('zm-export-jpg').addEventListener('click', () => _export('jpg'));
     document.getElementById('zm-export-pdf').addEventListener('click', () => _export('pdf'));
+    document.querySelectorAll('.zm-nudge-pad [data-dir]').forEach(btn =>
+        btn.addEventListener('click', () => _nudge(btn.dataset.dir)));
+    document.getElementById('zm-nudge-reset').addEventListener('click', _nudgeReset);
 }
 
 export function invalidateMapSize() {

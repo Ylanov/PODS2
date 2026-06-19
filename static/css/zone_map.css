@@ -148,6 +148,72 @@
     gap: 2px;
 }
 
+/* ─── Подвижка контура (D-pad) ──────────────────────────────────────────── */
+
+.zm-nudge {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+}
+.zm-nudge-pad {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.zm-nudge-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.zm-nudge-pad button {
+    min-width: 36px;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+/* ─── Таблица координат ─────────────────────────────────────────────────── */
+
+.zm-coord-table {
+    max-height: 240px;
+    overflow: auto;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: 6px;
+    background: var(--md-surface);
+}
+.zm-ct {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.72rem;
+}
+.zm-ct th,
+.zm-ct td {
+    padding: 3px 6px;
+    text-align: left;
+    border-bottom: 1px solid var(--md-outline-variant);
+    white-space: nowrap;
+}
+.zm-ct thead th {
+    position: sticky;
+    top: 0;
+    background: var(--md-surface-container);
+    font-weight: 600;
+    z-index: 1;
+}
+.zm-ct tbody td {
+    font-family: var(--md-font-mono, monospace);
+}
+.zm-ct td:first-child {
+    color: var(--md-on-surface-variant);
+    width: 28px;
+}
+.zm-ct-zone td {
+    font-weight: 600;
+    background: var(--md-surface-variant);
+    font-family: inherit;
+}
+
 /* ─── Карта (Leaflet) ───────────────────────────────────────────────────── */
 
 .zone-map-stage {
