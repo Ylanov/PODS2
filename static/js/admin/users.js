@@ -72,6 +72,11 @@ const ALL_PERMISSIONS = [
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
     },
     {
+        key: 'zone_map', label: 'Карта зон',
+        hint: 'Импорт координат из Excel: точки выпадают на карту и собираются в зоны; экспорт карты в JPG/PDF в масштабе 1:2000',
+        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21 1 6"/><line x1="8" y1="3" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="21"/></svg>',
+    },
+    {
         key: 'alert_lists', label: 'Списки оповещения',
         hint: 'Два списка оповещения с привязкой к Базе людей: дни месяца, наряды/ответственные/отпуска, ручной выбор замещающих',
         icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',

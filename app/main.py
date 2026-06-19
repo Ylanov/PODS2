@@ -30,6 +30,7 @@ from app.api.v1.routers import certs
 from app.api.v1.routers import activator
 from app.api.v1.routers import global_search
 from app.api.v1.routers import oper_map
+from app.api.v1.routers import zone_map
 from app.api.v1.routers import alert_lists as alert_lists_router
 from app.api.v1.routers import tasks
 from app.api.v1.routers import audit as audit_module
@@ -187,6 +188,7 @@ app.include_router(activator.router,       prefix="/api/v1",         tags=["Ак
 app.include_router(global_search.router,   prefix="/api/v1",         tags=["Глобальный поиск (admin)"])
 app.include_router(oper_map.router,        prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного"])
 app.include_router(oper_map.public_router, prefix="/api/v1/oper-map",tags=["Карта Оперативного дежурного (публичные прокси)"])
+app.include_router(zone_map.router,        prefix="/api/v1/zone-map",tags=["Карта зон (импорт из Excel)"])
 app.include_router(alert_lists_router.router, prefix="/api/v1/alert-lists",tags=["Списки оповещения"])
 app.include_router(tasks.router,           prefix="/api/v1/tasks",   tags=["Календарь задач"])
 
@@ -258,6 +260,7 @@ _CSS_BUNDLE_ORDER = [
     "operations.css",   "comms-report.css",   "procurement.css",
     "media.css",        "training.css",       "person_conflicts.css",
     "global_search.css", "analytics.css",     "oper_map.css",
+    "zone_map.css",
     "alert_lists.css",   "certs.css",
 ]
 

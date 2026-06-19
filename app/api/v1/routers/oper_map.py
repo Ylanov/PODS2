@@ -362,6 +362,9 @@ _VENDOR_FILES = {
     "marker-shadow.png":  "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
     "layers.png":         "https://unpkg.com/leaflet@1.9.4/dist/images/layers.png",
     "layers-2x.png":      "https://unpkg.com/leaflet@1.9.4/dist/images/layers-2x.png",
+    # jsPDF — нужен вкладке «Карта зон» для экспорта карты в PDF. Тянется
+    # через тот же CDN→диск кеш, в браузер уходит уже из локалки.
+    "jspdf.umd.min.js":   "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js",
 }
 _VENDOR_MIME = {
     ".js":  "application/javascript",

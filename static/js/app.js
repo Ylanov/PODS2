@@ -79,6 +79,7 @@ const PERM_TAB_MAP = {
     'tasks':       'dept-tasks-tab-btn',
     'persons':     'dept-persons-tab-btn',
     'oper_map':    'dept-oper-map-tab-btn',
+    'zone_map':    'dept-zone-map-tab-btn',
     'alert_lists': 'dept-alert-lists-tab-btn',
     'crypto_keys': 'dept-mycerts-tab-btn',
 };
@@ -120,6 +121,7 @@ window._applyPermissionsToTabs = applyPermissionsToTabs;
 let _tasksDeptInited   = false;
 let _deptPersonsInited = false;
 let _operMapInited     = false;
+let _zoneMapInited     = false;
 let _alertListsInited  = false;
 
 function switchDeptTab(tab) {
@@ -145,6 +147,7 @@ function switchDeptTab(tab) {
     document.getElementById('dept-persons-panel')?.classList.add('hidden');
     document.getElementById('dept-ops-panel')?.classList.add('hidden');
     document.getElementById('dept-oper-map-panel')?.classList.add('hidden');
+    document.getElementById('dept-zone-map-panel')?.classList.add('hidden');
     document.getElementById('dept-alert-lists-panel')?.classList.add('hidden');
     document.getElementById('dept-mycerts-panel')?.classList.add('hidden');
 
@@ -157,7 +160,7 @@ function switchDeptTab(tab) {
     };
     ['dept-main-tab-btn', 'cc-dept-tab-btn', 'dept-duty-tab-btn',
      'dept-tasks-tab-btn', 'dept-persons-tab-btn', 'dept-ops-tab-btn',
-     'dept-oper-map-tab-btn', 'dept-alert-lists-tab-btn',
+     'dept-oper-map-tab-btn', 'dept-zone-map-tab-btn', 'dept-alert-lists-tab-btn',
      'dept-mycerts-tab-btn'].forEach(resetBtn);
 
     const activateBtn = (id) => {
@@ -213,6 +216,17 @@ function switchDeptTab(tab) {
             if (!_operMapInited) {
                 m.initOperMap('oper-map-root');
                 _operMapInited = true;
+            } else {
+                m.invalidateMapSize?.();   // пересчёт размеров после показа
+            }
+        });
+    } else if (tab === 'zone_map') {
+        document.getElementById('dept-zone-map-panel')?.classList.remove('hidden');
+        activateBtn('dept-zone-map-tab-btn');
+        import('./zone_map.js').then(m => {
+            if (!_zoneMapInited) {
+                m.initZoneMap('zone-map-root');
+                _zoneMapInited = true;
             } else {
                 m.invalidateMapSize?.();   // пересчёт размеров после показа
             }
@@ -366,6 +380,7 @@ function bindEvents() {
     document.getElementById('dept-persons-tab-btn')?.addEventListener('click', () => switchDeptTab('persons'));
     document.getElementById('dept-ops-tab-btn')?.addEventListener('click',     () => switchDeptTab('ops'));
     document.getElementById('dept-oper-map-tab-btn')?.addEventListener('click',() => switchDeptTab('oper_map'));
+    document.getElementById('dept-zone-map-tab-btn')?.addEventListener('click',() => switchDeptTab('zone_map'));
     document.getElementById('dept-alert-lists-tab-btn')?.addEventListener('click',() => switchDeptTab('alert_lists'));
     document.getElementById('dept-mycerts-tab-btn')?.addEventListener('click',    () => switchDeptTab('mycerts'));
 

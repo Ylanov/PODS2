@@ -159,6 +159,8 @@ function _initMap() {
     });
     _L.tileLayer(TILE_URL, { maxZoom: 18, attribution: '© Яндекс' }).addTo(_map);
     _zonesLayer = _L.layerGroup().addTo(_map);
+    // Убираем флаг/брендинг Leaflet справа внизу — оставляем только «© Яндекс».
+    _map.attributionControl.setPrefix(false);
 }
 
 
