@@ -55,12 +55,14 @@ _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 # ─── Pydantic ────────────────────────────────────────────────────────────────
 
 class ZoneOut(BaseModel):
-    id:         int
-    name:       str
-    role:       Optional[str] = None
-    color:      str
-    points:     list   # [[lat, lng], ...]
-    sort_order: int
+    id:           int
+    name:         str
+    role:         Optional[str] = None
+    color:        str
+    points:       list                       # [[lat, lng], ...]
+    sort_order:   int
+    src_points:   Optional[list] = None      # исходные [[X,Y],...] (для таблицы)
+    coord_system: Optional[str] = None
 
 
 class ZoneIn(BaseModel):
@@ -91,6 +93,7 @@ class ImportResult(BaseModel):
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
 def _zone_out(z: ZoneMapZone) -> ZoneOut:
+    src = z.get_src_points()
     return ZoneOut(
         id=z.id,
         name=z.name,
@@ -98,6 +101,8 @@ def _zone_out(z: ZoneMapZone) -> ZoneOut:
         color=z.color,
         points=z.get_points(),
         sort_order=z.sort_order,
+        src_points=src or None,
+        coord_system=z.coord_system,
     )
 
 
@@ -284,7 +289,7 @@ def _detect_columns(rows, coord_system):
     Для wgs84 — широта/долгота (или объединённая колонка координат); для msk77 — X/Y.
     Дополнительно ищет зону/подпись/цвет. Возвращает (cols, data_rows).
     """
-    is_msk = coord_system == "msk77"
+    is_msk = coord_system.startswith("msk")
     found = {"lat": None, "lng": None, "x": None, "y": None,
              "zone": None, "role": None, "color": None, "combo": None}
     header_row = -1
@@ -343,7 +348,7 @@ def _rows_to_zones(rows, coord_system, default_name):
     rows = [r for r in rows if any(c is not None and str(c).strip() != "" for c in r)]
     if not rows:
         raise HTTPException(status_code=400, detail="Файл пустой")
-    is_msk = coord_system == "msk77"
+    is_msk = coord_system.startswith("msk")
     cols, data_rows = _detect_columns(rows, coord_system)
 
     groups: dict = {}
@@ -352,6 +357,7 @@ def _rows_to_zones(rows, coord_system, default_name):
 
     for row in data_rows:
         lat = lng = None
+        src = None
         if is_msk:
             x = _to_float(_cell(row, cols["x"]))
             y = _to_float(_cell(row, cols["y"]))
@@ -361,10 +367,11 @@ def _rows_to_zones(rows, coord_system, default_name):
                 skipped += 1
                 continue
             try:
-                lat, lng = msk77_to_wgs84(x, y)
+                lat, lng = msk77_to_wgs84(x, y, coord_system)
             except Exception:  # noqa: BLE001
                 skipped += 1
                 continue
+            src = [x, y]
         else:
             if cols["combo"] is not None:
                 pair = _split_combo(_cell(row, cols["combo"]))
@@ -385,9 +392,10 @@ def _rows_to_zones(rows, coord_system, default_name):
         zname = _cell(row, cols["zone"])
         zname = str(zname).strip() if zname is not None and str(zname).strip() else default_name
         if zname not in groups:
-            groups[zname] = {"points": [], "color": None, "role": None}
+            groups[zname] = {"points": [], "src": [], "color": None, "role": None}
             order.append(zname)
         groups[zname]["points"].append([round(lat, 7), round(lng, 7)])
+        groups[zname]["src"].append(src if src is not None else [round(lat, 7), round(lng, 7)])
 
         cval = _cell(row, cols["color"])
         if cval and groups[zname]["color"] is None:
@@ -416,6 +424,7 @@ def _rows_to_zones(rows, coord_system, default_name):
             "role":  g["role"],
             "color": g["color"] or _PALETTE[i % len(_PALETTE)],
             "points": g["points"],
+            "src_points": g["src"],
         })
     return parsed, skipped, cols
 
@@ -462,8 +471,10 @@ async def import_zones(
             role=(p["role"] or None),
             color=p["color"],
             sort_order=base_sort + i,
+            coord_system=coord_system,
         )
         z.set_points(p["points"])
+        z.set_src_points(p.get("src_points"))
         db.add(z)
         created.append(z)
         points_total += len(p["points"])

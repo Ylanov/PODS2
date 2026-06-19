@@ -38,6 +38,11 @@ class ZoneMapZone(Base):
     color       = Column(String,  nullable=False, default="#1976d2")
     points_json = Column(JSONB,   nullable=False, default=list)
     sort_order  = Column(Integer, nullable=False, default=0)
+    # Исходные координаты (как в файле) — для таблицы «исходные → WGS-84».
+    # Для МСК это [[X, Y], ...] параллельно points_json; для WGS — те же lat/lng.
+    src_points_json = Column(JSONB,  nullable=True)
+    # Какая система координат была у импорта (wgs84 / msk77 / msk77_b / …).
+    coord_system    = Column(String, nullable=True)
 
     def get_points(self) -> list:
         data = self.points_json
@@ -45,3 +50,10 @@ class ZoneMapZone(Base):
 
     def set_points(self, points: list) -> None:
         self.points_json = points or []
+
+    def get_src_points(self) -> list:
+        data = self.src_points_json
+        return data if isinstance(data, list) else []
+
+    def set_src_points(self, points) -> None:
+        self.src_points_json = points if isinstance(points, list) else None
