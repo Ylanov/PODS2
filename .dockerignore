@@ -8,3 +8,13 @@ __pycache__
 Dockerfile
 docker-compose.yml
 node_modules
+
+# Рантайм-данные на проде (создаются контейнером, часто root-only) — в репозитории
+# их нет и образу они не нужны. В build-контекст попадать не должны: «COPY . .»
+# иначе падает с "error from sender: open .../crypto-keys: permission denied".
+data/
+var/
+# Локальные dev-артефакты (на проде отсутствуют, исключаем для гигиены контекста).
+.venv
+.idea
+.ruff_cache
