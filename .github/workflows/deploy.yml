@@ -20,10 +20,25 @@ jobs:
           cd /srv/pods2
           docker compose up -d --build
 
-      - name: Apply DB migrations
+      # Миграции применяет entrypoint.sh контейнера при старте (alembic upgrade head).
+      # Раньше здесь был ВТОРОЙ `alembic upgrade head`, который гонялся с entrypoint
+      # и при медленной сборке падал на гонке каталога Postgres ("CREATE TABLE ...
+      # pg_type ... already exists"). Теперь не запускаем миграции повторно, а лишь
+      # read-only ждём, что entrypoint довёл их до head — без гонки.
+      - name: Wait for DB migrations (applied by entrypoint)
         run: |
           cd /srv/pods2
-          docker compose exec -T web alembic upgrade head
+          for i in $(seq 1 40); do
+            if docker compose exec -T web alembic current 2>/dev/null | grep -q '(head)'; then
+              echo "✅ migrations at head"
+              exit 0
+            fi
+            echo "   ждём миграции entrypoint... $i/40"
+            sleep 3
+          done
+          echo "❌ миграции не дошли до head за отведённое время"
+          docker compose exec -T web alembic current || true
+          exit 1
 
       - name: Healthcheck
         run: |
