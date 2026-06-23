@@ -35,8 +35,13 @@ if not exist "dist\Karty.exe" (
 
 echo [3/3] Компиляция установщика (Inno Setup)...
 set "ISCC="
-if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
-if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+for %%D in (
+    "%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe"
+    "%ProgramFiles%\Inno Setup 7\ISCC.exe"
+    "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+    "%ProgramFiles%\Inno Setup 6\ISCC.exe"
+) do if exist "%%~D" set "ISCC=%%~D"
+if "%ISCC%"=="" for /f "delims=" %%I in ('where ISCC.exe 2^>nul') do set "ISCC=%%I"
 
 if "%ISCC%"=="" (
     echo.
