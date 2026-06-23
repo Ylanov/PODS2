@@ -255,8 +255,11 @@ function showSuggest(input, items, onPick) {
         document.getElementById("gc-dd")?.remove();
         input.value = it.title;
         if (it.lat != null && it.lng != null) { onPick({ text: it.title, lat: it.lat, lng: it.lng }); return; }
-        try { const r = await jget(`/api/geocode?q=${encodeURIComponent(it.title)}`);
-            if (r.results && r.results.length) onPick(r.results[0]); } catch (_) {}
+        // нет координат в подсказке (организация) — геокодим по uri объекта,
+        // иначе текстовый поиск «Лидер» уводит в посёлок Лидер под Наро-Фоминском.
+        const url = it.uri ? `/api/geocode?uri=${encodeURIComponent(it.uri)}`
+                           : `/api/geocode?q=${encodeURIComponent(it.title)}`;
+        try { const r = await jget(url); if (r.results && r.results.length) onPick(r.results[0]); } catch (_) {}
     }));
 }
 

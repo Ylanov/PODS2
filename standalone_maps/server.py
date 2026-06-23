@@ -303,17 +303,23 @@ def _ll_from_uri(uri: str):
 
 
 @api.get("/geocode")
-async def geocode(q: str):
+async def geocode(q: str = "", uri: str = ""):
     q = (q or "").strip()
-    if not q:
+    uri = (uri or "").strip()
+    if not q and not uri:
         raise HTTPException(status_code=400, detail="Пустой запрос")
 
     if PROVIDER == "yandex":
-        ql = q.lower()
-        geo = q if any(w in ql for w in ("москва","московская","подмосков","мо ","мо,")) \
-                 else f"Россия, Москва, {q}"
-        params = {"apikey": YANDEX_KEY, "format": "json", "lang": "ru_RU",
-                  "results": "15", "geocode": geo, "bbox": MO_BBOX}
+        params = {"apikey": YANDEX_KEY, "format": "json", "lang": "ru_RU", "results": "15"}
+        if uri:
+            # Точный объект из подсказки (организация/адрес) — геокодер вернёт ровно его.
+            params["uri"] = uri
+        else:
+            ql = q.lower()
+            geo = q if any(w in ql for w in ("москва","московская","подмосков","мо ","мо,")) \
+                     else f"Россия, Москва, {q}"
+            params["geocode"] = geo
+            params["bbox"] = MO_BBOX
         try:
             async with httpx.AsyncClient(timeout=12.0) as c:
                 r = await c.get(YANDEX_GEOCODE, params=params)
@@ -381,8 +387,9 @@ async def suggest(q: str):
                 continue
             sub = (it.get("subtitle") or {}).get("text") or ""
             addr = ((it.get("address") or {}).get("formatted_address") or "")
-            ll = _ll_from_uri(it.get("uri") or "")
-            out.append({"title": title, "subtitle": sub or addr,
+            uri = it.get("uri") or ""
+            ll = _ll_from_uri(uri)
+            out.append({"title": title, "subtitle": sub or addr, "uri": uri,
                         "lat": ll[0] if ll else None, "lng": ll[1] if ll else None})
         except (KeyError, TypeError):
             continue
