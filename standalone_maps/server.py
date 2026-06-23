@@ -72,6 +72,35 @@ NOMINATIM    = "https://nominatim.openstreetmap.org/search"
 OSRM_BASE    = "https://router.project-osrm.org"
 USER_AGENT   = "PODS2-StandaloneMaps/1.0 (local single-PC deployment)"
 
+YANDEX_TILE    = "https://core-renderer-tiles.maps.yandex.net/tiles"
+YANDEX_GEOCODE = "https://geocode-maps.yandex.ru/1.x/"
+YANDEX_SUGGEST = "https://suggest-maps.yandex.ru/v1/suggest"
+# Bbox Москва+МО для приоритета геокодера/подсказок (как в исходной «Карте ОД»).
+MO_BBOX  = "35.15,54.25~40.20,56.97"
+MO_LL    = "37.6173,55.7558"
+MO_SPN   = "5,3"
+
+
+def _load_yandex_key() -> str:
+    """Ключ Яндекс.Карт: из env YANDEX_MAPS_API_KEY или файла рядом (yandex.key)."""
+    k = (os.environ.get("YANDEX_MAPS_API_KEY") or "").strip()
+    if k:
+        return k
+    for name in ("yandex.key", "yandex_key.txt"):
+        p = APP_DIR / name
+        if p.exists():
+            try:
+                t = p.read_text(encoding="utf-8").strip()
+                if t:
+                    return t
+            except OSError:
+                pass
+    return ""
+
+
+YANDEX_KEY = _load_yandex_key()
+PROVIDER   = "yandex" if YANDEX_KEY else "osm"   # есть ключ → Яндекс, иначе OSM
+
 MAPS = ("od", "zone")   # допустимые карты
 
 
@@ -249,13 +278,66 @@ def put_settings(payload: SettingsIn):
     return get_settings()
 
 
-# ─── Геокодер (Nominatim) и маршрут (OSRM) — без ключей ──────────────────────
+# ─── Конфиг провайдера карт ───────────────────────────────────────────────────
+
+@api.get("/config")
+def config():
+    # provider: yandex (если задан ключ) или osm. suggest — только у Яндекса.
+    return {"provider": PROVIDER, "suggest": PROVIDER == "yandex",
+            "attribution": "© Яндекс" if PROVIDER == "yandex" else "© OpenStreetMap"}
+
+
+# ─── Геокодер: Яндекс (если есть ключ) или Nominatim ─────────────────────────
+
+def _ll_from_uri(uri: str):
+    if not uri:
+        return None
+    import urllib.parse as _u
+    m = re.search(r"[?&]ll=([0-9.\-]+),([0-9.\-]+)", _u.unquote(uri))
+    if not m:
+        return None
+    try:
+        return float(m.group(2)), float(m.group(1))   # uri даёт lng,lat → возвращаем lat,lng
+    except ValueError:
+        return None
+
 
 @api.get("/geocode")
 async def geocode(q: str):
     q = (q or "").strip()
     if not q:
         raise HTTPException(status_code=400, detail="Пустой запрос")
+
+    if PROVIDER == "yandex":
+        ql = q.lower()
+        geo = q if any(w in ql for w in ("москва","московская","подмосков","мо ","мо,")) \
+                 else f"Россия, Москва, {q}"
+        params = {"apikey": YANDEX_KEY, "format": "json", "lang": "ru_RU",
+                  "results": "15", "geocode": geo, "bbox": MO_BBOX}
+        try:
+            async with httpx.AsyncClient(timeout=12.0) as c:
+                r = await c.get(YANDEX_GEOCODE, params=params)
+                r.raise_for_status()
+                data = r.json()
+        except httpx.HTTPError:
+            raise HTTPException(status_code=502, detail="Геокодер Яндекса недоступен")
+        out = []
+        try:
+            members = data["response"]["GeoObjectCollection"]["featureMember"]
+        except (KeyError, TypeError):
+            members = []
+        for m in members:
+            try:
+                obj = m["GeoObject"]
+                lng, lat = (float(v) for v in obj["Point"]["pos"].split())
+                meta = obj.get("metaDataProperty", {}).get("GeocoderMetaData", {})
+                out.append({"text": meta.get("text") or obj.get("name") or "",
+                            "lat": lat, "lng": lng, "kind": meta.get("kind", "")})
+            except (KeyError, ValueError, TypeError, IndexError):
+                continue
+        return {"results": out}
+
+    # OSM fallback (Nominatim)
     params = {"q": q, "format": "jsonv2", "limit": "10", "accept-language": "ru"}
     try:
         async with httpx.AsyncClient(timeout=12.0, headers={"User-Agent": USER_AGENT}) as c:
@@ -267,13 +349,42 @@ async def geocode(q: str):
     out = []
     for it in data:
         try:
-            out.append({
-                "text": it.get("display_name", ""),
-                "lat":  float(it["lat"]),
-                "lng":  float(it["lon"]),
-                "kind": it.get("type", ""),
-            })
+            out.append({"text": it.get("display_name", ""), "lat": float(it["lat"]),
+                        "lng": float(it["lon"]), "kind": it.get("type", "")})
         except (KeyError, ValueError, TypeError):
+            continue
+    return {"results": out}
+
+
+@api.get("/suggest")
+async def suggest(q: str):
+    """Подсказки адресов при наборе (только Яндекс). Без ключа — пусто."""
+    q = (q or "").strip()
+    if PROVIDER != "yandex" or len(q) < 2:
+        return {"results": []}
+    params = {"apikey": YANDEX_KEY, "text": q, "lang": "ru_RU", "results": "10",
+              "ll": MO_LL, "spn": MO_SPN, "print_address": "1", "attrs": "uri", "types": "geo,biz"}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as c:
+            r = await c.get(YANDEX_SUGGEST, params=params)
+            if r.status_code in (401, 403):
+                return {"results": []}     # ключ без права на Suggest — тихо деградируем
+            r.raise_for_status()
+            data = r.json()
+    except httpx.HTTPError:
+        return {"results": []}
+    out = []
+    for it in data.get("results", []):
+        try:
+            title = (it.get("title") or {}).get("text") or ""
+            if not title:
+                continue
+            sub = (it.get("subtitle") or {}).get("text") or ""
+            addr = ((it.get("address") or {}).get("formatted_address") or "")
+            ll = _ll_from_uri(it.get("uri") or "")
+            out.append({"title": title, "subtitle": sub or addr,
+                        "lat": ll[0] if ll else None, "lng": ll[1] if ll else None})
+        except (KeyError, TypeError):
             continue
     return {"results": out}
 
@@ -514,24 +625,32 @@ def template():
         headers={"Content-Disposition": 'attachment; filename="zone_template.xlsx"'})
 
 
-# ─── Прокси тайлов OpenStreetMap (same-origin → работает экспорт) ────────────
+# ─── Прокси тайлов: Яндекс (если есть ключ) или OSM. same-origin → экспорт ────
 
 @app.get("/tiles/{z}/{x}/{y}.png")
 async def tiles(z: int, x: int, y: int):
-    if not (0 <= z <= 19 and 0 <= x < (1 << z) and 0 <= y < (1 << z)):
+    if not (0 <= z <= 21 and 0 <= x < (1 << z) and 0 <= y < (1 << z)):
         raise HTTPException(status_code=400, detail="Неверный тайл")
-    cache = TILE_CACHE / str(z) / str(x) / f"{y}.png"
+    # кеш раздельный по провайдеру, чтобы не смешивать Яндекс и OSM
+    cache = TILE_CACHE / PROVIDER / str(z) / str(x) / f"{y}.png"
     if cache.exists():
         return Response(content=cache.read_bytes(), media_type="image/png",
                         headers={"Cache-Control": "public, max-age=604800"})
-    url = OSM_TILE_URL.format(z=z, x=x, y=y)
+    if PROVIDER == "yandex":
+        url = (f"{YANDEX_TILE}?l=map&x={x}&y={y}&z={z}&scale=1&lang=ru_RU&apikey={YANDEX_KEY}")
+        headers = {}
+        errmsg = "Не удалось получить тайл Яндекса"
+    else:
+        url = OSM_TILE_URL.format(z=z, x=x, y=y)
+        headers = {"User-Agent": USER_AGENT}
+        errmsg = "Не удалось получить тайл OSM"
     try:
-        async with httpx.AsyncClient(timeout=12.0, headers={"User-Agent": USER_AGENT}) as c:
+        async with httpx.AsyncClient(timeout=12.0, headers=headers) as c:
             r = await c.get(url)
             r.raise_for_status()
             data = r.content
     except httpx.HTTPError:
-        raise HTTPException(status_code=502, detail="Не удалось получить тайл OSM")
+        raise HTTPException(status_code=502, detail=errmsg)
     try:
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_bytes(data)
@@ -562,7 +681,10 @@ def main():
     url = f"http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}"
     if "--no-browser" not in sys.argv:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-    print(f"\n  Карты зон ответственности запущены: {url}\n  (Ctrl+C — остановить)\n")
+    prov = "Яндекс.Карты (ключ найден)" if PROVIDER == "yandex" else \
+           "OpenStreetMap (ключ Яндекса не задан — см. README)"
+    print(f"\n  Карты зон ответственности запущены: {url}"
+          f"\n  Подложка: {prov}\n  (Ctrl+C — остановить)\n")
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
