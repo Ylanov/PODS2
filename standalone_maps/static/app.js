@@ -6,6 +6,8 @@
 const L = window.L;
 const TILE_URL = "/tiles/{z}/{x}/{y}.png";
 const MOSCOW = [55.7558, 37.6173];
+// провайдер карт (заполняется из /api/config при старте)
+let CFG = { provider: "osm", suggest: false, attribution: "© OpenStreetMap" };
 
 // ─── общие хелперы ──────────────────────────────────────────────────────────
 const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -60,8 +62,11 @@ function hexA(hex, a) {
 }
 
 function baseMap(elId) {
-    const map = L.map(elId, { center: MOSCOW, zoom: 11, minZoom: 3, maxZoom: 19, zoomSnap: 0 });
-    L.tileLayer(TILE_URL, { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+    // Яндекс рендерит тайлы в EPSG:3395 — иначе маркеры разъезжаются с подложкой;
+    // OSM — стандартный EPSG:3857 (дефолт Leaflet).
+    const crs = CFG.provider === "yandex" ? L.CRS.EPSG3395 : L.CRS.EPSG3857;
+    const map = L.map(elId, { center: MOSCOW, zoom: 11, minZoom: 3, maxZoom: 19, zoomSnap: 0, crs });
+    L.tileLayer(TILE_URL, { maxZoom: 19, attribution: CFG.attribution }).addTo(map);
     map.attributionControl.setPrefix(false);
     return map;
 }
@@ -220,6 +225,41 @@ async function geocodePick(q, anchor, onPick) {
     setTimeout(() => document.addEventListener("click", out, true), 0);
 }
 
+// ─── подсказки при наборе (Яндекс Suggest; на OSM пусто) ────────────────────
+function attachSuggest(input, onPick) {
+    let timer = null;
+    input.addEventListener("input", () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) { document.getElementById("gc-dd")?.remove(); return; }
+        timer = setTimeout(async () => {
+            let res; try { res = await jget(`/api/suggest?q=${encodeURIComponent(q)}`); } catch (_) { return; }
+            const items = res.results || [];
+            if (!items.length) { document.getElementById("gc-dd")?.remove(); return; }
+            showSuggest(input, items, onPick);
+        }, 250);
+    });
+    input.addEventListener("blur", () => setTimeout(() => document.getElementById("gc-dd")?.remove(), 150));
+}
+function showSuggest(input, items, onPick) {
+    document.getElementById("gc-dd")?.remove();
+    const rect = input.getBoundingClientRect();
+    const dd = document.createElement("div"); dd.id = "gc-dd"; dd.className = "gc-dd";
+    dd.style.cssText = `top:${rect.bottom + 2}px;left:${rect.left}px;width:${Math.max(rect.width, 280)}px`;
+    dd.innerHTML = items.map((it, i) =>
+        `<div class="gc-row" data-i="${i}"><div class="gc-t">${esc(it.title)}</div>` +
+        (it.subtitle ? `<div class="gc-c">${esc(it.subtitle)}</div>` : "") + `</div>`).join("");
+    document.body.appendChild(dd);
+    dd.querySelectorAll(".gc-row").forEach(row => row.addEventListener("mousedown", async e => {
+        e.preventDefault(); const it = items[+row.dataset.i];
+        document.getElementById("gc-dd")?.remove();
+        input.value = it.title;
+        if (it.lat != null && it.lng != null) { onPick({ text: it.title, lat: it.lat, lng: it.lng }); return; }
+        try { const r = await jget(`/api/geocode?q=${encodeURIComponent(it.title)}`);
+            if (r.results && r.results.length) onPick(r.results[0]); } catch (_) {}
+    }));
+}
+
 // ════════════════════════ КАРТА ОД ════════════════════════════════════════
 const OD = (function () {
     let map, zones, baseMarker, targetMarker, routeLayer;
@@ -280,14 +320,21 @@ const OD = (function () {
         } catch (_) {}
         await zones.load();
 
+        const baseInput = document.getElementById("od-base");
+        const tgtInput = document.getElementById("od-tgt");
+        function pickBase(r) {
+            baseLat = r.lat; baseLng = r.lng; baseInput.value = r.text;
+            document.getElementById("od-base-hint").textContent = `Найдено: ${r.lat.toFixed(5)}, ${r.lng.toFixed(5)} (нажмите «Сохранить базу»)`;
+            placeBase(); map.setView([r.lat, r.lng], 15);
+        }
+        function pickTgt(r) {
+            tgtLat = r.lat; tgtLng = r.lng; tgtInput.value = r.text;
+            if (targetMarker) map.removeLayer(targetMarker);
+            targetMarker = L.marker([r.lat, r.lng]).bindPopup(r.text).addTo(map);
+            map.setView([r.lat, r.lng], 15); showHits(r.lat, r.lng);
+        }
         document.getElementById("od-base-find").onclick = () => {
-            const q = document.getElementById("od-base").value.trim(); if (!q) return;
-            geocodePick(q, document.getElementById("od-base"), r => {
-                baseLat = r.lat; baseLng = r.lng;
-                document.getElementById("od-base").value = r.text;
-                document.getElementById("od-base-hint").textContent = `Найдено: ${r.lat.toFixed(5)}, ${r.lng.toFixed(5)} (нажмите «Сохранить базу»)`;
-                placeBase(); map.setView([r.lat, r.lng], 15);
-            });
+            const q = baseInput.value.trim(); if (q) geocodePick(q, baseInput, pickBase);
         };
         document.getElementById("od-base-save").onclick = async () => {
             if (baseLat == null) { toast("Сначала найдите адрес", "err"); return; }
@@ -297,15 +344,9 @@ const OD = (function () {
             catch (e) { toast("Не сохранено: " + e.message, "err"); }
         };
         document.getElementById("od-tgt-find").onclick = () => {
-            const q = document.getElementById("od-tgt").value.trim(); if (!q) return;
-            geocodePick(q, document.getElementById("od-tgt"), r => {
-                tgtLat = r.lat; tgtLng = r.lng;
-                document.getElementById("od-tgt").value = r.text;
-                if (targetMarker) map.removeLayer(targetMarker);
-                targetMarker = L.marker([r.lat, r.lng]).bindPopup(r.text).addTo(map);
-                map.setView([r.lat, r.lng], 15); showHits(r.lat, r.lng);
-            });
+            const q = tgtInput.value.trim(); if (q) geocodePick(q, tgtInput, pickTgt);
         };
+        if (CFG.suggest) { attachSuggest(baseInput, pickBase); attachSuggest(tgtInput, pickTgt); }
         document.getElementById("od-route").onclick = async () => {
             if (baseLat == null) { toast("Задайте базовую точку", "err"); return; }
             if (tgtLat == null) { toast("Найдите адрес объекта", "err"); return; }
@@ -552,7 +593,7 @@ const ZONE = (function () {
                 ctx.fillStyle = "#000"; ctx.fillText(z.name, lx + fs * 1.5, yy); });
         }
         ctx.font = `${Math.round(fs * 0.8)}px sans-serif`; ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.textAlign = "right";
-        ctx.fillText("© OpenStreetMap", outW - pad, outH - pad / 2);
+        ctx.fillText(CFG.attribution, outW - pad, outH - pad / 2);
     }
     async function doExport(fmt) {
         const ids = ["zm-jpg", "zm-pdf"]; ids.forEach(i => document.getElementById(i).disabled = true);
@@ -609,6 +650,12 @@ function switchTab(which) {
 }
 document.getElementById("tab-od").onclick = () => switchTab("od");
 document.getElementById("tab-zone").onclick = () => switchTab("zone");
-switchTab("od");
+
+// старт: сначала узнаём провайдера карт (Яндекс/OSM) — от него зависит проекция,
+// затем инициализируем карты.
+(async function boot() {
+    try { CFG = await jget("/api/config"); } catch (_) {}
+    switchTab("od");
+})();
 
 })();
