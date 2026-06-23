@@ -673,8 +673,18 @@ function _showSuggestDropdown(input, items, onPick) {
                 onPick(direct);
                 return;
             }
-            // 2. Fallback — текстовый geocode по полному адресу подсказки.
-            const results = await _geocodeRaw(it.address || it.title);
+            // 2. У организаций (ymapsbm1://org?oid=…) в uri НЕТ ll. Геокодим по
+            //    самому uri — Яндекс вернёт точные координаты выбранного объекта.
+            //    Без этого текстовый поиск по названию уводит не туда: напр.
+            //    «ЦСООР Лидер» → посёлок Лидер под Наро-Фоминском.
+            let results = [];
+            if (it.uri) {
+                results = await _geocodeRaw('', { uri: it.uri });
+            }
+            // 3. Fallback — текстовый geocode по полному адресу/названию подсказки.
+            if (results.length === 0) {
+                results = await _geocodeRaw(it.address || it.title);
+            }
             if (results.length > 0) {
                 onPick(results[0]);
             } else {
