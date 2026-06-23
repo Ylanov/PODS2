@@ -77,6 +77,7 @@ function makeZones(map, mapKey, listEl, opts) {
     const layer = L.layerGroup().addTo(map);
     let cache = [];
     let draft = null, editing = null;
+    let editId = null, vmarkers = [], editTb = null, persistTimer = null;
 
     function redraw() {
         layer.clearLayers();
@@ -111,6 +112,7 @@ function makeZones(map, mapKey, listEl, opts) {
                 <input class="zcolor" data-f="color" type="color" value="${esc(z.color)}" />
                 <div class="zact">
                     <button data-a="zoom" type="button" title="показать">⊙</button>
+                    <button data-a="edit" type="button" title="редактировать вершины">✎</button>
                     <button data-a="del" type="button" title="удалить">🗑</button>
                 </div>
             </div>`).join("");
@@ -119,11 +121,13 @@ function makeZones(map, mapKey, listEl, opts) {
             row.querySelectorAll("input[data-f]").forEach(inp =>
                 inp.addEventListener("change", () => saveField(id, inp.dataset.f, inp.value)));
             row.querySelector('[data-a="zoom"]').addEventListener("click", () => zoomTo(id));
+            row.querySelector('[data-a="edit"]').addEventListener("click", () => startEdit(id));
             row.querySelector('[data-a="del"]').addEventListener("click", () => del(id));
         });
     }
 
     async function load() {
+        stopEdit();
         try { cache = await jget(`/api/${mapKey}/zones`); }
         catch (e) { toast("Не удалось загрузить зоны: " + e.message, "err"); cache = []; }
         redraw(); renderList();
@@ -140,6 +144,7 @@ function makeZones(map, mapKey, listEl, opts) {
     async function del(id) {
         const z = cache.find(z => z.id === id);
         if (!z || !confirm(`Удалить зону «${z.name}»?`)) return;
+        if (editId === id) stopEdit();
         try { await jsend(`/api/${mapKey}/zones/${id}`, "DELETE");
             cache = cache.filter(z => z.id !== id); redraw(); renderList();
             if (opts.onChange) opts.onChange();
@@ -148,6 +153,7 @@ function makeZones(map, mapKey, listEl, opts) {
     async function clearAll() {
         if (cache.length === 0) return;
         if (!confirm("Удалить ВСЕ зоны этой карты?")) return;
+        stopEdit();
         try { await jsend(`/api/${mapKey}/zones`, "DELETE"); cache = []; redraw(); renderList();
             if (opts.onChange) opts.onChange();
         } catch (e) { toast("Не удалось очистить: " + e.message, "err"); }
@@ -172,6 +178,7 @@ function makeZones(map, mapKey, listEl, opts) {
     // рисование зоны кликами
     function enterDraft() {
         exitDraft();
+        stopEdit();
         draft = { pts: [], line: L.polyline([], { color: "#1976d2", weight: 2, dashArray: "4 4" }).addTo(map) };
         if (opts.toolbar) opts.toolbar(true);
         map.on("click", onClick); map.on("dblclick", onFinish); map.doubleClickZoom.disable();
@@ -196,9 +203,84 @@ function makeZones(map, mapKey, listEl, opts) {
         } catch (e) { toast("Не сохранено: " + e.message, "err"); }
     }
 
+    // ─── редактор вершин (тащить мышью) ───────────────────────────────────
+    function clearVMarkers() { vmarkers.forEach(m => map.removeLayer(m)); vmarkers = []; }
+    function placeVertexMarkers(z) {
+        clearVMarkers();
+        ringOf(z).forEach((pt, i) => {
+            const m = L.marker(pt, { draggable: true, zIndexOffset: 1000,
+                icon: L.divIcon({ className: "vtx", iconSize: [14, 14], iconAnchor: [7, 7] }) });
+            m.on("drag", e => { z.points[i] = [e.latlng.lat, e.latlng.lng]; redraw(); });
+            m.on("dragend", () => { schedulePersist(z); if (opts.onChange) opts.onChange(); });
+            m.on("contextmenu", ev => { L.DomEvent.stop(ev); deleteVertex(z, i); });
+            m.addTo(map); vmarkers.push(m);
+        });
+    }
+    function deleteVertex(z, i) {
+        if (ringOf(z).length <= 3) { toast("В зоне минимум 3 точки", "err"); return; }
+        z.points.splice(i, 1);
+        placeVertexMarkers(z); redraw(); schedulePersist(z);
+        if (opts.onChange) opts.onChange();
+    }
+    function onEditAdd(e) {
+        if (editId == null) return;
+        const z = cache.find(x => x.id === editId); if (!z) return;
+        const pts = z.points; if (!pts || pts.length < 2) return;
+        const P = map.latLngToLayerPoint(e.latlng);
+        let best = -1, bestD = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+            const a = map.latLngToLayerPoint(L.latLng(pts[i][0], pts[i][1]));
+            const j = (i + 1) % pts.length;
+            const b = map.latLngToLayerPoint(L.latLng(pts[j][0], pts[j][1]));
+            const d = L.LineUtil.pointToSegmentDistance(P, a, b);
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        if (best < 0 || bestD > 18) return;            // клик далеко от контура — игнор
+        pts.splice(best + 1, 0, [e.latlng.lat, e.latlng.lng]);
+        placeVertexMarkers(z); redraw(); schedulePersist(z);
+        if (opts.onChange) opts.onChange();
+    }
+    function startEdit(id) {
+        exitDraft();
+        if (editId != null && editId !== id) stopEdit();
+        const z = cache.find(x => x.id === id); if (!z) return;
+        editId = id;
+        placeVertexMarkers(z);
+        map.on("click", onEditAdd);
+        map.doubleClickZoom.disable();
+        showEditTb(z.name);
+    }
+    function stopEdit() {
+        if (editId == null) return;
+        const z = cache.find(x => x.id === editId);
+        clearVMarkers();
+        map.off("click", onEditAdd);
+        map.doubleClickZoom.enable();
+        hideEditTb();
+        editId = null;
+        if (z) persistZone(z);
+    }
+    function schedulePersist(z) { clearTimeout(persistTimer); persistTimer = setTimeout(() => persistZone(z), 500); }
+    async function persistZone(z) {
+        try { await jsend(`/api/${mapKey}/zones/${z.id}`, "PATCH", { points: z.points }); }
+        catch (e) { toast("Не сохранено: " + e.message, "err"); }
+    }
+    function showEditTb(name) {
+        hideEditTb();
+        editTb = document.createElement("div");
+        editTb.className = "toolbar";
+        editTb.innerHTML = `<span>✎ Правка «${esc(name)}»: тащи точки · клик по контуру — добавить · правый клик — удалить</span>`;
+        const b = document.createElement("button"); b.className = "btn ok"; b.textContent = "Готово";
+        b.onclick = () => stopEdit();
+        editTb.appendChild(b);
+        map.getContainer().parentElement.appendChild(editTb);
+    }
+    function hideEditTb() { if (editTb) { editTb.remove(); editTb = null; } }
+
     return {
         get cache() { return cache; }, set cache(v) { cache = v; },
         load, redraw, renderList, clearAll, bounds, fit, zoomTo, enterDraft, exitDraft, onFinish,
+        startEdit, stopEdit,
     };
 }
 
