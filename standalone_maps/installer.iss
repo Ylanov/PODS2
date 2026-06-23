@@ -19,6 +19,7 @@ OutputDir=Output
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=karty.ico
 ; Установка в Program Files требует прав администратора (папку админ выбирает в мастере).
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\{#ExeName}

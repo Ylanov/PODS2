@@ -18,12 +18,16 @@ pip install pyinstaller >nul
 echo [2/3] Сборка Karty.exe (оконный, один файл)...
 set "ICONOPT="
 if exist karty.ico set "ICONOPT=--icon karty.ico"
+set "ICODATA="
+if exist karty.ico set "ICODATA=--add-data karty.ico;."
 pyinstaller --noconfirm --onefile --windowed --name Karty %ICONOPT% ^
-    --add-data "static;static" ^
+    --add-data "static;static" %ICODATA% ^
     --collect-all uvicorn ^
     --collect-submodules fastapi ^
     --collect-submodules starlette ^
     --collect-all anyio ^
+    --collect-all pystray ^
+    --collect-all PIL ^
     --collect-data docx ^
     --hidden-import multipart ^
     --hidden-import geodesy ^
