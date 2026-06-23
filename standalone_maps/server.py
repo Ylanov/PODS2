@@ -60,9 +60,19 @@ def _static_dir() -> Path:
             return p
     return _app_dir() / "static"
 
+def _user_data_dir() -> Path:
+    # Данные (БД, кеш тайлов, ключ) — в пользовательской папке, чтобы работало
+    # и при установке в Program Files (туда писать нельзя без прав админа).
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or str(Path.home())
+        d = Path(base) / "Karty"
+    else:
+        d = Path.home() / ".karty"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
 APP_DIR    = _app_dir()
-DATA_DIR   = APP_DIR / "_data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR   = _user_data_dir()
 DB_PATH    = DATA_DIR / "maps.db"
 TILE_CACHE = DATA_DIR / "tiles"
 STATIC_DIR = _static_dir()
@@ -82,19 +92,20 @@ MO_SPN   = "5,3"
 
 
 def _load_yandex_key() -> str:
-    """Ключ Яндекс.Карт: из env YANDEX_MAPS_API_KEY или файла рядом (yandex.key)."""
+    """Ключ Яндекс.Карт: из env, из пользовательской папки или из папки установки."""
     k = (os.environ.get("YANDEX_MAPS_API_KEY") or "").strip()
     if k:
         return k
-    for name in ("yandex.key", "yandex_key.txt"):
-        p = APP_DIR / name
-        if p.exists():
-            try:
-                t = p.read_text(encoding="utf-8").strip()
-                if t:
-                    return t
-            except OSError:
-                pass
+    for folder in (DATA_DIR, APP_DIR):       # %LOCALAPPDATA%\Karty, затем папка установки
+        for name in ("yandex.key", "yandex_key.txt"):
+            p = folder / name
+            if p.exists():
+                try:
+                    t = p.read_text(encoding="utf-8").strip()
+                    if t:
+                        return t
+                except OSError:
+                    pass
     return ""
 
 
